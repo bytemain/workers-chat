@@ -339,9 +339,24 @@
     render() {
       const username = this.getAttribute('username');
       const message = this.getAttribute('message');
+      const timestamp = this.getAttribute('timestamp');
 
       // Clear existing content
       this.innerHTML = '';
+
+      // Add time if present
+      if (timestamp) {
+        const date = new Date(Number(timestamp));
+        const hh = String(date.getHours()).padStart(2, '0');
+        const mm = String(date.getMinutes()).padStart(2, '0');
+        const ss = String(date.getSeconds()).padStart(2, '0');
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'msg-time';
+        timeSpan.textContent = `[${hh}:${mm}:${ss}] `;
+        timeSpan.style.color = '#888';
+        timeSpan.style.fontSize = '0.95em';
+        this.appendChild(timeSpan);
+      }
 
       // Add username if present
       if (username) {
@@ -830,7 +845,7 @@
       let data = JSON.parse(event.data);
 
       if (data.error) {
-        addChatMessage(null, "* Error: " + data.error);
+        addChatMessage(null, "* Error: " + data.error, data.timestamp || Date.now());
       } else if (data.joined) {
         let userItem = document.createElement("div");
         userItem.className = "user-item";
@@ -868,29 +883,29 @@
             break;
           }
         }
-      } else if (data.ready) {
+  } else if (data.ready) {
         // All pre-join messages have been delivered.
         if (!wroteWelcomeMessages) {
           wroteWelcomeMessages = true;
           addChatMessage(null,
             "* This is a app built with Cloudflare Workers Durable Objects. The source code " +
-            "can be found at: https://github.com/bytemain/workers-chat");
+            "can be found at: https://github.com/bytemain/workers-chat", Date.now());
           addChatMessage(null,
             "* WARNING: Participants in this chat are random people on the internet. " +
             "Names are not authenticated; anyone can pretend to be anyone. The people " +
-            "you are chatting with are NOT Cloudflare employees. Chat history is saved.");
+            "you are chatting with are NOT Cloudflare employees. Chat history is saved.", Date.now());
           if (roomname.length == 64) {
             addChatMessage(null,
-              "* This is a private room. You can invite someone to the room by sending them the URL.");
+              "* This is a private room. You can invite someone to the room by sending them the URL.", Date.now());
           } else {
             addChatMessage(null,
-              "* Welcome to #" + roomname + ". Say hi!");
+              "* Welcome to #" + roomname + ". Say hi!", Date.now());
           }
         }
       } else {
         // A regular chat message.
         if (data.timestamp > lastSeenTimestamp) {
-          addChatMessage(data.name, data.message);
+          addChatMessage(data.name, data.message, data.timestamp);
           lastSeenTimestamp = data.timestamp;
 
           // Scroll to bottom if we were at bottom (includes our own messages)
@@ -911,23 +926,42 @@
     });
   }
 
-  function addChatMessage(name, text) {
+  // Global variable for cross-day pagination
+  let lastMsgDateStr = null;
+
+  function addChatMessage(name, text, ts) {
+    // ts: message timestamp (ms)
+    let timestamp = ts;
+    if (typeof timestamp !== 'number') {
+      timestamp = Date.now();
+    }
+    const date = new Date(timestamp);
+    const dateStr = date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+
+    // Insert date divider if day changes
+    if (lastMsgDateStr !== dateStr) {
+      lastMsgDateStr = dateStr;
+      const divider = document.createElement('div');
+      divider.className = 'date-divider';
+      divider.textContent = dateStr;
+      divider.style.textAlign = 'center';
+      divider.style.color = '#aaa';
+      divider.style.fontSize = '0.9em';
+      divider.style.margin = '16px 0 8px 0';
+      chatlog.appendChild(divider);
+    }
+
     let p = document.createElement("p");
-    
     // Create custom chat message element
     const chatMessage = document.createElement('chat-message');
-    
     if (name) {
       chatMessage.setAttribute('username', name);
     }
-    
     chatMessage.setAttribute('message', text);
-    
+    chatMessage.setAttribute('timestamp', String(timestamp));
     p.appendChild(chatMessage);
 
-    // Append the new chat line, making sure that if the chatlog was scrolled to the bottom
-    // before, it remains scrolled to the bottom, and otherwise the scroll position doesn't
-    // change.
+    // Append the new chat line, keeping scroll position if needed
     chatlog.appendChild(p);
     if (isAtBottom) {
       chatlog.scrollBy(0, 1e8);
