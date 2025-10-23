@@ -329,9 +329,11 @@ function startChat() {
       if (message.length > 0) {
         currentWebSocket.send(JSON.stringify({message: message}));
         chatInput.value = "";
-
+        
         // Scroll to bottom whenever sending a message.
         chatlog.scrollBy(0, 1e8);
+        // Set flag to scroll when we receive our own message back
+        isAtBottom = true;
       }
     }
   });
@@ -446,6 +448,11 @@ function join() {
       if (data.timestamp > lastSeenTimestamp) {
         addChatMessage(data.name, data.message);
         lastSeenTimestamp = data.timestamp;
+        
+        // Scroll to bottom if we were at bottom (includes our own messages)
+        if (isAtBottom) {
+          chatlog.scrollBy(0, 1e8);
+        }
       }
     }
   });
