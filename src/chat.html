@@ -805,6 +805,78 @@
     hostname = "edge-chat-demo.cloudflareworkers.com";
   }
 
+  // API Client class for server requests
+  class ChatAPI {
+    constructor(hostname) {
+      this.hostname = hostname;
+      this.baseUrl = `https://${hostname}/api`;
+    }
+
+    // Create private room
+    async createPrivateRoom() {
+      const response = await fetch(`${this.baseUrl}/room`, { method: "POST" });
+      if (!response.ok) {
+        throw new Error('Failed to create private room');
+      }
+      return await response.text();
+    }
+
+    // Get hashtags for a room
+    async getHashtags(roomName) {
+      const response = await fetch(`${this.baseUrl}/room/${roomName}/hashtags`);
+      if (!response.ok) {
+        throw new Error('Failed to load hashtags');
+      }
+      return await response.json();
+    }
+
+    // Get room info
+    async getRoomInfo(roomName) {
+      const response = await fetch(`${this.baseUrl}/room/${roomName}/info`);
+      if (!response.ok) {
+        throw new Error('Failed to load room info');
+      }
+      return await response.json();
+    }
+
+    // Update room info
+    async updateRoomInfo(roomName, data) {
+      const response = await fetch(`${this.baseUrl}/room/${roomName}/info`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) {
+        throw new Error('Failed to save room info');
+      }
+      return await response.json();
+    }
+
+    // Upload file
+    async uploadFile(roomName, formData) {
+      const response = await fetch(`${this.baseUrl}/room/${roomName}/upload`, {
+        method: "POST",
+        body: formData
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Upload failed");
+      }
+      return await response.json();
+    }
+
+    // Get WebSocket URL
+    getWebSocketUrl(roomName) {
+      const wss = window.location.protocol === "http:" ? "ws://" : "wss://";
+      return `${wss}${this.hostname}/api/room/${roomName}/websocket`;
+    }
+  }
+
+  // Initialize API client
+  const api = new ChatAPI(hostname);
+
   // Hashtag functionality
   window.filterByHashtag = function (tag) {
     currentHashtagFilter = tag;
@@ -871,10 +943,7 @@
 
   async function loadHashtags() {
     try {
-      const response = await fetch(`https://${hostname}/api/room/${roomname}/hashtags`);
-      if (!response.ok) return;
-
-      const data = await response.json();
+      const data = await api.getHashtags(roomname);
       allHashtags = data.hashtags || [];
       renderHashtagList();
     } catch (err) {
@@ -1075,15 +1144,13 @@
       goPublicButton.disabled = true;
       event.currentTarget.disabled = true;
 
-      let response = await fetch("https://" + hostname + "/api/room", { method: "POST" });
-      if (!response.ok) {
+      try {
+        roomname = await api.createPrivateRoom();
+        startChat();
+      } catch (err) {
         alert("something went wrong");
         document.location.reload();
-        return;
       }
-
-      roomname = await response.text();
-      startChat();
     });
 
     roomNameInput.focus();
@@ -1118,12 +1185,9 @@
     // Load room info from server
     async function loadRoomInfo() {
       try {
-        const response = await fetch(`https://${hostname}/api/room/${roomname}/info`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.note) {
-            roomNoteTextarea.value = data.note;
-          }
+        const data = await api.getRoomInfo(roomname);
+        if (data.note) {
+          roomNoteTextarea.value = data.note;
         }
       } catch (err) {
         console.error('Failed to load room info:', err);
@@ -1133,13 +1197,7 @@
     // Save room info to server
     async function saveRoomInfo(note) {
       try {
-        await fetch(`https://${hostname}/api/room/${roomname}/info`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ note })
-        });
+        await api.updateRoomInfo(roomname, { note });
       } catch (err) {
         console.error('Failed to save room info:', err);
       }
@@ -1289,18 +1347,7 @@
         formData.append("file", file, fileName || file.name);
 
         // Upload file
-        const response = await fetch("https://" + hostname + "/api/room/" + roomname + "/upload", {
-          method: "POST",
-          body: formData
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-          addSystemMessage("* Upload failed: " + (error.error || "Unknown error"));
-          return false;
-        }
-
-        const result = await response.json();
+        const result = await api.uploadFile(roomname, formData);
 
         // Send file message through WebSocket
         if (currentWebSocket) {
@@ -1390,9 +1437,7 @@
   let isReconnecting = false; // Track if this is a reconnection
 
   function join() {
-    // If we are running via wrangler dev, use ws:
-    const wss = document.location.protocol === "http:" ? "ws://" : "wss://";
-    let ws = new WebSocket(wss + hostname + "/api/room/" + roomname + "/websocket");
+    let ws = new WebSocket(api.getWebSocketUrl(roomname));
     let rejoined = false;
     let startTime = Date.now();
 
