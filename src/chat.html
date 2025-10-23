@@ -289,9 +289,11 @@ function startNameChooser() {
   const savedUsername = localStorage.getItem('chatUsername');
   if (savedUsername && document.location.hash.length > 1) {
     // Auto-login with saved username if we have a room hash
-    username = savedUsername;
     nameInput.value = savedUsername;
-    startRoomChooser();
+    // Trigger form submit to go through normal flow
+    setTimeout(() => {
+      nameForm.dispatchEvent(new Event('submit'));
+    }, 0);
     return;
   }
 
