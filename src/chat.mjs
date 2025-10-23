@@ -1,5 +1,3 @@
-// This is the Edge Chat Demo Worker, built using Durable Objects!
-
 // ===============================
 // Introduction to Modules
 // ===============================
@@ -484,15 +482,15 @@ export class RateLimiter {
 
       if (request.method == "POST") {
         // POST request means the user performed an action.
-        // We allow one action per 5 seconds.
-        this.nextAllowedTime += 5;
+        // We allow one action per 0.5 seconds
+        this.nextAllowedTime += 0.5;
       }
 
       // Return the number of seconds that the client needs to wait.
       //
-      // We provide a "grace" period of 20 seconds, meaning that the client can make 4-5 requests
+      // We provide a "grace" period of 60 seconds, meaning that the client can make many more requests
       // in a quick burst before they start being limited.
-      let cooldown = Math.max(0, this.nextAllowedTime - now - 20);
+      let cooldown = Math.max(0, this.nextAllowedTime - now - 60);
       return new Response(cooldown);
     })
   }
