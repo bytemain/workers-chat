@@ -54,50 +54,48 @@
     #room-name-display {
       font-weight: bold;
       color: #1da1f2;
-      margin-bottom: 8px;
+      margin-bottom: 12px;
       word-break: break-all;
-    }
-
-    #room-note {
-      width: 100%;
-      min-height: 60px;
-      padding: 6px;
-      border: 1px solid #ddd;
+      cursor: pointer;
+      padding: 4px;
       border-radius: 3px;
-      font-family: Arial, sans-serif;
-      font-size: 0.9em;
-      resize: vertical;
-      background: white;
+      transition: background-color 0.2s;
     }
 
-    #room-note:focus {
-      outline: none;
-      border-color: #1da1f2;
+    #room-name-display:hover {
+      background-color: #f0f8ff;
     }
 
-    #room-info {
-      position: fixed;
-      right: 0;
-      top: 0;
-      width: 200px;
-      border-left: 1px solid #ddd;
-      border-bottom: 1px solid #ddd;
-      background: #fafafa;
-      padding: 8px;
-      font-size: 0.9em;
-    }
-
-    #room-info h3 {
-      margin: 0 0 8px 0;
-      font-size: 1em;
-      color: #333;
-    }
-
-    #room-name-display {
+    #room-name-input {
+      width: 100%;
       font-weight: bold;
       color: #1da1f2;
-      margin-bottom: 8px;
-      word-break: break-all;
+      padding: 4px;
+      border: 1px solid #1da1f2;
+      border-radius: 3px;
+      font-family: Arial, sans-serif;
+      font-size: 0.9em;
+      margin-bottom: 12px;
+      display: none;
+    }
+
+    #room-name-input:focus {
+      outline: none;
+      border-color: #0d8dd9;
+    }
+
+    #room-description-label {
+      color: #666;
+      font-size: 0.85em;
+      margin-bottom: 4px;
+      cursor: pointer;
+      padding: 2px;
+      border-radius: 3px;
+      transition: background-color 0.2s;
+    }
+
+    #room-description-label:hover {
+      background-color: #f0f8ff;
     }
 
     #room-note {
@@ -110,11 +108,17 @@
       font-size: 0.9em;
       resize: vertical;
       background: white;
+      display: none;
+      margin-top: 4px;
     }
 
     #room-note:focus {
       outline: none;
       border-color: #1da1f2;
+    }
+
+    #room-note.visible {
+      display: block;
     }
 
     #roster {
@@ -593,8 +597,14 @@
     </div>
     <div id="room-info">
       <h3>🏠 Room Info</h3>
-      <div id="room-name-display"></div>
-      <textarea id="room-note" placeholder="Add room notes here..."></textarea>
+      <div id="room-name-container">
+        <div id="room-name-display"></div>
+        <input type="text" id="room-name-input" />
+      </div>
+      <div id="room-description-container">
+        <div id="room-description-label">📝 Description (click to edit)</div>
+        <textarea id="room-note" placeholder="Add room description..."></textarea>
+      </div>
     </div>
     <div id="roster">
       <h3>👥 Online Members</h3>
@@ -1156,6 +1166,14 @@
     roomNameInput.focus();
   }
 
+  // Room info state variables (declared at module level for WebSocket access)
+  let currentRoomName = "";
+  let currentRoomDescription = "";
+  let isLocalUpdate = false; // Track if we're making a local update
+  let urlRoomHash = ""; // Store the room hash from URL
+  let roomInfoNameDisplay, roomInfoNameInput, roomInfoNoteTextarea, roomInfoDescriptionLabel;
+  let updateDocumentTitle; // Function reference
+
   function startChat() {
     roomForm.remove();
 
@@ -1173,21 +1191,51 @@
     addToRoomHistory(roomname);
 
     // Initialize room info display
-    const roomNameDisplay = document.querySelector("#room-name-display");
-    const roomNoteTextarea = document.querySelector("#room-note");
+    roomInfoNameDisplay = document.querySelector("#room-name-display");
+    roomInfoNameInput = document.querySelector("#room-name-input");
+    roomInfoNoteTextarea = document.querySelector("#room-note");
+    roomInfoDescriptionLabel = document.querySelector("#room-description-label");
 
+    // Set initial room name
     if (roomname.length === 64) {
-      roomNameDisplay.textContent = "Private Room";
+      currentRoomName = "Private Room";
+      urlRoomHash = ""; // Private rooms don't need hash display
     } else {
-      roomNameDisplay.textContent = "#" + roomname;
+      currentRoomName = roomname;
+      urlRoomHash = "#" + roomname; // Store the URL hash
     }
+    roomInfoNameDisplay.textContent = currentRoomName;
+    
+    // Update document title
+    // If custom name is set and different from URL hash, show both
+    function updateDocumentTitle(customName) {
+      let title = customName;
+      
+      // If custom name is set and different from the original roomname, append the URL hash
+      if (customName && customName !== roomname && urlRoomHash) {
+        title = customName + " " + urlRoomHash;
+      }
+      
+      document.title = title + " - Workers Chat";
+    }
+    updateDocumentTitle(currentRoomName);
 
     // Load room info from server
     async function loadRoomInfo() {
       try {
         const data = await api.getRoomInfo(roomname);
+        if (data.name) {
+          currentRoomName = data.name;
+          roomInfoNameDisplay.textContent = currentRoomName;
+          updateDocumentTitle(currentRoomName);
+        }
         if (data.note) {
-          roomNoteTextarea.value = data.note;
+          currentRoomDescription = data.note;
+          roomInfoNoteTextarea.value = data.note;
+          // Show textarea if there's content
+          if (data.note.trim()) {
+            roomInfoNoteTextarea.classList.add("visible");
+          }
         }
       } catch (err) {
         console.error('Failed to load room info:', err);
@@ -1195,9 +1243,9 @@
     }
 
     // Save room info to server
-    async function saveRoomInfo(note) {
+    async function saveRoomInfo(data) {
       try {
-        await api.updateRoomInfo(roomname, { note });
+        await api.updateRoomInfo(roomname, data);
       } catch (err) {
         console.error('Failed to save room info:', err);
       }
@@ -1206,21 +1254,78 @@
     // Load room info on start
     loadRoomInfo();
 
-    // Save room note on change (debounced)
-    let saveNoteTimeout;
-    roomNoteTextarea.addEventListener("input", () => {
-      clearTimeout(saveNoteTimeout);
-      saveNoteTimeout = setTimeout(() => {
-        saveRoomInfo(roomNoteTextarea.value);
-      }, 100);
+    // Room name editing
+    roomInfoNameDisplay.addEventListener("click", (event) => {
+      event.stopPropagation();
+      roomInfoNameDisplay.style.display = "none";
+      roomInfoNameInput.style.display = "block";
+      roomInfoNameInput.value = currentRoomName;
+      roomInfoNameInput.focus();
+      roomInfoNameInput.select();
     });
 
-    // Prevent the room note textarea from losing focus
-    roomNoteTextarea.addEventListener("mousedown", (event) => {
+    roomInfoNameInput.addEventListener("blur", () => {
+      const newName = roomInfoNameInput.value.trim();
+      if (newName && newName !== currentRoomName) {
+        isLocalUpdate = true;
+        currentRoomName = newName;
+        roomInfoNameDisplay.textContent = newName;
+        updateDocumentTitle(newName);
+        saveRoomInfo({ name: newName, note: currentRoomDescription });
+        // Reset flag after a short delay
+        setTimeout(() => { isLocalUpdate = false; }, 500);
+      }
+      roomInfoNameInput.style.display = "none";
+      roomInfoNameDisplay.style.display = "block";
+    });
+
+    roomInfoNameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        roomInfoNameInput.blur();
+      } else if (event.key === "Escape") {
+        roomInfoNameInput.value = currentRoomName;
+        roomInfoNameInput.blur();
+      }
+    });
+
+    roomInfoNameInput.addEventListener("click", (event) => {
       event.stopPropagation();
     });
 
-    roomNoteTextarea.addEventListener("click", (event) => {
+    // Room description editing
+    roomInfoDescriptionLabel.addEventListener("click", (event) => {
+      event.stopPropagation();
+      roomInfoNoteTextarea.classList.add("visible");
+      roomInfoNoteTextarea.focus();
+    });
+
+    // Save room note on change (debounced)
+    let saveNoteTimeout;
+    roomInfoNoteTextarea.addEventListener("input", () => {
+      clearTimeout(saveNoteTimeout);
+      saveNoteTimeout = setTimeout(() => {
+        isLocalUpdate = true;
+        currentRoomDescription = roomInfoNoteTextarea.value;
+        saveRoomInfo({ name: currentRoomName, note: currentRoomDescription });
+        // Reset flag after a short delay
+        setTimeout(() => { isLocalUpdate = false; }, 500);
+      }, 1000);
+    });
+
+    roomInfoNoteTextarea.addEventListener("blur", () => {
+      // Hide textarea if empty
+      if (!roomInfoNoteTextarea.value.trim()) {
+        roomInfoNoteTextarea.classList.remove("visible");
+      }
+    });
+
+    // Prevent the room note textarea from losing focus
+    roomInfoNoteTextarea.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+    });
+
+    roomInfoNoteTextarea.addEventListener("click", (event) => {
       event.stopPropagation();
     });
 
@@ -1476,6 +1581,38 @@
 
       if (data.error) {
         addSystemMessage("* Error: " + data.error);
+      } else if (data.roomInfoUpdate) {
+        // Room info has been updated, refresh the display
+        // Skip if this is our own update to avoid flickering
+        if (!isLocalUpdate) {
+          const info = data.roomInfoUpdate;
+          let updated = false;
+          
+          if (info.name !== undefined && info.name !== currentRoomName) {
+            currentRoomName = info.name;
+            roomInfoNameDisplay.textContent = info.name;
+            updateDocumentTitle(info.name);
+            updated = true;
+          }
+          
+          if (info.note !== undefined && info.note !== currentRoomDescription) {
+            currentRoomDescription = info.note;
+            roomInfoNoteTextarea.value = info.note;
+            
+            // Show or hide textarea based on content
+            if (info.note.trim()) {
+              roomInfoNoteTextarea.classList.add("visible");
+            } else {
+              roomInfoNoteTextarea.classList.remove("visible");
+            }
+            updated = true;
+          }
+          
+          // Show a notification that room info was updated
+          if (updated) {
+            addSystemMessage("* Room info has been updated");
+          }
+        }
       } else if (data.joined) {
         let userItem = document.createElement("div");
         userItem.className = "user-item";

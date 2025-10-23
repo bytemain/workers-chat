@@ -442,12 +442,29 @@ export class ChatRoom {
             const data = await request.json();
             let info = await this.storage.get("room-info") || {};
             
+            // Track what changed
+            let changed = false;
+            
+            // Update name if provided
+            if (data.name !== undefined && data.name !== info.name) {
+              info.name = data.name;
+              changed = true;
+            }
+            
             // Update note if provided
-            if (data.note !== undefined) {
+            if (data.note !== undefined && data.note !== info.note) {
               info.note = data.note;
+              changed = true;
             }
             
             await this.storage.put("room-info", info);
+            
+            // Broadcast the update to all connected clients
+            if (changed) {
+              this.broadcast({
+                roomInfoUpdate: info
+              });
+            }
             
             return new Response(JSON.stringify({ success: true }), {
               headers: { 
