@@ -325,11 +325,14 @@ function startChat() {
     event.preventDefault();
 
     if (currentWebSocket) {
-      currentWebSocket.send(JSON.stringify({message: chatInput.value}));
-      chatInput.value = "";
+      let message = chatInput.value.trim();
+      if (message.length > 0) {
+        currentWebSocket.send(JSON.stringify({message: message}));
+        chatInput.value = "";
 
-      // Scroll to bottom whenever sending a message.
-      chatlog.scrollBy(0, 1e8);
+        // Scroll to bottom whenever sending a message.
+        chatlog.scrollBy(0, 1e8);
+      }
     }
   });
 
@@ -424,8 +427,8 @@ function join() {
       if (!wroteWelcomeMessages) {
         wroteWelcomeMessages = true;
         addChatMessage(null,
-            "* This is a demo app built with Cloudflare Workers Durable Objects. The source code " +
-            "can be found at: https://github.com/cloudflare/workers-chat-demo");
+            "* This is a app built with Cloudflare Workers Durable Objects. The source code " +
+            "can be found at: https://github.com/bytemain/workers-chat");
         addChatMessage(null,
             "* WARNING: Participants in this chat are random people on the internet. " +
             "Names are not authenticated; anyone can pretend to be anyone. The people " +
