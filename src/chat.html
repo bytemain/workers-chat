@@ -44,6 +44,30 @@ body {
   padding: 8px;
 }
 
+#roster .user-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+#roster .logout-btn {
+  background: transparent;
+  color: #999;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+  font-size: 11px;
+  margin-left: 8px;
+}
+
+#roster .logout-btn:hover {
+  background: #f5f5f5;
+  color: #666;
+  border-color: #ccc;
+}
+
 p {
   margin-top: 0;
   margin-bottom: 8px;
@@ -261,10 +285,22 @@ if (hostname == "") {
 }
 
 function startNameChooser() {
+  // Check if username is saved in localStorage
+  const savedUsername = localStorage.getItem('chatUsername');
+  if (savedUsername && document.location.hash.length > 1) {
+    // Auto-login with saved username if we have a room hash
+    username = savedUsername;
+    nameInput.value = savedUsername;
+    startRoomChooser();
+    return;
+  }
+
   nameForm.addEventListener("submit", event => {
     event.preventDefault();
-    username = nameInput.value;
+    username = nameInput.value.trim();
     if (username.length > 0) {
+      // Save username to localStorage
+      localStorage.setItem('chatUsername', username);
       startRoomChooser();
     }
   });
@@ -520,12 +556,38 @@ function join() {
     if (data.error) {
       addChatMessage(null, "* Error: " + data.error);
     } else if (data.joined) {
-      let p = document.createElement("p");
-      p.innerText = data.joined + (data.joined === username ? " (me)" : "");
-      roster.appendChild(p);
+      let userItem = document.createElement("div");
+      userItem.className = "user-item";
+      
+      let userName = document.createElement("span");
+      userName.innerText = data.joined + (data.joined === username ? " (me)" : "");
+      userItem.appendChild(userName);
+      
+      // Add logout button only for current user
+      if (data.joined === username) {
+        let logoutBtn = document.createElement("button");
+        logoutBtn.className = "logout-btn";
+        logoutBtn.innerText = "×";
+        logoutBtn.title = "Logout and change username";
+        logoutBtn.onclick = (e) => {
+          e.stopPropagation();
+          // Clear saved username
+          localStorage.removeItem('chatUsername');
+          // Close WebSocket
+          if (currentWebSocket) {
+            currentWebSocket.close();
+          }
+          // Reload page without hash to start fresh
+          window.location.href = window.location.href.split('#')[0];
+        };
+        userItem.appendChild(logoutBtn);
+      }
+      
+      roster.appendChild(userItem);
     } else if (data.quit) {
       for (let child of roster.childNodes) {
-        if (child.innerText == data.quit || child.innerText == data.quit + " (me)") {
+        const userName = child.querySelector ? child.querySelector("span")?.innerText : child.innerText;
+        if (userName == data.quit || userName == data.quit + " (me)") {
           roster.removeChild(child);
           break;
         }
