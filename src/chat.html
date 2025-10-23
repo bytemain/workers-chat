@@ -413,11 +413,11 @@ function join() {
       addChatMessage(null, "* Error: " + data.error);
     } else if (data.joined) {
       let p = document.createElement("p");
-      p.innerText = data.joined;
+      p.innerText = data.joined + (data.joined === username ? " (me)" : "");
       roster.appendChild(p);
     } else if (data.quit) {
       for (let child of roster.childNodes) {
-        if (child.innerText == data.quit) {
+        if (child.innerText == data.quit || child.innerText == data.quit + " (me)") {
           roster.removeChild(child);
           break;
         }
