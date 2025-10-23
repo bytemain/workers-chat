@@ -62,6 +62,53 @@
       margin: 0 0 8px 0;
       font-size: 1em;
       color: #333;
+      position: relative;
+    }
+
+    #connection-status {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.8em;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-weight: normal;
+      white-space: nowrap;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    #connection-status.connected {
+      display: inline-block;
+      background: #d4edda;
+      color: #155724;
+      animation: none;
+    }
+
+    #connection-status.reconnecting {
+      display: inline-block;
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    #connection-status.error {
+      display: inline-block;
+      background: #f8d7da;
+      color: #721c24;
+      animation: none;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
     }
 
     #room-name-display {
@@ -866,7 +913,10 @@
     </div>
     <div id="right-sidebar">
       <div id="room-info">
-        <h3>🏠 Room Info</h3>
+        <h3>
+          <span>🏠 Room Info</span>
+          <span id="connection-status"></span>
+        </h3>
         <div id="room-name-container">
           <div id="room-name-display"></div>
           <input type="text" id="room-name-input" />
@@ -881,7 +931,6 @@
         <div id="roster">
         </div>
       </div>
-
     </div>
     <div id="reply-indicator" style="display:none;">
       <button type="button" class="reply-indicator-close">✕</button>
@@ -1156,6 +1205,9 @@
   let hashtagFilterBanner = document.querySelector("#hashtag-filter-banner");
   let activeHashtagSpan = document.querySelector("#active-hashtag");
 
+  // Connection status element
+  let connectionStatus = document.querySelector("#connection-status");
+
   // Thread panel elements
   let threadPanel = document.querySelector("#thread-panel");
   let threadClose = document.querySelector("#thread-close");
@@ -1174,6 +1226,49 @@
   let roomname;
   let currentHashtagFilter = null; // Current active hashtag filter
   let allHashtags = []; // Cache of all hashtags
+
+  // Connection status tracking
+  let connectionStatusTimeout = null;
+
+  // Update connection status indicator
+  function updateConnectionStatus(status) {
+    // Clear any existing timeout
+    if (connectionStatusTimeout) {
+      clearTimeout(connectionStatusTimeout);
+      connectionStatusTimeout = null;
+    }
+
+    // Remove all status classes
+    connectionStatus.classList.remove('connected', 'reconnecting', 'error');
+
+    switch (status) {
+      case 'connected':
+        connectionStatus.style.display = ''; // Reset to use CSS class
+        connectionStatus.classList.add('connected');
+        connectionStatus.textContent = 'Connected';
+        // Hide after 2 seconds
+        connectionStatusTimeout = setTimeout(() => {
+          connectionStatus.classList.remove('connected');
+          connectionStatus.style.display = 'none';
+        }, 2000);
+        break;
+
+      case 'reconnecting':
+        connectionStatus.style.display = ''; // Reset to use CSS class
+        connectionStatus.classList.add('reconnecting');
+        connectionStatus.textContent = 'Reconnecting...';
+        break;
+
+      case 'error':
+        connectionStatus.style.display = ''; // Reset to use CSS class
+        connectionStatus.classList.add('error');
+        connectionStatus.textContent = 'Connection Error';
+        break;
+
+      default:
+        connectionStatus.style.display = 'none';
+    }
+  }
 
   // Thread state
   let currentThreadId = null;  // Currently open thread
@@ -1361,21 +1456,21 @@
   function collectAllThreadReplies(rootMessageId) {
     const allReplies = [];
     const visited = new Set();
-    
+
     function collectReplies(messageId) {
       if (visited.has(messageId)) return;
       visited.add(messageId);
-      
+
       // Get direct replies from threadsCache
       const directReplies = threadsCache.get(messageId) || [];
-      
+
       for (const reply of directReplies) {
         allReplies.push(reply);
         // Recursively collect replies to this reply
         collectReplies(reply.messageId);
       }
     }
-    
+
     collectReplies(rootMessageId);
     return allReplies;
   }
@@ -1383,11 +1478,11 @@
   // Count total replies for a message (including nested)
   function countTotalReplies(messageId) {
     const visited = new Set();
-    
+
     function countReplies(msgId) {
       if (visited.has(msgId)) return 0;
       visited.add(msgId);
-      
+
       let count = 0;
       // Count direct replies
       for (const [cachedMsgId, cachedMsg] of messagesCache.entries()) {
@@ -1399,7 +1494,7 @@
       }
       return count;
     }
-    
+
     return countReplies(messageId);
   }
 
@@ -1418,7 +1513,7 @@
       allReplies.forEach(reply => {
         // Cache the message
         messagesCache.set(reply.messageId, reply);
-        
+
         // Organize by parent messageId for threadsCache
         const parentId = reply.replyTo?.messageId;
         if (parentId) {
@@ -1528,15 +1623,15 @@
   function locateMessageInMainChat(messageId) {
     // Find the message in main chat
     const mainChatMsg = chatlog.querySelector(`[data-message-id="${messageId}"]`);
-    
+
     if (mainChatMsg) {
       // Scroll to the message
       mainChatMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
+
       // Highlight the message
       mainChatMsg.style.background = '#fff3cd';
       mainChatMsg.style.transition = 'background 0.3s ease';
-      
+
       // Remove highlight after 2 seconds
       setTimeout(() => {
         mainChatMsg.style.background = '';
@@ -2400,8 +2495,10 @@
             }
           });
         } else if (isReconnecting) {
-          // Show reconnection success message
-          addSystemMessage("* Reconnected successfully.");
+
+          // Show connected status if this is a reconnection
+          updateConnectionStatus('connected');
+          // Reset reconnecting flag (status already updated in 'open' event)
           isReconnecting = false;
         }
       } else {
@@ -2429,13 +2526,13 @@
         localStorage.removeItem('chatUsername');
         shouldReconnect = false; // Don't reconnect
       } else {
-        addSystemMessage("* Disconnected from server. Reconnecting...");
+        updateConnectionStatus('reconnecting');
         rejoin();
       }
     });
     ws.addEventListener("error", event => {
       console.log("WebSocket error, reconnecting:", event);
-      addSystemMessage("* Connection error. Reconnecting...");
+      updateConnectionStatus('reconnecting');
       rejoin();
     });
   }
