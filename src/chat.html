@@ -745,7 +745,8 @@
     });
 
     chatlog.addEventListener("scroll", event => {
-      isAtBottom = chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight;
+      // Allow 1px tolerance for floating point calculation errors
+      isAtBottom = chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight - 1;
     });
 
     chatInput.focus();
@@ -954,9 +955,8 @@
     sysMsg.setAttribute('message', text);
     p.appendChild(sysMsg);
     chatlog.appendChild(p);
-    if (isAtBottom) {
-      chatlog.scrollBy(0, 1e8);
-    }
+    isAtBottom = true;
+    chatlog.scrollBy(0, 1e8);
   }
 
   function addChatMessage(name, text, ts) {
