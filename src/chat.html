@@ -171,7 +171,9 @@
       transition: bottom 0.1s ease;
       overflow-y: auto;
       background: white;
-    }    ::-webkit-scrollbar {
+    }
+
+    ::-webkit-scrollbar {
       display: none;
     }
 
@@ -516,7 +518,7 @@
       display: flex;
     }
 
-    #hashtag-filter-banner + #chatlog {
+    #hashtag-filter-banner+#chatlog {
       top: 41px;
     }
 
@@ -580,7 +582,8 @@
   <div id="hashtag-panel">
     <h3>
       <span>📌 Hashtags</span>
-      <button id="hashtag-close" style="background:none;border:none;cursor:pointer;font-size:18px;" title="Close">✕</button>
+      <button id="hashtag-close" style="background:none;border:none;cursor:pointer;font-size:18px;"
+        title="Close">✕</button>
     </h3>
     <div id="hashtag-list"></div>
   </div>
@@ -803,11 +806,16 @@
   }
 
   // Hashtag functionality
-  window.filterByHashtag = function(tag) {
+  window.filterByHashtag = function (tag) {
     currentHashtagFilter = tag;
     activeHashtagSpan.textContent = '#' + tag;
     hashtagFilterBanner.classList.add('visible');
-    
+
+    // Update URL with hashtag filter
+    const url = new URL(window.location);
+    url.searchParams.set('tag', tag);
+    window.history.pushState({}, '', url);
+
     // Update active state in hashtag list
     document.querySelectorAll('.hashtag-item').forEach(item => {
       if (item.dataset.tag === tag) {
@@ -818,13 +826,18 @@
     });
 
     // Filter messages in chatlog
-    const messages = chatlog.querySelectorAll('p');
-    messages.forEach(msg => {
-      const chatMessage = msg.querySelector('chat-message');
-      if (chatMessage) {
+    const elements = chatlog.querySelectorAll('p');
+    elements.forEach(elem => {
+      const chatMessage = elem.querySelector('chat-message');
+      const systemMessage = elem.querySelector('system-message');
+
+      // Always show system messages
+      if (systemMessage) {
+        elem.style.display = 'none';
+      } else if (chatMessage) {
         const text = chatMessage.getAttribute('message') || '';
         const hasTag = text.toLowerCase().includes('#' + tag.toLowerCase());
-        msg.style.display = hasTag ? 'block' : 'none';
+        elem.style.display = hasTag ? 'block' : 'none';
       }
     });
 
@@ -832,10 +845,15 @@
     chatlog.scrollBy(0, 1e8);
   };
 
-  window.clearHashtagFilter = function() {
+  window.clearHashtagFilter = function () {
     currentHashtagFilter = null;
     hashtagFilterBanner.classList.remove('visible');
-    
+
+    // Remove tag from URL
+    const url = new URL(window.location);
+    url.searchParams.delete('tag');
+    window.history.pushState({}, '', url);
+
     // Clear active state
     document.querySelectorAll('.hashtag-item').forEach(item => {
       item.classList.remove('active');
@@ -855,7 +873,7 @@
     try {
       const response = await fetch(`https://${hostname}/api/room/${roomname}/hashtags`);
       if (!response.ok) return;
-      
+
       const data = await response.json();
       allHashtags = data.hashtags || [];
       renderHashtagList();
@@ -866,9 +884,9 @@
 
   function renderHashtagList() {
     if (!hashtagList) return;
-    
+
     hashtagList.innerHTML = '';
-    
+
     if (allHashtags.length === 0) {
       hashtagList.innerHTML = '<div style="color:#999;font-size:0.85em;padding:8px;">No hashtags yet.<br>Use #tag in messages!</div>';
       return;
@@ -904,7 +922,7 @@
     // Extract hashtags from message
     const hashtagRegex = /#([a-zA-Z0-9_\u4e00-\u9fa5]{2,32})/g;
     const matches = [...message.matchAll(hashtagRegex)];
-    
+
     if (matches.length > 0) {
       // Reload hashtags after a short delay to get updated counts
       setTimeout(() => loadHashtags(), 500);
@@ -1090,7 +1108,7 @@
     // Initialize room info display
     const roomNameDisplay = document.querySelector("#room-name-display");
     const roomNoteTextarea = document.querySelector("#room-note");
-    
+
     if (roomname.length === 64) {
       roomNameDisplay.textContent = "Private Room";
     } else {
@@ -1251,7 +1269,17 @@
     });
 
     // Load hashtags initially (with a delay to let messages load first)
-    setTimeout(() => loadHashtags(), 2000);
+    setTimeout(() => {
+      loadHashtags().then(() => {
+        // Check if there's a tag filter in the URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const tagParam = urlParams.get('tag');
+        if (tagParam) {
+          // Apply the filter from URL
+          window.filterByHashtag(tagParam);
+        }
+      });
+    }, 2000);
 
     // Upload file function
     async function uploadFile(file, fileName = null) {
