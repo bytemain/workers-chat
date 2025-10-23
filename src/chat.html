@@ -467,15 +467,10 @@
         lastIndex = urlRegex.lastIndex;
       }
 
-      // Add remaining text after last URL
+      // Add remaining text after last URL (or all text if no URLs found)
       if (lastIndex < text.length) {
         const textNode = document.createTextNode(text.substring(lastIndex));
         this.appendChild(textNode);
-      }
-
-      // If no URLs were found, just add the text as-is
-      if (lastIndex === 0) {
-        this.appendChild(document.createTextNode(text));
       }
     }
   }
