@@ -996,6 +996,15 @@
     }
   }
 
+  // Listen for hash changes to switch rooms
+  window.addEventListener('hashchange', () => {
+    const newRoomName = document.location.hash.slice(1);
+    // Only reload if we're in a different room (not initial room setup)
+    if (roomname && newRoomName !== roomname) {
+      window.location.reload();
+    }
+  });
+
   startNameChooser();
 </script>
 </html>
