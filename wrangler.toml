@@ -18,7 +18,7 @@ persist = true
 
 [[r2_buckets]]
 binding = "CHAT_FILES"
-bucket_name = "chat-files"
+bucket_name = "edge-chat-files"
 
 [[rules]]
 type = "Data"
