@@ -427,6 +427,39 @@ export class ChatRoom {
           });
         }
 
+        case "/info": {
+          // GET /info - Get room info (name, note, etc.)
+          // PUT /info - Update room info
+          if (request.method === "GET") {
+            const info = await this.storage.get("room-info") || {};
+            return new Response(JSON.stringify(info), {
+              headers: { 
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+              }
+            });
+          } else if (request.method === "PUT") {
+            const data = await request.json();
+            let info = await this.storage.get("room-info") || {};
+            
+            // Update note if provided
+            if (data.note !== undefined) {
+              info.note = data.note;
+            }
+            
+            await this.storage.put("room-info", info);
+            
+            return new Response(JSON.stringify({ success: true }), {
+              headers: { 
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+              }
+            });
+          } else {
+            return new Response("Method not allowed", { status: 405 });
+          }
+        }
+
         default:
           return new Response("Not found", { status: 404 });
       }
