@@ -304,14 +304,17 @@ function startNameChooser() {
 
   // Check if username is saved in localStorage
   const savedUsername = localStorage.getItem('chatUsername');
-  if (savedUsername && document.location.hash.length > 1) {
-    // Auto-login with saved username if we have a room hash
+  if (savedUsername) {
+    // Pre-fill the username
     nameInput.value = savedUsername;
-    // Trigger form submit to go through normal flow
-    setTimeout(() => {
-      nameForm.dispatchEvent(new Event('submit'));
-    }, 0);
-    return;
+    
+    // Only auto-submit if we have a room hash in URL
+    if (document.location.hash.length > 1) {
+      setTimeout(() => {
+        nameForm.dispatchEvent(new Event('submit'));
+      }, 0);
+      return;
+    }
   }
 
   nameInput.focus();
