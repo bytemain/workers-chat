@@ -381,7 +381,7 @@ export class ChatRoom {
 
           const tags = await this.hashtagManager.getAllHashtags(100);
           return new Response(JSON.stringify({ hashtags: tags }), {
-            headers: { 
+            headers: {
               "Content-Type": "application/json",
               "Access-Control-Allow-Origin": "*"
             }
@@ -404,7 +404,7 @@ export class ChatRoom {
 
           const messages = await this.hashtagManager.getMessagesForTag(tag, 100);
           return new Response(JSON.stringify({ tag, messages }), {
-            headers: { 
+            headers: {
               "Content-Type": "application/json",
               "Access-Control-Allow-Origin": "*"
             }
@@ -420,7 +420,7 @@ export class ChatRoom {
           const query = url.searchParams.get("q") || "";
           const tags = await this.hashtagManager.searchHashtags(query, 20);
           return new Response(JSON.stringify({ query, results: tags }), {
-            headers: { 
+            headers: {
               "Content-Type": "application/json",
               "Access-Control-Allow-Origin": "*"
             }
@@ -433,7 +433,7 @@ export class ChatRoom {
           if (request.method === "GET") {
             const info = await this.storage.get("room-info") || {};
             return new Response(JSON.stringify(info), {
-              headers: { 
+              headers: {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*"
               }
@@ -441,33 +441,37 @@ export class ChatRoom {
           } else if (request.method === "PUT") {
             const data = await request.json();
             let info = await this.storage.get("room-info") || {};
-            
+
             // Track what changed
             let changed = false;
-            
+
             // Update name if provided
             if (data.name !== undefined && data.name !== info.name) {
               info.name = data.name;
               changed = true;
             }
-            
+
             // Update note if provided
             if (data.note !== undefined && data.note !== info.note) {
               info.note = data.note;
               changed = true;
             }
-            
+
             await this.storage.put("room-info", info);
-            
+
             // Broadcast the update to all connected clients
             if (changed) {
+              // Create a plain object to ensure JSON serialization works
               this.broadcast({
-                roomInfoUpdate: info
+                roomInfoUpdate: {
+                  name: info.name,
+                  note: info.note
+                }
               });
             }
-            
+
             return new Response(JSON.stringify({ success: true }), {
-              headers: { 
+              headers: {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*"
               }
@@ -546,7 +550,7 @@ export class ChatRoom {
         // The first message the client sends is the user info message with their name. Save it
         // into their session object.
         const requestedName = "" + (data.name || "anonymous");
-        
+
         // Don't let people use ridiculously long names. (This is also enforced on the client,
         // so if they get here they are not using the intended client.)
         if (requestedName.length > 32) {
@@ -576,6 +580,11 @@ export class ChatRoom {
 
         // Deliver all the messages we queued up since the user connected.
         session.blockedMessages.forEach(queued => {
+          // Apply JSON if we weren't given a string to start with.
+          if (typeof queued !== "string") {
+            queued = JSON.stringify(queued);
+          }
+
           webSocket.send(queued);
         });
         delete session.blockedMessages;
