@@ -33,12 +33,21 @@
       height: calc(100vh - 32px - 5em);
     }
 
-    #room-info {
+    #right-sidebar {
       position: fixed;
       right: 0;
       top: 0;
+      bottom: 32px;
       width: 200px;
+      display: flex;
+      flex-direction: column;
       border-left: 1px solid #ddd;
+      background: white;
+      transition: bottom 0.1s ease;
+    }
+
+    #room-info {
+      flex-shrink: 0;
       border-bottom: 1px solid #ddd;
       background: #fafafa;
       padding: 8px;
@@ -166,13 +175,7 @@
     }
 
     #roster {
-      position: fixed;
-      right: 0;
-      top: 160px;
-      bottom: 32px;
-      width: 200px;
-      border-left: 1px solid #ddd;
-      transition: bottom 0.1s ease;
+      flex: 1;
       overflow-y: auto;
       background: white;
     }
@@ -182,11 +185,7 @@
     }
 
     @media(max-width:600px) {
-      #room-info {
-        display: none;
-      }
-
-      #roster {
+      #right-sidebar {
         display: none;
       }
 
@@ -455,7 +454,7 @@
       border-left: 1px solid #ddd;
       cursor: pointer;
       font-size: 18px;
-      z-index: 10;
+      z-index: 101;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -465,9 +464,21 @@
       background: #e0e0e0;
     }
 
-    #hashtag-toggle.active {
-      background: #1da1f2;
-      color: white;
+    #hashtag-toggle .hashtag-close {
+      display: none;
+    }
+
+    /* When hashtag panel is open, change the toggle button appearance */
+    body:has(#hashtag-panel.visible) #hashtag-toggle {
+      color: black;
+    }
+
+    body:has(#hashtag-panel.visible) #hashtag-toggle .hashtag-icon {
+      display: none;
+    }
+
+    body:has(#hashtag-panel.visible) #hashtag-toggle .hashtag-close {
+      display: block;
     }
 
     .hashtag-item {
@@ -586,8 +597,6 @@
   <div id="hashtag-panel">
     <h3>
       <span>📌 Hashtags</span>
-      <button id="hashtag-close" style="background:none;border:none;cursor:pointer;font-size:18px;"
-        title="Close">✕</button>
     </h3>
     <div id="hashtag-list"></div>
   </div>
@@ -595,28 +604,57 @@
     <div id="chatlog">
       <div id="spacer"></div>
     </div>
-    <div id="room-info">
-      <h3>🏠 Room Info</h3>
-      <div id="room-name-container">
-        <div id="room-name-display"></div>
-        <input type="text" id="room-name-input" />
+    <div id="right-sidebar">
+      <div id="room-info">
+        <h3>🏠 Room Info</h3>
+        <div id="room-name-container">
+          <div id="room-name-display"></div>
+          <input type="text" id="room-name-input" />
+        </div>
+        <div id="room-description-container">
+          <div id="room-description-label">📝 Description (click to edit)</div>
+          <textarea id="room-note" placeholder="Add room description..."></textarea>
+        </div>
       </div>
-      <div id="room-description-container">
-        <div id="room-description-label">📝 Description (click to edit)</div>
-        <textarea id="room-note" placeholder="Add room description..."></textarea>
+      <div id="roster">
+        <h3>👥 Online Members</h3>
       </div>
-    </div>
-    <div id="roster">
-      <h3>👥 Online Members</h3>
     </div>
     <textarea id="chat-input" rows="1" placeholder="Type a message..."></textarea>
     <input type="file" id="file-input" accept="image/*,application/pdf,.doc,.docx,.txt">
     <button type="button" id="file-upload-btn" title="Upload file">📎</button>
-    <button type="button" id="hashtag-toggle" title="Toggle hashtags">#</button>
+    <button type="button" id="hashtag-toggle" title="Toggle hashtags">
+      <span class="hashtag-icon">#</span>
+      <span class="hashtag-close">✕</span>
+    </button>
   </form>
 </body>
 <script type="text/javascript">
+  function createReactiveState(initialState) {
+    const listeners = new Set();
 
+    const proxy = new Proxy(initialState, {
+      get(target, property, receiver) {
+        return Reflect.get(target, property, receiver)
+      },
+
+      set(target, property, value, receiver) {
+        const oldValue = target[property];
+        const success = Reflect.set(target, property, value, receiver)
+        if (success && oldValue !== value) {
+          listeners.forEach(listener => listener(property, value, oldValue))
+        }
+      }
+    })
+
+    return {
+      state: proxy,
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener)
+      }
+    }
+  }
   // System message custom element
   class SystemMessage extends HTMLElement {
     connectedCallback() {
@@ -1167,12 +1205,18 @@
   }
 
   // Room info state variables (declared at module level for WebSocket access)
-  let currentRoomName = "";
-  let currentRoomDescription = "";
-  let isLocalUpdate = false; // Track if we're making a local update
   let urlRoomHash = ""; // Store the room hash from URL
-  let roomInfoNameDisplay, roomInfoNameInput, roomInfoNoteTextarea, roomInfoDescriptionLabel;
-  let updateDocumentTitle; // Function reference
+  let roomInfoNameDisplay = document.querySelector("#room-name-display");
+  let roomInfoNameInput = document.querySelector("#room-name-input");
+  let roomInfoNoteTextarea = document.querySelector("#room-note");
+  let roomInfoDescriptionLabel = document.querySelector("#room-description-label");
+
+  let documentTitlePrefix = "";
+  const { state: roomInfo, subscribe: subscribeRoomInfo } = createReactiveState({
+    name: "",
+    description: "",
+    isLocalUpdate: false
+  });
 
   function startChat() {
     roomForm.remove();
@@ -1190,52 +1234,49 @@
     // Save to room history
     addToRoomHistory(roomname);
 
-    // Initialize room info display
-    roomInfoNameDisplay = document.querySelector("#room-name-display");
-    roomInfoNameInput = document.querySelector("#room-name-input");
-    roomInfoNoteTextarea = document.querySelector("#room-note");
-    roomInfoDescriptionLabel = document.querySelector("#room-description-label");
+    // Initialize reactive room info state
+    const initialRoomName = roomname.length === 64 ? "Private Room" : "#" + roomname;
+    urlRoomHash = roomname.length === 64 ? "" : "#" + roomname;
+    roomInfo.name = initialRoomName;
 
-    // Set initial room name
-    if (roomname.length === 64) {
-      currentRoomName = "Private Room";
-      urlRoomHash = ""; // Private rooms don't need hash display
-    } else {
-      currentRoomName = roomname;
-      urlRoomHash = "#" + roomname; // Store the URL hash
-    }
-    roomInfoNameDisplay.textContent = currentRoomName;
-    
-    // Update document title
-    // If custom name is set and different from URL hash, show both
-    function updateDocumentTitle(customName) {
-      let title = customName;
-      
-      // If custom name is set and different from the original roomname, append the URL hash
-      if (customName && customName !== roomname && urlRoomHash) {
-        title = customName + " " + urlRoomHash;
+    // Set up reactive listener for document title updates
+    subscribeRoomInfo((property, newValue, oldValue) => {
+      if (property === 'name') {
+        roomInfoNameDisplay.textContent = newValue;
+
+        // Update document title
+        let title = newValue;
+        if (newValue && newValue !== roomname && urlRoomHash) {
+          title = newValue + " " + urlRoomHash;
+        }
+        documentTitlePrefix = title;
+        document.title = documentTitlePrefix + " - Workers Chat";
+      } else if (property === 'description') {
+        roomInfoNoteTextarea.value = newValue;
+
+        // Show or hide textarea based on content
+        if (newValue.trim()) {
+          roomInfoNoteTextarea.classList.add("visible");
+        } else {
+          roomInfoNoteTextarea.classList.remove("visible");
+        }
       }
-      
-      document.title = title + " - Workers Chat";
-    }
-    updateDocumentTitle(currentRoomName);
+    });
+
+    // Set initial display
+    roomInfoNameDisplay.textContent = roomInfo.name;
+    documentTitlePrefix = roomInfo.name;
+    document.title = documentTitlePrefix + " - Workers Chat";
 
     // Load room info from server
     async function loadRoomInfo() {
       try {
         const data = await api.getRoomInfo(roomname);
         if (data.name) {
-          currentRoomName = data.name;
-          roomInfoNameDisplay.textContent = currentRoomName;
-          updateDocumentTitle(currentRoomName);
+          roomInfo.name = data.name;
         }
         if (data.note) {
-          currentRoomDescription = data.note;
-          roomInfoNoteTextarea.value = data.note;
-          // Show textarea if there's content
-          if (data.note.trim()) {
-            roomInfoNoteTextarea.classList.add("visible");
-          }
+          roomInfo.description = data.note;
         }
       } catch (err) {
         console.error('Failed to load room info:', err);
@@ -1243,9 +1284,12 @@
     }
 
     // Save room info to server
-    async function saveRoomInfo(data) {
+    async function saveRoomInfo() {
       try {
-        await api.updateRoomInfo(roomname, data);
+        await api.updateRoomInfo(roomname, {
+          name: roomInfo.name,
+          note: roomInfo.description
+        });
       } catch (err) {
         console.error('Failed to save room info:', err);
       }
@@ -1259,21 +1303,19 @@
       event.stopPropagation();
       roomInfoNameDisplay.style.display = "none";
       roomInfoNameInput.style.display = "block";
-      roomInfoNameInput.value = currentRoomName;
+      roomInfoNameInput.value = roomInfo.name;
       roomInfoNameInput.focus();
       roomInfoNameInput.select();
     });
 
     roomInfoNameInput.addEventListener("blur", () => {
       const newName = roomInfoNameInput.value.trim();
-      if (newName && newName !== currentRoomName) {
-        isLocalUpdate = true;
-        currentRoomName = newName;
-        roomInfoNameDisplay.textContent = newName;
-        updateDocumentTitle(newName);
-        saveRoomInfo({ name: newName, note: currentRoomDescription });
+      if (newName && newName !== roomInfo.name) {
+        roomInfo.isLocalUpdate = true;
+        roomInfo.name = newName;
+        saveRoomInfo();
         // Reset flag after a short delay
-        setTimeout(() => { isLocalUpdate = false; }, 500);
+        setTimeout(() => { roomInfo.isLocalUpdate = false; }, 500);
       }
       roomInfoNameInput.style.display = "none";
       roomInfoNameDisplay.style.display = "block";
@@ -1284,7 +1326,7 @@
         event.preventDefault();
         roomInfoNameInput.blur();
       } else if (event.key === "Escape") {
-        roomInfoNameInput.value = currentRoomName;
+        roomInfoNameInput.value = roomInfo.name;
         roomInfoNameInput.blur();
       }
     });
@@ -1305,11 +1347,11 @@
     roomInfoNoteTextarea.addEventListener("input", () => {
       clearTimeout(saveNoteTimeout);
       saveNoteTimeout = setTimeout(() => {
-        isLocalUpdate = true;
-        currentRoomDescription = roomInfoNoteTextarea.value;
-        saveRoomInfo({ name: currentRoomName, note: currentRoomDescription });
+        roomInfo.isLocalUpdate = true;
+        roomInfo.description = roomInfoNoteTextarea.value;
+        saveRoomInfo();
         // Reset flag after a short delay
-        setTimeout(() => { isLocalUpdate = false; }, 500);
+        setTimeout(() => { roomInfo.isLocalUpdate = false; }, 500);
       }, 1000);
     });
 
@@ -1343,9 +1385,12 @@
       let hashtagBtn = document.querySelector("#hashtag-toggle");
       hashtagBtn.style.bottom = newHeight + 'px';
 
-      // Adjust chatlog, roster, and hashtag panel bottom position
+      // Adjust chatlog, right-sidebar, and hashtag panel bottom position
       chatlog.style.bottom = newHeight + 'px';
-      roster.style.bottom = newHeight + 'px';
+      let rightSidebar = document.querySelector("#right-sidebar");
+      if (rightSidebar) {
+        rightSidebar.style.bottom = newHeight + 'px';
+      }
       if (hashtagPanel) {
         hashtagPanel.style.bottom = newHeight + 'px';
       }
@@ -1423,12 +1468,6 @@
       if (hashtagPanel.classList.contains('visible')) {
         loadHashtags();
       }
-    });
-
-    // Hashtag panel close button
-    document.querySelector("#hashtag-close").addEventListener("click", event => {
-      event.stopPropagation();
-      hashtagPanel.classList.remove('visible');
     });
 
     // Load hashtags initially (with a delay to let messages load first)
@@ -1584,30 +1623,20 @@
       } else if (data.roomInfoUpdate) {
         // Room info has been updated, refresh the display
         // Skip if this is our own update to avoid flickering
-        if (!isLocalUpdate) {
+        if (!roomInfo.isLocalUpdate) {
           const info = data.roomInfoUpdate;
           let updated = false;
-          
-          if (info.name !== undefined && info.name !== currentRoomName) {
-            currentRoomName = info.name;
-            roomInfoNameDisplay.textContent = info.name;
-            updateDocumentTitle(info.name);
+
+          if (info.name !== undefined && info.name !== roomInfo.name) {
+            roomInfo.name = info.name;
             updated = true;
           }
-          
-          if (info.note !== undefined && info.note !== currentRoomDescription) {
-            currentRoomDescription = info.note;
-            roomInfoNoteTextarea.value = info.note;
-            
-            // Show or hide textarea based on content
-            if (info.note.trim()) {
-              roomInfoNoteTextarea.classList.add("visible");
-            } else {
-              roomInfoNoteTextarea.classList.remove("visible");
-            }
+
+          if (info.note !== undefined && info.note !== roomInfo.description) {
+            roomInfo.description = info.note;
             updated = true;
           }
-          
+
           // Show a notification that room info was updated
           if (updated) {
             addSystemMessage("* Room info has been updated");
@@ -1660,8 +1689,7 @@
           );
           addSystemMessage(
             "* WARNING: Participants in this chat are random people on the internet. " +
-            "Names are not authenticated; anyone can pretend to be anyone. The people " +
-            "you are chatting with are NOT Cloudflare employees. Chat history is saved."
+            "Names are not authenticated; anyone can pretend to be anyone.Chat history is saved."
           );
           if (roomname.length == 64) {
             addSystemMessage(
@@ -1669,7 +1697,9 @@
             );
           } else {
             addSystemMessage(
-              "* Welcome to #" + roomname + ". Say hi!"
+              "* Welcome to " +
+              documentTitlePrefix +
+              ". Say hi!"
             );
           }
         } else if (isReconnecting) {
