@@ -30,6 +30,7 @@ body {
   overflow-y: auto;
   padding: 8px;
   overflow-wrap: break-word;
+  transition: bottom 0.1s ease;
 }
 #chatlog span.username {
   font-weight: bold;
@@ -58,6 +59,7 @@ p:last-of-type {
   bottom: 32px;
   width: 200px;
   border-left: none;
+  transition: bottom 0.1s ease;
 }
 
 ::-webkit-scrollbar {
@@ -72,26 +74,36 @@ p:last-of-type {
 #chat-input {
   position: fixed;
   width: calc(100% - 40px);
-  height: 32px;
+  min-height: 32px;
+  max-height: 150px;
   bottom: 0;
   left: 0;
   border: none;
   border-top: none;
   padding-left: 32px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-right: 8px;
   outline: none;
+  resize: none;
+  overflow-y: auto;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  line-height: 1.2;
 }
 #file-upload-btn {
   position: fixed;
   width: 40px;
-  height: 32px;
+  min-height: 32px;
   bottom: 0;
   right: 0;
   border: none;
   background: #f0f0f0;
   cursor: pointer;
   font-size: 20px;
-  line-height: 32px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 #file-upload-btn:hover {
   background: #e0e0e0;
@@ -211,7 +223,7 @@ p:last-of-type {
         <div id="spacer"></div>
       </div>
       <div id="roster"></div>
-      <input id="chat-input">
+      <textarea id="chat-input" rows="1" placeholder="Type a message..."></textarea>
       <input type="file" id="file-input" accept="image/*,application/pdf,.doc,.docx,.txt">
       <button type="button" id="file-upload-btn" title="Upload file">📎</button>
     </form>
@@ -328,12 +340,34 @@ function startChat() {
 
   document.location.hash = "#" + roomname;
 
+  // Auto-resize textarea function
+  function autoResizeTextarea() {
+    chatInput.style.height = 'auto';
+    let newHeight = Math.min(chatInput.scrollHeight, 150);
+    chatInput.style.height = newHeight + 'px';
+    
+    // Adjust file upload button height to match
+    let btn = document.querySelector("#file-upload-btn");
+    btn.style.height = newHeight + 'px';
+    
+    // Adjust chatlog and roster bottom position
+    chatlog.style.bottom = newHeight + 'px';
+    roster.style.bottom = newHeight + 'px';
+  }
+
   chatInput.addEventListener("keydown", event => {
-    if (event.keyCode == 38) {
-      // up arrow
+    // Enter to send (without shift), Shift+Enter for new line
+    if (event.keyCode == 13 && !event.shiftKey) {
+      event.preventDefault();
+      chatroom.dispatchEvent(new Event('submit'));
+      return;
+    }
+    
+    if (event.keyCode == 38 && chatInput.value === "") {
+      // up arrow (only if input is empty)
       chatlog.scrollBy(0, -50);
-    } else if (event.keyCode == 40) {
-      // down arrow
+    } else if (event.keyCode == 40 && chatInput.value === "") {
+      // down arrow (only if input is empty)
       chatlog.scrollBy(0, 50);
     } else if (event.keyCode == 33) {
       // page up
@@ -352,6 +386,7 @@ function startChat() {
       if (message.length > 0) {
         currentWebSocket.send(JSON.stringify({message: message}));
         chatInput.value = "";
+        autoResizeTextarea(); // Reset height after sending
         
         // Scroll to bottom whenever sending a message.
         chatlog.scrollBy(0, 1e8);
@@ -365,6 +400,7 @@ function startChat() {
     if (event.currentTarget.value.length > 6000) {
       event.currentTarget.value = event.currentTarget.value.slice(0, 6000);
     }
+    autoResizeTextarea();
   });
 
   chatlog.addEventListener("scroll", event => {
@@ -372,6 +408,8 @@ function startChat() {
   });
 
   chatInput.focus();
+  autoResizeTextarea(); // Initialize textarea size
+  
   document.body.addEventListener("click", event => {
     // If the user clicked somewhere in the window without selecting any text, focus the chat
     // input.
