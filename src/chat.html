@@ -1470,19 +1470,6 @@
       }
     });
 
-    // Load hashtags initially (with a delay to let messages load first)
-    setTimeout(() => {
-      loadHashtags().then(() => {
-        // Check if there's a tag filter in the URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const tagParam = urlParams.get('tag');
-        if (tagParam) {
-          // Apply the filter from URL
-          window.filterByHashtag(tagParam);
-        }
-      });
-    }, 2000);
-
     // Upload file function
     async function uploadFile(file, fileName = null) {
       try {
@@ -1702,6 +1689,16 @@
               ". Say hi!"
             );
           }
+          
+          loadHashtags().then(() => {
+            // Check if there's a tag filter in the URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const tagParam = urlParams.get('tag');
+            if (tagParam) {
+              // Apply the filter from URL
+              window.filterByHashtag(tagParam);
+            }
+          });
         } else if (isReconnecting) {
           // Show reconnection success message
           addSystemMessage("* Reconnected successfully.");
