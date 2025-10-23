@@ -339,8 +339,8 @@ function startChat() {
   });
 
   chatInput.addEventListener("input", event => {
-    if (event.currentTarget.value.length > 256) {
-      event.currentTarget.value = event.currentTarget.value.slice(0, 256);
+    if (event.currentTarget.value.length > 6000) {
+      event.currentTarget.value = event.currentTarget.value.slice(0, 6000);
     }
   });
 
