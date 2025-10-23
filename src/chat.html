@@ -330,6 +330,25 @@
   </form>
 </body>
 <script type="text/javascript">
+
+  // System message custom element
+  class SystemMessage extends HTMLElement {
+    connectedCallback() {
+      this.render();
+    }
+    render() {
+      const message = this.getAttribute('message');
+      this.innerHTML = '';
+      const sysSpan = document.createElement('span');
+      sysSpan.className = 'system-message';
+      sysSpan.textContent = message;
+      sysSpan.style.color = '#888';
+      sysSpan.style.fontStyle = 'italic';
+      this.appendChild(sysSpan);
+    }
+  }
+  customElements.define('system-message', SystemMessage);
+
   // Define custom element for chat messages
   class ChatMessage extends HTMLElement {
     connectedCallback() {
@@ -658,7 +677,7 @@
     roomname = roomname.replace(/[^a-zA-Z0-9_-]/g, "").replace(/_/g, "-").toLowerCase();
 
     if (roomname.length > 32 && !roomname.match(/^[0-9a-f]{64}$/)) {
-      addChatMessage("ERROR", "Invalid room name.");
+      addSystemMessage("ERROR: Invalid room name.");
       return;
     }
 
@@ -756,7 +775,7 @@
       if (!file) return;
 
       // Show uploading message
-      addChatMessage(null, "* Uploading file...");
+      addSystemMessage("* Uploading file...");
 
       try {
         // Create form data
@@ -771,7 +790,7 @@
 
         if (!response.ok) {
           const error = await response.json();
-          addChatMessage(null, "* Upload failed: " + (error.error || "Unknown error"));
+          addSystemMessage("* Upload failed: " + (error.error || "Unknown error"));
           return;
         }
 
@@ -786,7 +805,7 @@
           fileInput.value = "";
         }
       } catch (err) {
-        addChatMessage(null, "* Upload failed: " + err.message);
+        addSystemMessage("* Upload failed: " + err.message);
       }
     });
 
@@ -845,7 +864,7 @@
       let data = JSON.parse(event.data);
 
       if (data.error) {
-        addChatMessage(null, "* Error: " + data.error, data.timestamp || Date.now());
+        addSystemMessage("* Error: " + data.error);
       } else if (data.joined) {
         let userItem = document.createElement("div");
         userItem.className = "user-item";
@@ -887,19 +906,23 @@
         // All pre-join messages have been delivered.
         if (!wroteWelcomeMessages) {
           wroteWelcomeMessages = true;
-          addChatMessage(null,
+          addSystemMessage(
             "* This is a app built with Cloudflare Workers Durable Objects. The source code " +
-            "can be found at: https://github.com/bytemain/workers-chat", Date.now());
-          addChatMessage(null,
+            "can be found at: https://github.com/bytemain/workers-chat"
+          );
+          addSystemMessage(
             "* WARNING: Participants in this chat are random people on the internet. " +
             "Names are not authenticated; anyone can pretend to be anyone. The people " +
-            "you are chatting with are NOT Cloudflare employees. Chat history is saved.", Date.now());
+            "you are chatting with are NOT Cloudflare employees. Chat history is saved."
+          );
           if (roomname.length == 64) {
-            addChatMessage(null,
-              "* This is a private room. You can invite someone to the room by sending them the URL.", Date.now());
+            addSystemMessage(
+              "* This is a private room. You can invite someone to the room by sending them the URL."
+            );
           } else {
-            addChatMessage(null,
-              "* Welcome to #" + roomname + ". Say hi!", Date.now());
+            addSystemMessage(
+              "* Welcome to #" + roomname + ". Say hi!"
+            );
           }
         }
       } else {
@@ -929,6 +952,18 @@
   // Global variable for cross-day pagination
   let lastMsgDateStr = null;
 
+
+  function addSystemMessage(text) {
+    let p = document.createElement("p");
+    const sysMsg = document.createElement('system-message');
+    sysMsg.setAttribute('message', text);
+    p.appendChild(sysMsg);
+    chatlog.appendChild(p);
+    if (isAtBottom) {
+      chatlog.scrollBy(0, 1e8);
+    }
+  }
+
   function addChatMessage(name, text, ts) {
     // ts: message timestamp (ms)
     let timestamp = ts;
@@ -952,11 +987,9 @@
     }
 
     let p = document.createElement("p");
-    // Create custom chat message element
+
     const chatMessage = document.createElement('chat-message');
-    if (name) {
-      chatMessage.setAttribute('username', name);
-    }
+    chatMessage.setAttribute('username', name);
     chatMessage.setAttribute('message', text);
     chatMessage.setAttribute('timestamp', String(timestamp));
     p.appendChild(chatMessage);
