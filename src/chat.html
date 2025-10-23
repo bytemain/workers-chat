@@ -839,9 +839,9 @@
 
         // Don't try to reconnect too rapidly.
         let timeSinceLastJoin = Date.now() - startTime;
-        if (timeSinceLastJoin < 10000) {
-          // Less than 10 seconds elapsed since last join. Pause a bit.
-          await new Promise(resolve => setTimeout(resolve, 10000 - timeSinceLastJoin));
+        if (timeSinceLastJoin < 3000) {
+          // Less than 3 seconds elapsed since last join. Pause a bit.
+          await new Promise(resolve => setTimeout(resolve, 3000 - timeSinceLastJoin));
         }
 
         // OK, reconnect now!
@@ -937,10 +937,12 @@
 
     ws.addEventListener("close", event => {
       console.log("WebSocket closed, reconnecting:", event.code, event.reason);
+      addSystemMessage("* Disconnected from server. Reconnecting...");
       rejoin();
     });
     ws.addEventListener("error", event => {
       console.log("WebSocket error, reconnecting:", event);
+      addSystemMessage("* Connection error. Reconnecting...");
       rejoin();
     });
   }
