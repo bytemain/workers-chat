@@ -58,6 +58,7 @@
 // available for assets served this way is very limited; larger sites should continue to use Workers
 // KV to serve assets.)
 import HTML from "./chat.html";
+import { HashtagManager } from "./hashtag.mjs";
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -242,6 +243,9 @@ export class ChatRoom {
     // `env` is our environment bindings (discussed earlier).
     this.env = env;
 
+    // Initialize hashtag manager
+    this.hashtagManager = new HashtagManager(this.storage);
+
     // We will track metadata for each client WebSocket object in `sessions`.
     this.sessions = new Map();
     this.state.getWebSockets().forEach((webSocket) => {
@@ -366,6 +370,60 @@ export class ChatRoom {
             fileSize: file.size
           }), {
             headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        case "/hashtags": {
+          // GET /hashtags - Get all hashtags used in this room
+          if (request.method !== "GET") {
+            return new Response("Method not allowed", { status: 405 });
+          }
+
+          const tags = await this.hashtagManager.getAllHashtags(100);
+          return new Response(JSON.stringify({ hashtags: tags }), {
+            headers: { 
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*"
+            }
+          });
+        }
+
+        case "/hashtag": {
+          // GET /hashtag?tag=xxx - Get messages for a specific hashtag
+          if (request.method !== "GET") {
+            return new Response("Method not allowed", { status: 405 });
+          }
+
+          const tag = url.searchParams.get("tag");
+          if (!tag) {
+            return new Response(JSON.stringify({ error: "Missing 'tag' parameter" }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          const messages = await this.hashtagManager.getMessagesForTag(tag, 100);
+          return new Response(JSON.stringify({ tag, messages }), {
+            headers: { 
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*"
+            }
+          });
+        }
+
+        case "/hashtag/search": {
+          // GET /hashtag/search?q=xxx - Search hashtags by prefix
+          if (request.method !== "GET") {
+            return new Response("Method not allowed", { status: 405 });
+          }
+
+          const query = url.searchParams.get("q") || "";
+          const tags = await this.hashtagManager.searchHashtags(query, 20);
+          return new Response(JSON.stringify({ query, results: tags }), {
+            headers: { 
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*"
+            }
           });
         }
 
@@ -508,6 +566,9 @@ export class ChatRoom {
       // Save message.
       let key = new Date(data.timestamp).toISOString();
       await this.storage.put(key, dataStr);
+
+      // Index hashtags in the message
+      await this.hashtagManager.indexMessage(key, data.message, data.timestamp);
     } catch (err) {
       // Report any exceptions directly back to the client. As with our handleErrors() this
       // probably isn't what you'd want to do in production, but it's convenient when testing.
