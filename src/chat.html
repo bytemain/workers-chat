@@ -224,6 +224,60 @@ p:last-of-type {
   width: 20em;
 }
 
+#room-history {
+  margin-top: 2em;
+  font-size: 0.6em;
+}
+
+#room-history h3 {
+  margin: 0 0 0.5em 0;
+  color: #666;
+}
+
+#room-history-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  justify-content: center;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.room-history-item {
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.5em 1em;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.room-history-item:hover {
+  background: #e0e0e0;
+  border-color: #ccc;
+}
+
+.room-history-item .room-name {
+  font-weight: bold;
+}
+
+.room-history-item .remove-btn {
+  background: transparent;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 1.2em;
+  padding: 0 0.2em;
+  line-height: 1;
+}
+
+.room-history-item .remove-btn:hover {
+  color: #f00;
+}
+
 </style>
 
 <!--===================================================================================-->
@@ -241,6 +295,10 @@ p:last-of-type {
       <input id="room-name" placeholder="room name"><button id="go-public">Go &raquo;</button>
       <p>OR</p>
       <button id="go-private">Create a Private Room &raquo;</button>
+      <div id="room-history">
+        <h3>Recent Rooms</h3>
+        <div id="room-history-list"></div>
+      </div>
     </form>
     <form id="chatroom" action="/fake-form-action">
       <div id="chatlog">
@@ -282,6 +340,78 @@ let hostname = window.location.host;
 if (hostname == "") {
   // Probably testing the HTML locally.
   hostname = "edge-chat-demo.cloudflareworkers.com";
+}
+
+// Room history management
+function getRoomHistory() {
+  const history = localStorage.getItem('chatRoomHistory');
+  return history ? JSON.parse(history) : [];
+}
+
+function addToRoomHistory(roomName) {
+  let history = getRoomHistory();
+  
+  // Remove if already exists (to move to front)
+  history = history.filter(item => item.name !== roomName);
+  
+  // Add to front
+  history.unshift({
+    name: roomName,
+    timestamp: Date.now()
+  });
+  
+  // Keep only last 10 rooms
+  history = history.slice(0, 10);
+  
+  localStorage.setItem('chatRoomHistory', JSON.stringify(history));
+}
+
+function removeFromRoomHistory(roomName) {
+  let history = getRoomHistory();
+  history = history.filter(item => item.name !== roomName);
+  localStorage.setItem('chatRoomHistory', JSON.stringify(history));
+}
+
+function displayRoomHistory() {
+  const historyList = document.querySelector("#room-history-list");
+  const history = getRoomHistory();
+  
+  if (history.length === 0) {
+    document.querySelector("#room-history").style.display = 'none';
+    return;
+  }
+  
+  document.querySelector("#room-history").style.display = 'block';
+  historyList.innerHTML = '';
+  
+  history.forEach(item => {
+    const div = document.createElement("div");
+    div.className = "room-history-item";
+    
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "room-name";
+    nameSpan.innerText = item.name.length === 64 ? 'Private Room' : '#' + item.name;
+    nameSpan.title = 'Click to enter ' + item.name;
+    div.appendChild(nameSpan);
+    
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "remove-btn";
+    removeBtn.innerText = "×";
+    removeBtn.title = "Remove from history";
+    removeBtn.onclick = (e) => {
+      e.stopPropagation();
+      removeFromRoomHistory(item.name);
+      displayRoomHistory();
+    };
+    div.appendChild(removeBtn);
+    
+    div.onclick = () => {
+      roomname = item.name;
+      startChat();
+    };
+    
+    historyList.appendChild(div);
+  });
 }
 
 function startNameChooser() {
@@ -328,6 +458,9 @@ function startRoomChooser() {
     startChat();
     return;
   }
+
+  // Display room history
+  displayRoomHistory();
 
   roomForm.addEventListener("submit", event => {
     event.preventDefault();
@@ -381,6 +514,9 @@ function startChat() {
   }
 
   document.location.hash = "#" + roomname;
+
+  // Save to room history
+  addToRoomHistory(roomname);
 
   // Auto-resize textarea function
   function autoResizeTextarea() {
