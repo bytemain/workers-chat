@@ -329,11 +329,126 @@
     <button type="button" id="file-upload-btn" title="Upload file">📎</button>
   </form>
 </body>
-
-<!--===================================================================================-->
-<!-- Client-side JavaScript code for the app. -->
-
 <script type="text/javascript">
+  // Define custom element for chat messages
+  class ChatMessage extends HTMLElement {
+    connectedCallback() {
+      this.render();
+    }
+
+    render() {
+      const username = this.getAttribute('username');
+      const message = this.getAttribute('message');
+
+      // Clear existing content
+      this.innerHTML = '';
+
+      // Add username if present
+      if (username) {
+        const usernameSpan = document.createElement('span');
+        usernameSpan.className = 'username';
+        usernameSpan.textContent = username + ': ';
+        this.appendChild(usernameSpan);
+      }
+
+      // Handle file messages (check inside the element)
+      if (message.startsWith("FILE:")) {
+        this.renderFileMessage(message);
+      } else {
+        // Handle regular text messages with link detection
+        this.renderTextMessage(message);
+      }
+    }
+
+    renderFileMessage(message) {
+      const parts = message.substring(5).split("|");
+      const fileUrl = parts[0];
+      const fileName = parts[1] || "file";
+      const fileType = parts[2] || "";
+
+      // If it's an image, display it inline
+      if (fileType.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = fileUrl;
+        img.alt = fileName;
+        img.style.maxWidth = "300px";
+        img.style.maxHeight = "300px";
+        img.style.display = "block";
+        img.style.marginTop = "5px";
+        img.style.cursor = "pointer";
+        img.onclick = () => window.open(fileUrl, "_blank");
+        this.appendChild(img);
+
+        const link = document.createElement("a");
+        link.href = fileUrl;
+        link.target = "_blank";
+        link.textContent = fileName;
+        link.style.fontSize = "0.9em";
+        this.appendChild(document.createElement("br"));
+        this.appendChild(link);
+      } else {
+        // For other files, just show a download link
+        const link = document.createElement("a");
+        link.href = fileUrl;
+        link.download = fileName;
+        link.target = "_blank";
+        link.textContent = "📎 " + fileName;
+        this.appendChild(link);
+      }
+    }
+
+    renderTextMessage(text) {
+      // URL regex pattern - matches http://, https://, and www. URLs
+      const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)/g;
+      
+      let lastIndex = 0;
+      let match;
+
+      // Find all URLs in the text
+      while ((match = urlRegex.exec(text)) !== null) {
+        // Add text before the URL
+        if (match.index > lastIndex) {
+          const textNode = document.createTextNode(text.substring(lastIndex, match.index));
+          this.appendChild(textNode);
+        }
+
+        // Create link element
+        const link = document.createElement('a');
+        let url = match[0];
+        
+        // Add https:// if it's a www. link
+        if (url.startsWith('www.')) {
+          link.href = 'https://' + url;
+        } else {
+          link.href = url;
+        }
+        
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = url;
+        link.style.color = '#0066cc';
+        link.style.textDecoration = 'underline';
+        this.appendChild(link);
+
+        lastIndex = urlRegex.lastIndex;
+      }
+
+      // Add remaining text after last URL
+      if (lastIndex < text.length) {
+        const textNode = document.createTextNode(text.substring(lastIndex));
+        this.appendChild(textNode);
+      }
+
+      // If no URLs were found, just add the text as-is
+      if (lastIndex === 0) {
+        this.appendChild(document.createTextNode(text));
+      }
+    }
+  }
+
+  // Register the custom element
+  customElements.define('chat-message', ChatMessage);
+
   let currentWebSocket = null;
 
   let nameForm = document.querySelector("#name-form");
@@ -798,52 +913,17 @@
 
   function addChatMessage(name, text) {
     let p = document.createElement("p");
+    
+    // Create custom chat message element
+    const chatMessage = document.createElement('chat-message');
+    
     if (name) {
-      let tag = document.createElement("span");
-      tag.className = "username";
-      tag.innerText = name + ": ";
-      p.appendChild(tag);
+      chatMessage.setAttribute('username', name);
     }
-
-    // Check if this is a file message
-    if (text.startsWith("FILE:")) {
-      const parts = text.substring(5).split("|");
-      const fileUrl = parts[0];
-      const fileName = parts[1] || "file";
-      const fileType = parts[2] || "";
-
-      // If it's an image, display it inline
-      if (fileType.startsWith("image/")) {
-        const img = document.createElement("img");
-        img.src = fileUrl;
-        img.alt = fileName;
-        img.style.maxWidth = "300px";
-        img.style.maxHeight = "300px";
-        img.style.display = "block";
-        img.style.marginTop = "5px";
-        img.style.cursor = "pointer";
-        img.onclick = () => window.open(fileUrl, "_blank");
-        p.appendChild(img);
-
-        const link = document.createElement("a");
-        link.href = fileUrl;
-        link.target = "_blank";
-        link.innerText = fileName;
-        link.style.fontSize = "0.9em";
-        p.appendChild(document.createElement("br"));
-        p.appendChild(link);
-      } else {
-        // For other files, just show a download link
-        const link = document.createElement("a");
-        link.href = fileUrl;
-        link.download = fileName;
-        link.target = "_blank";
-        link.innerText = "📎 " + fileName;
-        p.appendChild(link);
-      }
-    } else {
-      p.appendChild(document.createTextNode(text));
-    }
+    
+    chatMessage.setAttribute('message', text);
+    
+    p.appendChild(chatMessage);
 
     // Append the new chat line, making sure that if the chatlog was scrolled to the bottom
     // before, it remains scrolled to the bottom, and otherwise the scroll position doesn't
@@ -856,6 +936,4 @@
 
   startNameChooser();
 </script>
-<!--===================================================================================-->
-
 </html>
