@@ -434,7 +434,7 @@
     renderTextMessage(text) {
       // URL regex pattern - matches http://, https://, and www. URLs
       const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)/g;
-      
+
       let lastIndex = 0;
       let match;
 
@@ -449,14 +449,14 @@
         // Create link element
         const link = document.createElement('a');
         let url = match[0];
-        
+
         // Add https:// if it's a www. link
         if (url.startsWith('www.')) {
           link.href = 'https://' + url;
         } else {
           link.href = url;
         }
-        
+
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.textContent = url;
@@ -786,7 +786,7 @@
           const fileMessage = `FILE:${result.fileUrl}|${result.fileName}|${result.fileType}`;
           currentWebSocket.send(JSON.stringify({ message: fileMessage }));
         }
-        
+
         return true;
       } catch (err) {
         addSystemMessage("* Upload failed: " + err.message);
@@ -824,13 +824,13 @@
         // Skip plain text items (let them paste normally)
         if (item.kind === "file") {
           event.preventDefault();
-          
+
           const file = item.getAsFile();
           if (!file) continue;
 
           // Determine file type for display
           const fileType = item.type.startsWith("image/") ? "image" : "file";
-          
+
           // Show uploading message
           addSystemMessage(`* Uploading pasted ${fileType}...`);
 
@@ -842,13 +842,13 @@
             const extension = file.type.split('/')[1] || 'bin';
             fileName = `pasted-${timestamp}.${extension}`;
           }
-          
+
           await uploadFile(file, fileName);
-          
+
           return; // Stop after processing the first file
         }
       }
-      
+
       // If no file was found, allow default text paste behavior
     });
 
@@ -866,6 +866,7 @@
 
   let lastSeenTimestamp = 0;
   let wroteWelcomeMessages = false;
+  let isReconnecting = false; // Track if this is a reconnection
 
   function join() {
     // If we are running via wrangler dev, use ws:
@@ -878,6 +879,7 @@
       if (!rejoined) {
         rejoined = true;
         currentWebSocket = null;
+        isReconnecting = true; // Mark as reconnecting
 
         // Clear the roster.
         while (roster.firstChild) {
@@ -945,7 +947,7 @@
             break;
           }
         }
-  } else if (data.ready) {
+      } else if (data.ready) {
         // All pre-join messages have been delivered.
         if (!wroteWelcomeMessages) {
           wroteWelcomeMessages = true;
@@ -967,6 +969,10 @@
               "* Welcome to #" + roomname + ". Say hi!"
             );
           }
+        } else if (isReconnecting) {
+          // Show reconnection success message
+          addSystemMessage("* Reconnected successfully.");
+          isReconnecting = false;
         }
       } else {
         // A regular chat message.
@@ -984,8 +990,14 @@
 
     ws.addEventListener("close", event => {
       console.log("WebSocket closed, reconnecting:", event.code, event.reason);
-      addSystemMessage("* Disconnected from server. Reconnecting...");
-      rejoin();
+      if (event.code === 1008 || event.code === 1009) {
+        // Username invalid or banned - clear saved username
+        localStorage.removeItem('chatUsername');
+        shouldReconnect = false; // Don't reconnect
+      } else {
+        addSystemMessage("* Disconnected from server. Reconnecting...");
+        rejoin();
+      }
     });
     ws.addEventListener("error", event => {
       console.log("WebSocket error, reconnecting:", event);
@@ -996,7 +1008,6 @@
 
   // Global variable for cross-day pagination
   let lastMsgDateStr = null;
-
 
   function addSystemMessage(text) {
     let p = document.createElement("p");
@@ -1015,7 +1026,7 @@
       timestamp = Date.now();
     }
     const date = new Date(timestamp);
-    const dateStr = date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+    const dateStr = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
 
     // Insert date divider if day changes
     if (lastMsgDateStr !== dateStr) {
@@ -1056,4 +1067,5 @@
 
   startNameChooser();
 </script>
+
 </html>
