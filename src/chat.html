@@ -1,841 +1,861 @@
 <!DOCTYPE html>
-<!--
-  THIS IS NOT THE INTERESTING FILE
-
-  This is just some UI code. There's nothing interesting and unique in this file. The interesting
-  thing about this demo is the server side, which is in chat.mjs.
-
-  WARNING: This was written by a systems engineer, not a web developer. It's probably bad.
--->
-
 <html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<!--===================================================================================-->
-<!-- Inline style to avoid an extra round trip before the page can render. -->
-<style type="text/css">
-* {
-  box-sizing: border-box;
-}
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
 
-#chatlog {
-  position: fixed;
-  top: 0;
-  bottom: 32px;
-  left: 0;
-  right: 200px;
-  overflow-y: auto;
-  padding: 8px;
-  overflow-wrap: break-word;
-  transition: bottom 0.1s ease;
-}
-#chatlog span.username {
-  font-weight: bold;
-}
-#spacer {
-  height: calc(100vh - 32px - 5em);
-}
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <!--===================================================================================-->
+  <style type="text/css">
+    * {
+      box-sizing: border-box;
+    }
 
-#roster {
-  font-weight: bold;
-  padding: 8px;
-}
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+    }
 
-#roster .user-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
+    #chatlog {
+      position: fixed;
+      top: 0;
+      bottom: 32px;
+      left: 0;
+      right: 200px;
+      overflow-y: auto;
+      padding: 8px;
+      overflow-wrap: break-word;
+      transition: bottom 0.1s ease;
+    }
 
-#roster .logout-btn {
-  background: transparent;
-  color: #999;
-  border: 1px solid #ddd;
-  border-radius: 3px;
-  padding: 1px 6px;
-  cursor: pointer;
-  font-size: 11px;
-  margin-left: 8px;
-}
+    #chatlog span.username {
+      font-weight: bold;
+    }
 
-#roster .logout-btn:hover {
-  background: #f5f5f5;
-  color: #666;
-  border-color: #ccc;
-}
+    #spacer {
+      height: calc(100vh - 32px - 5em);
+    }
 
-p {
-  margin-top: 0;
-  margin-bottom: 8px;
-}
-p:last-of-type {
-  margin: 0;
-}
+    #roster {
+      font-weight: bold;
+      padding: 8px;
+    }
 
-#roster {
-  position: fixed;
-  right: 0;
-  top: 0;
-  bottom: 32px;
-  width: 200px;
-  border-left: none;
-  transition: bottom 0.1s ease;
-}
+    #roster .user-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
 
-::-webkit-scrollbar {
-  display: none;
-}
+    #roster .logout-btn {
+      background: transparent;
+      color: #999;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      padding: 1px 6px;
+      cursor: pointer;
+      font-size: 11px;
+      margin-left: 8px;
+    }
 
-@media(max-width:600px) {
-  #roster { display: none; }
-  #chatlog { right: 0; }
-}
+    #roster .logout-btn:hover {
+      background: #f5f5f5;
+      color: #666;
+      border-color: #ccc;
+    }
 
-#chat-input {
-  position: fixed;
-  width: calc(100% - 40px);
-  min-height: 32px;
-  max-height: 150px;
-  bottom: 0;
-  left: 0;
-  border: none;
-  border-top: none;
-  padding-left: 32px;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  padding-right: 8px;
-  outline: none;
-  resize: none;
-  overflow-y: auto;
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 14px;
-  line-height: 1.2;
-}
-#file-upload-btn {
-  position: fixed;
-  width: 40px;
-  min-height: 32px;
-  bottom: 0;
-  right: 0;
-  border: none;
-  background: #f0f0f0;
-  cursor: pointer;
-  font-size: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-#file-upload-btn:hover {
-  background: #e0e0e0;
-}
-#file-input {
-  display: none;
-}
-#chatroom::before {
-  z-index: 1;
-  display: block;
-  content: ">";
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  width: 32px;
-  height: 32px;
-  line-height: 32px;
-  text-align: center;
-  font-weight: bold;
-  color: #888;
-  -webkit-text-stroke-width: 2px;
-}
+    p {
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
 
-#name-form {
-  position: fixed;
-  z-index: 3;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: white;
-}
+    p:last-of-type {
+      margin: 0;
+    }
 
-#name-input {
-  position: fixed;
-  font-size: 200%;
-  top: calc(50% - 1em);
-  left: calc(50% - 8em);
-  width: 16em;
-  height: 2em;
-  margin: 0;
-  text-align: center;
-  border: 1px solid #bbb;
-}
+    #roster {
+      position: fixed;
+      right: 0;
+      top: 0;
+      bottom: 32px;
+      width: 200px;
+      border-left: none;
+      transition: bottom 0.1s ease;
+    }
 
-#name-form p {
-  position: fixed;
-  top: calc(50% + 3em);
-  width: 100%;
-  text-align: center;
-}
+    ::-webkit-scrollbar {
+      display: none;
+    }
 
-#room-form {
-  position: fixed;
-  z-index: 2;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: white;
-  font-size: 200%;
-  margin-top: calc(50vh - 3em);
-  text-align: center;
-}
+    @media(max-width:600px) {
+      #roster {
+        display: none;
+      }
 
-#room-name {
-  font-size: inherit;
-  border: 1px solid #bbb;
-  height: 2em;
-  width: 16em;
-  padding-left: 1em;
-}
+      #chatlog {
+        right: 0;
+      }
+    }
 
-#room-form button {
-  font-size: inherit;
-  border: 1px solid #bbb;
-  background-color: #eee;
-  height: 2em;
-}
+    #chat-input {
+      position: fixed;
+      width: calc(100% - 40px);
+      min-height: 32px;
+      max-height: 150px;
+      bottom: 0;
+      left: 0;
+      border: none;
+      border-top: none;
+      padding-left: 32px;
+      padding-top: 8px;
+      padding-bottom: 8px;
+      padding-right: 8px;
+      outline: none;
+      resize: none;
+      overflow-y: auto;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 14px;
+      line-height: 1.2;
+    }
 
-@media(max-width:660px) {
-  #name-input, #room-form { font-size: 150%; }
-  #name-form p { font-size: 75%; }
-}
-@media(max-width:500px) {
-  #name-input, #room-form { font-size: 100%; }
-  #name-form p { font-size: 50%; }
-}
+    #file-upload-btn {
+      position: fixed;
+      width: 40px;
+      min-height: 32px;
+      bottom: 0;
+      right: 0;
+      border: none;
+      background: #f0f0f0;
+      cursor: pointer;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-#go-public {
-  width: 4em;
-}
-#go-private {
-  width: 20em;
-}
+    #file-upload-btn:hover {
+      background: #e0e0e0;
+    }
 
-#room-history {
-  margin-top: 2em;
-  font-size: 0.6em;
-}
+    #file-input {
+      display: none;
+    }
 
-#room-history h3 {
-  margin: 0 0 0.5em 0;
-  color: #666;
-}
+    #chatroom::before {
+      z-index: 1;
+      display: block;
+      content: ">";
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 32px;
+      height: 32px;
+      line-height: 32px;
+      text-align: center;
+      font-weight: bold;
+      color: #888;
+      -webkit-text-stroke-width: 2px;
+    }
 
-#room-history-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5em;
-  justify-content: center;
-  max-width: 600px;
-  margin: 0 auto;
-}
+    #name-form {
+      position: fixed;
+      z-index: 3;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: white;
+    }
 
-.room-history-item {
-  background: #f0f0f0;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 0.5em 1em;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5em;
-}
+    #name-input {
+      position: fixed;
+      font-size: 200%;
+      top: calc(50% - 1em);
+      left: calc(50% - 8em);
+      width: 16em;
+      height: 2em;
+      margin: 0;
+      text-align: center;
+      border: 1px solid #bbb;
+    }
 
-.room-history-item:hover {
-  background: #e0e0e0;
-  border-color: #ccc;
-}
+    #name-form p {
+      position: fixed;
+      top: calc(50% + 3em);
+      width: 100%;
+      text-align: center;
+    }
 
-.room-history-item .room-name {
-  font-weight: bold;
-}
+    #room-form {
+      position: fixed;
+      z-index: 2;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: white;
+      font-size: 200%;
+      margin-top: calc(50vh - 3em);
+      text-align: center;
+    }
 
-.room-history-item .remove-btn {
-  background: transparent;
-  border: none;
-  color: #999;
-  cursor: pointer;
-  font-size: 1.2em;
-  padding: 0 0.2em;
-  line-height: 1;
-}
+    #room-name {
+      font-size: inherit;
+      border: 1px solid #bbb;
+      height: 2em;
+      width: 16em;
+      padding-left: 1em;
+    }
 
-.room-history-item .remove-btn:hover {
-  color: #f00;
-}
+    #room-form button {
+      font-size: inherit;
+      border: 1px solid #bbb;
+      background-color: #eee;
+      height: 2em;
+    }
 
-</style>
+    @media(max-width:660px) {
 
-<!--===================================================================================-->
-<!-- The actual HTML. There is not much of it. -->
+      #name-input,
+      #room-form {
+        font-size: 150%;
+      }
 
-  </head>
-  <body>
-    <form id="name-form" action="/fake-form-action">
-      <input id="name-input" placeholder="your name">
-      <p>This chat runs entirely on the edge, powered by<br>
-        <a href="https://blog.cloudflare.com/introducing-workers-durable-objects" target="_blank">Cloudflare Workers Durable Objects</a></p>
-    </form>
-    <form id="room-form" action="/fake-form-action">
-      <p>Enter a public room:</p>
-      <input id="room-name" placeholder="room name"><button id="go-public">Go &raquo;</button>
-      <p>OR</p>
-      <button id="go-private">Create a Private Room &raquo;</button>
-      <div id="room-history">
-        <h3>Recent Rooms</h3>
-        <div id="room-history-list"></div>
-      </div>
-    </form>
-    <form id="chatroom" action="/fake-form-action">
-      <div id="chatlog">
-        <div id="spacer"></div>
-      </div>
-      <div id="roster"></div>
-      <textarea id="chat-input" rows="1" placeholder="Type a message..."></textarea>
-      <input type="file" id="file-input" accept="image/*,application/pdf,.doc,.docx,.txt">
-      <button type="button" id="file-upload-btn" title="Upload file">📎</button>
-    </form>
-  </body>
+      #name-form p {
+        font-size: 75%;
+      }
+    }
+
+    @media(max-width:500px) {
+
+      #name-input,
+      #room-form {
+        font-size: 100%;
+      }
+
+      #name-form p {
+        font-size: 50%;
+      }
+    }
+
+    #go-public {
+      width: 4em;
+    }
+
+    #go-private {
+      width: 20em;
+    }
+
+    #room-history {
+      margin-top: 2em;
+      font-size: 0.6em;
+    }
+
+    #room-history h3 {
+      margin: 0 0 0.5em 0;
+      color: #666;
+    }
+
+    #room-history-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5em;
+      justify-content: center;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .room-history-item {
+      background: #f0f0f0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 0.5em 1em;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+    }
+
+    .room-history-item:hover {
+      background: #e0e0e0;
+      border-color: #ccc;
+    }
+
+    .room-history-item .room-name {
+      font-weight: bold;
+    }
+
+    .room-history-item .remove-btn {
+      background: transparent;
+      border: none;
+      color: #999;
+      cursor: pointer;
+      font-size: 1.2em;
+      padding: 0 0.2em;
+      line-height: 1;
+    }
+
+    .room-history-item .remove-btn:hover {
+      color: #f00;
+    }
+  </style>
+
+</head>
+
+<body>
+  <form id="name-form" action="/fake-form-action">
+    <input id="name-input" placeholder="your name">
+    <p>This chat runs entirely on the edge, powered by<br>
+      <a href="https://blog.cloudflare.com/introducing-workers-durable-objects" target="_blank">Cloudflare Workers
+        Durable Objects</a>
+    </p>
+  </form>
+  <form id="room-form" action="/fake-form-action">
+    <p>Enter a public room:</p>
+    <input id="room-name" placeholder="room name"><button id="go-public">Go &raquo;</button>
+    <p>OR</p>
+    <button id="go-private">Create a Private Room &raquo;</button>
+    <div id="room-history">
+      <h3>Recent Rooms</h3>
+      <div id="room-history-list"></div>
+    </div>
+  </form>
+  <form id="chatroom" action="/fake-form-action">
+    <div id="chatlog">
+      <div id="spacer"></div>
+    </div>
+    <div id="roster"></div>
+    <textarea id="chat-input" rows="1" placeholder="Type a message..."></textarea>
+    <input type="file" id="file-input" accept="image/*,application/pdf,.doc,.docx,.txt">
+    <button type="button" id="file-upload-btn" title="Upload file">📎</button>
+  </form>
+</body>
 
 <!--===================================================================================-->
 <!-- Client-side JavaScript code for the app. -->
 
 <script type="text/javascript">
-let currentWebSocket = null;
+  let currentWebSocket = null;
 
-let nameForm = document.querySelector("#name-form");
-let nameInput = document.querySelector("#name-input");
-let roomForm = document.querySelector("#room-form");
-let roomNameInput = document.querySelector("#room-name");
-let goPublicButton = document.querySelector("#go-public");
-let goPrivateButton = document.querySelector("#go-private");
-let chatroom = document.querySelector("#chatroom");
-let chatlog = document.querySelector("#chatlog");
-let chatInput = document.querySelector("#chat-input");
-let roster = document.querySelector("#roster");
-let fileInput = document.querySelector("#file-input");
-let fileUploadBtn = document.querySelector("#file-upload-btn");
+  let nameForm = document.querySelector("#name-form");
+  let nameInput = document.querySelector("#name-input");
+  let roomForm = document.querySelector("#room-form");
+  let roomNameInput = document.querySelector("#room-name");
+  let goPublicButton = document.querySelector("#go-public");
+  let goPrivateButton = document.querySelector("#go-private");
+  let chatroom = document.querySelector("#chatroom");
+  let chatlog = document.querySelector("#chatlog");
+  let chatInput = document.querySelector("#chat-input");
+  let roster = document.querySelector("#roster");
+  let fileInput = document.querySelector("#file-input");
+  let fileUploadBtn = document.querySelector("#file-upload-btn");
 
-// Is the chatlog scrolled to the bottom?
-let isAtBottom = true;
+  // Is the chatlog scrolled to the bottom?
+  let isAtBottom = true;
 
-let username;
-let roomname;
+  let username;
+  let roomname;
 
-let hostname = window.location.host;
-if (hostname == "") {
-  // Probably testing the HTML locally.
-  hostname = "edge-chat-demo.cloudflareworkers.com";
-}
-
-// Room history management
-function getRoomHistory() {
-  const history = localStorage.getItem('chatRoomHistory');
-  return history ? JSON.parse(history) : [];
-}
-
-function addToRoomHistory(roomName) {
-  let history = getRoomHistory();
-  
-  // Remove if already exists (to move to front)
-  history = history.filter(item => item.name !== roomName);
-  
-  // Add to front
-  history.unshift({
-    name: roomName,
-    timestamp: Date.now()
-  });
-  
-  // Keep only last 10 rooms
-  history = history.slice(0, 10);
-  
-  localStorage.setItem('chatRoomHistory', JSON.stringify(history));
-}
-
-function removeFromRoomHistory(roomName) {
-  let history = getRoomHistory();
-  history = history.filter(item => item.name !== roomName);
-  localStorage.setItem('chatRoomHistory', JSON.stringify(history));
-}
-
-function displayRoomHistory() {
-  const historyList = document.querySelector("#room-history-list");
-  const history = getRoomHistory();
-  
-  if (history.length === 0) {
-    document.querySelector("#room-history").style.display = 'none';
-    return;
-  }
-  
-  document.querySelector("#room-history").style.display = 'block';
-  historyList.innerHTML = '';
-  
-  history.forEach(item => {
-    const div = document.createElement("div");
-    div.className = "room-history-item";
-    
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "room-name";
-    nameSpan.innerText = item.name.length === 64 ? 'Private Room' : '#' + item.name;
-    nameSpan.title = 'Click to enter ' + item.name;
-    div.appendChild(nameSpan);
-    
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "remove-btn";
-    removeBtn.innerText = "×";
-    removeBtn.title = "Remove from history";
-    removeBtn.onclick = (e) => {
-      e.stopPropagation();
-      removeFromRoomHistory(item.name);
-      displayRoomHistory();
-    };
-    div.appendChild(removeBtn);
-    
-    div.onclick = () => {
-      roomname = item.name;
-      startChat();
-    };
-    
-    historyList.appendChild(div);
-  });
-}
-
-function startNameChooser() {
-  // Bind event listeners first
-  nameForm.addEventListener("submit", event => {
-    event.preventDefault();
-    username = nameInput.value.trim();
-    if (username.length > 0) {
-      // Save username to localStorage
-      localStorage.setItem('chatUsername', username);
-      startRoomChooser();
-    }
-  });
-
-  nameInput.addEventListener("input", event => {
-    if (event.currentTarget.value.length > 32) {
-      event.currentTarget.value = event.currentTarget.value.slice(0, 32);
-    }
-  });
-
-  // Check if username is saved in localStorage
-  const savedUsername = localStorage.getItem('chatUsername');
-  if (savedUsername) {
-    // Pre-fill the username
-    nameInput.value = savedUsername;
-    
-    // Only auto-submit if we have a room hash in URL
-    if (document.location.hash.length > 1) {
-      setTimeout(() => {
-        nameForm.dispatchEvent(new Event('submit'));
-      }, 0);
-      return;
-    }
+  let hostname = window.location.host;
+  if (hostname == "") {
+    // Probably testing the HTML locally.
+    hostname = "edge-chat-demo.cloudflareworkers.com";
   }
 
-  nameInput.focus();
-}
-
-function startRoomChooser() {
-  nameForm.remove();
-
-  if (document.location.hash.length > 1) {
-    roomname = document.location.hash.slice(1);
-    startChat();
-    return;
+  // Room history management
+  function getRoomHistory() {
+    const history = localStorage.getItem('chatRoomHistory');
+    return history ? JSON.parse(history) : [];
   }
 
-  // Display room history
-  displayRoomHistory();
+  function addToRoomHistory(roomName) {
+    let history = getRoomHistory();
 
-  roomForm.addEventListener("submit", event => {
-    event.preventDefault();
-    roomname = roomNameInput.value;
-    if (roomname.length > 0) {
-      startChat();
-    }
-  });
+    // Remove if already exists (to move to front)
+    history = history.filter(item => item.name !== roomName);
 
-  roomNameInput.addEventListener("input", event => {
-    if (event.currentTarget.value.length > 32) {
-      event.currentTarget.value = event.currentTarget.value.slice(0, 32);
-    }
-  });
+    // Add to front
+    history.unshift({
+      name: roomName,
+      timestamp: Date.now()
+    });
 
-  goPublicButton.addEventListener("click", event => {
-    roomname = roomNameInput.value;
-    if (roomname.length > 0) {
-      startChat();
-    }
-  });
+    // Keep only last 10 rooms
+    history = history.slice(0, 10);
 
-  goPrivateButton.addEventListener("click", async event => {
-    roomNameInput.disabled = true;
-    goPublicButton.disabled = true;
-    event.currentTarget.disabled = true;
+    localStorage.setItem('chatRoomHistory', JSON.stringify(history));
+  }
 
-    let response = await fetch("https://" + hostname + "/api/room", {method: "POST"});
-    if (!response.ok) {
-      alert("something went wrong");
-      document.location.reload();
+  function removeFromRoomHistory(roomName) {
+    let history = getRoomHistory();
+    history = history.filter(item => item.name !== roomName);
+    localStorage.setItem('chatRoomHistory', JSON.stringify(history));
+  }
+
+  function displayRoomHistory() {
+    const historyList = document.querySelector("#room-history-list");
+    const history = getRoomHistory();
+
+    if (history.length === 0) {
+      document.querySelector("#room-history").style.display = 'none';
       return;
     }
 
-    roomname = await response.text();
-    startChat();
-  });
+    document.querySelector("#room-history").style.display = 'block';
+    historyList.innerHTML = '';
 
-  roomNameInput.focus();
-}
+    history.forEach(item => {
+      const div = document.createElement("div");
+      div.className = "room-history-item";
 
-function startChat() {
-  roomForm.remove();
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "room-name";
+      nameSpan.innerText = item.name.length === 64 ? 'Private Room' : '#' + item.name;
+      nameSpan.title = 'Click to enter ' + item.name;
+      div.appendChild(nameSpan);
 
-  // Normalize the room name a bit.
-  roomname = roomname.replace(/[^a-zA-Z0-9_-]/g, "").replace(/_/g, "-").toLowerCase();
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "remove-btn";
+      removeBtn.innerText = "×";
+      removeBtn.title = "Remove from history";
+      removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        removeFromRoomHistory(item.name);
+        displayRoomHistory();
+      };
+      div.appendChild(removeBtn);
 
-  if (roomname.length > 32 && !roomname.match(/^[0-9a-f]{64}$/)) {
-    addChatMessage("ERROR", "Invalid room name.");
-    return;
-  }
+      div.onclick = () => {
+        roomname = item.name;
+        startChat();
+      };
 
-  document.location.hash = "#" + roomname;
-
-  // Save to room history
-  addToRoomHistory(roomname);
-
-  // Auto-resize textarea function
-  function autoResizeTextarea() {
-    chatInput.style.height = 'auto';
-    let newHeight = Math.min(chatInput.scrollHeight, 150);
-    chatInput.style.height = newHeight + 'px';
-    
-    // Adjust file upload button height to match
-    let btn = document.querySelector("#file-upload-btn");
-    btn.style.height = newHeight + 'px';
-    
-    // Adjust chatlog and roster bottom position
-    chatlog.style.bottom = newHeight + 'px';
-    roster.style.bottom = newHeight + 'px';
-  }
-
-  chatInput.addEventListener("keydown", event => {
-    // Enter to send (without shift), Shift+Enter for new line
-    if (event.keyCode == 13 && !event.shiftKey) {
-      event.preventDefault();
-      chatroom.dispatchEvent(new Event('submit'));
-      return;
-    }
-    
-    if (event.keyCode == 38 && chatInput.value === "") {
-      // up arrow (only if input is empty)
-      chatlog.scrollBy(0, -50);
-    } else if (event.keyCode == 40 && chatInput.value === "") {
-      // down arrow (only if input is empty)
-      chatlog.scrollBy(0, 50);
-    } else if (event.keyCode == 33) {
-      // page up
-      chatlog.scrollBy(0, -chatlog.clientHeight + 50);
-    } else if (event.keyCode == 34) {
-      // page down
-      chatlog.scrollBy(0, chatlog.clientHeight - 50);
-    }
-  });
-
-  chatroom.addEventListener("submit", event => {
-    event.preventDefault();
-
-    if (currentWebSocket) {
-      let message = chatInput.value.trim();
-      if (message.length > 0) {
-        currentWebSocket.send(JSON.stringify({message: message}));
-        chatInput.value = "";
-        autoResizeTextarea(); // Reset height after sending
-        
-        // Scroll to bottom whenever sending a message.
-        chatlog.scrollBy(0, 1e8);
-        // Set flag to scroll when we receive our own message back
-        isAtBottom = true;
-      }
-    }
-  });
-
-  chatInput.addEventListener("input", event => {
-    if (event.currentTarget.value.length > 6000) {
-      event.currentTarget.value = event.currentTarget.value.slice(0, 6000);
-    }
-    autoResizeTextarea();
-  });
-
-  chatlog.addEventListener("scroll", event => {
-    isAtBottom = chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight;
-  });
-
-  chatInput.focus();
-  autoResizeTextarea(); // Initialize textarea size
-  
-  document.body.addEventListener("click", event => {
-    // If the user clicked somewhere in the window without selecting any text, focus the chat
-    // input.
-    if (window.getSelection().toString() == "") {
-      chatInput.focus();
-    }
-  });
-
-  // File upload button click handler
-  fileUploadBtn.addEventListener("click", event => {
-    fileInput.click();
-  });
-
-  // File input change handler
-  fileInput.addEventListener("change", async event => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    // Show uploading message
-    addChatMessage(null, "* Uploading file...");
-
-    try {
-      // Create form data
-      const formData = new FormData();
-      formData.append("file", file);
-
-      // Upload file
-      const response = await fetch("https://" + hostname + "/api/room/" + roomname + "/upload", {
-        method: "POST",
-        body: formData
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        addChatMessage(null, "* Upload failed: " + (error.error || "Unknown error"));
-        return;
-      }
-
-      const result = await response.json();
-      
-      // Send file message through WebSocket
-      if (currentWebSocket) {
-        const fileMessage = `FILE:${result.fileUrl}|${result.fileName}|${result.fileType}`;
-        currentWebSocket.send(JSON.stringify({message: fileMessage}));
-        
-        // Clear the file input
-        fileInput.value = "";
-      }
-    } catch (err) {
-      addChatMessage(null, "* Upload failed: " + err.message);
-    }
-  });
-
-  // Detect mobile keyboard appearing and disappearing, and adjust the scroll as appropriate.
-  if('visualViewport' in window) {
-    window.visualViewport.addEventListener('resize', function(event) {
-      if (isAtBottom) {
-        chatlog.scrollBy(0, 1e8);
-      }
+      historyList.appendChild(div);
     });
   }
 
-  join();
-}
-
-let lastSeenTimestamp = 0;
-let wroteWelcomeMessages = false;
-
-function join() {
-  // If we are running via wrangler dev, use ws:
-  const wss = document.location.protocol === "http:" ? "ws://" : "wss://";
-  let ws = new WebSocket(wss + hostname + "/api/room/" + roomname + "/websocket");
-  let rejoined = false;
-  let startTime = Date.now();
-
-  let rejoin = async () => {
-    if (!rejoined) {
-      rejoined = true;
-      currentWebSocket = null;
-
-      // Clear the roster.
-      while (roster.firstChild) {
-        roster.removeChild(roster.firstChild);
+  function startNameChooser() {
+    // Bind event listeners first
+    nameForm.addEventListener("submit", event => {
+      event.preventDefault();
+      username = nameInput.value.trim();
+      if (username.length > 0) {
+        // Save username to localStorage
+        localStorage.setItem('chatUsername', username);
+        startRoomChooser();
       }
+    });
 
-      // Don't try to reconnect too rapidly.
-      let timeSinceLastJoin = Date.now() - startTime;
-      if (timeSinceLastJoin < 10000) {
-        // Less than 10 seconds elapsed since last join. Pause a bit.
-        await new Promise(resolve => setTimeout(resolve, 10000 - timeSinceLastJoin));
+    nameInput.addEventListener("input", event => {
+      if (event.currentTarget.value.length > 32) {
+        event.currentTarget.value = event.currentTarget.value.slice(0, 32);
       }
+    });
 
-      // OK, reconnect now!
-      join();
+    // Check if username is saved in localStorage
+    const savedUsername = localStorage.getItem('chatUsername');
+    if (savedUsername) {
+      // Pre-fill the username
+      nameInput.value = savedUsername;
+
+      // Only auto-submit if we have a room hash in URL
+      if (document.location.hash.length > 1) {
+        setTimeout(() => {
+          nameForm.dispatchEvent(new Event('submit'));
+        }, 0);
+        return;
+      }
     }
+
+    nameInput.focus();
   }
 
-  ws.addEventListener("open", event => {
-    currentWebSocket = ws;
+  function startRoomChooser() {
+    nameForm.remove();
 
-    // Send user info message.
-    ws.send(JSON.stringify({name: username}));
-  });
+    if (document.location.hash.length > 1) {
+      roomname = document.location.hash.slice(1);
+      startChat();
+      return;
+    }
 
-  ws.addEventListener("message", event => {
-    let data = JSON.parse(event.data);
+    // Display room history
+    displayRoomHistory();
 
-    if (data.error) {
-      addChatMessage(null, "* Error: " + data.error);
-    } else if (data.joined) {
-      let userItem = document.createElement("div");
-      userItem.className = "user-item";
-      
-      let userName = document.createElement("span");
-      userName.innerText = data.joined + (data.joined === username ? " (me)" : "");
-      userItem.appendChild(userName);
-      
-      // Add logout button only for current user
-      if (data.joined === username) {
-        let logoutBtn = document.createElement("button");
-        logoutBtn.className = "logout-btn";
-        logoutBtn.innerText = "×";
-        logoutBtn.title = "Logout and change username";
-        logoutBtn.onclick = (e) => {
-          e.stopPropagation();
-          // Clear saved username
-          localStorage.removeItem('chatUsername');
-          // Close WebSocket
-          if (currentWebSocket) {
-            currentWebSocket.close();
-          }
-          // Reload page without hash to start fresh
-          window.location.href = window.location.href.split('#')[0];
-        };
-        userItem.appendChild(logoutBtn);
+    roomForm.addEventListener("submit", event => {
+      event.preventDefault();
+      roomname = roomNameInput.value;
+      if (roomname.length > 0) {
+        startChat();
       }
-      
-      roster.appendChild(userItem);
-    } else if (data.quit) {
-      for (let child of roster.childNodes) {
-        const userName = child.querySelector ? child.querySelector("span")?.innerText : child.innerText;
-        if (userName == data.quit || userName == data.quit + " (me)") {
-          roster.removeChild(child);
-          break;
+    });
+
+    roomNameInput.addEventListener("input", event => {
+      if (event.currentTarget.value.length > 32) {
+        event.currentTarget.value = event.currentTarget.value.slice(0, 32);
+      }
+    });
+
+    goPublicButton.addEventListener("click", event => {
+      roomname = roomNameInput.value;
+      if (roomname.length > 0) {
+        startChat();
+      }
+    });
+
+    goPrivateButton.addEventListener("click", async event => {
+      roomNameInput.disabled = true;
+      goPublicButton.disabled = true;
+      event.currentTarget.disabled = true;
+
+      let response = await fetch("https://" + hostname + "/api/room", { method: "POST" });
+      if (!response.ok) {
+        alert("something went wrong");
+        document.location.reload();
+        return;
+      }
+
+      roomname = await response.text();
+      startChat();
+    });
+
+    roomNameInput.focus();
+  }
+
+  function startChat() {
+    roomForm.remove();
+
+    // Normalize the room name a bit.
+    roomname = roomname.replace(/[^a-zA-Z0-9_-]/g, "").replace(/_/g, "-").toLowerCase();
+
+    if (roomname.length > 32 && !roomname.match(/^[0-9a-f]{64}$/)) {
+      addChatMessage("ERROR", "Invalid room name.");
+      return;
+    }
+
+    document.location.hash = "#" + roomname;
+
+    // Save to room history
+    addToRoomHistory(roomname);
+
+    // Auto-resize textarea function
+    function autoResizeTextarea() {
+      chatInput.style.height = 'auto';
+      let newHeight = Math.min(chatInput.scrollHeight, 150);
+      chatInput.style.height = newHeight + 'px';
+
+      // Adjust file upload button height to match
+      let btn = document.querySelector("#file-upload-btn");
+      btn.style.height = newHeight + 'px';
+
+      // Adjust chatlog and roster bottom position
+      chatlog.style.bottom = newHeight + 'px';
+      roster.style.bottom = newHeight + 'px';
+    }
+
+    chatInput.addEventListener("keydown", event => {
+      // Enter to send (without shift), Shift+Enter for new line
+      if (event.keyCode == 13 && !event.shiftKey) {
+        event.preventDefault();
+        chatroom.dispatchEvent(new Event('submit'));
+        return;
+      }
+
+      if (event.keyCode == 38 && chatInput.value === "") {
+        // up arrow (only if input is empty)
+        chatlog.scrollBy(0, -50);
+      } else if (event.keyCode == 40 && chatInput.value === "") {
+        // down arrow (only if input is empty)
+        chatlog.scrollBy(0, 50);
+      } else if (event.keyCode == 33) {
+        // page up
+        chatlog.scrollBy(0, -chatlog.clientHeight + 50);
+      } else if (event.keyCode == 34) {
+        // page down
+        chatlog.scrollBy(0, chatlog.clientHeight - 50);
+      }
+    });
+
+    chatroom.addEventListener("submit", event => {
+      event.preventDefault();
+
+      if (currentWebSocket) {
+        let message = chatInput.value.trim();
+        if (message.length > 0) {
+          currentWebSocket.send(JSON.stringify({ message: message }));
+          chatInput.value = "";
+          autoResizeTextarea(); // Reset height after sending
+
+          // Scroll to bottom whenever sending a message.
+          chatlog.scrollBy(0, 1e8);
+          // Set flag to scroll when we receive our own message back
+          isAtBottom = true;
         }
       }
-    } else if (data.ready) {
-      // All pre-join messages have been delivered.
-      if (!wroteWelcomeMessages) {
-        wroteWelcomeMessages = true;
-        addChatMessage(null,
-            "* This is a app built with Cloudflare Workers Durable Objects. The source code " +
-            "can be found at: https://github.com/bytemain/workers-chat");
-        addChatMessage(null,
-            "* WARNING: Participants in this chat are random people on the internet. " +
-            "Names are not authenticated; anyone can pretend to be anyone. The people " +
-            "you are chatting with are NOT Cloudflare employees. Chat history is saved.");
-        if (roomname.length == 64) {
-          addChatMessage(null,
-              "* This is a private room. You can invite someone to the room by sending them the URL.");
-        } else {
-          addChatMessage(null,
-              "* Welcome to #" + roomname + ". Say hi!");
-        }
+    });
+
+    chatInput.addEventListener("input", event => {
+      if (event.currentTarget.value.length > 6000) {
+        event.currentTarget.value = event.currentTarget.value.slice(0, 6000);
       }
-    } else {
-      // A regular chat message.
-      if (data.timestamp > lastSeenTimestamp) {
-        addChatMessage(data.name, data.message);
-        lastSeenTimestamp = data.timestamp;
-        
-        // Scroll to bottom if we were at bottom (includes our own messages)
+      autoResizeTextarea();
+    });
+
+    chatlog.addEventListener("scroll", event => {
+      isAtBottom = chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight;
+    });
+
+    chatInput.focus();
+    autoResizeTextarea(); // Initialize textarea size
+
+    document.body.addEventListener("click", event => {
+      // If the user clicked somewhere in the window without selecting any text, focus the chat
+      // input.
+      if (window.getSelection().toString() == "") {
+        chatInput.focus();
+      }
+    });
+
+    // File upload button click handler
+    fileUploadBtn.addEventListener("click", event => {
+      fileInput.click();
+    });
+
+    // File input change handler
+    fileInput.addEventListener("change", async event => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      // Show uploading message
+      addChatMessage(null, "* Uploading file...");
+
+      try {
+        // Create form data
+        const formData = new FormData();
+        formData.append("file", file);
+
+        // Upload file
+        const response = await fetch("https://" + hostname + "/api/room/" + roomname + "/upload", {
+          method: "POST",
+          body: formData
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          addChatMessage(null, "* Upload failed: " + (error.error || "Unknown error"));
+          return;
+        }
+
+        const result = await response.json();
+
+        // Send file message through WebSocket
+        if (currentWebSocket) {
+          const fileMessage = `FILE:${result.fileUrl}|${result.fileName}|${result.fileType}`;
+          currentWebSocket.send(JSON.stringify({ message: fileMessage }));
+
+          // Clear the file input
+          fileInput.value = "";
+        }
+      } catch (err) {
+        addChatMessage(null, "* Upload failed: " + err.message);
+      }
+    });
+
+    // Detect mobile keyboard appearing and disappearing, and adjust the scroll as appropriate.
+    if ('visualViewport' in window) {
+      window.visualViewport.addEventListener('resize', function (event) {
         if (isAtBottom) {
           chatlog.scrollBy(0, 1e8);
         }
+      });
+    }
+
+    join();
+  }
+
+  let lastSeenTimestamp = 0;
+  let wroteWelcomeMessages = false;
+
+  function join() {
+    // If we are running via wrangler dev, use ws:
+    const wss = document.location.protocol === "http:" ? "ws://" : "wss://";
+    let ws = new WebSocket(wss + hostname + "/api/room/" + roomname + "/websocket");
+    let rejoined = false;
+    let startTime = Date.now();
+
+    let rejoin = async () => {
+      if (!rejoined) {
+        rejoined = true;
+        currentWebSocket = null;
+
+        // Clear the roster.
+        while (roster.firstChild) {
+          roster.removeChild(roster.firstChild);
+        }
+
+        // Don't try to reconnect too rapidly.
+        let timeSinceLastJoin = Date.now() - startTime;
+        if (timeSinceLastJoin < 10000) {
+          // Less than 10 seconds elapsed since last join. Pause a bit.
+          await new Promise(resolve => setTimeout(resolve, 10000 - timeSinceLastJoin));
+        }
+
+        // OK, reconnect now!
+        join();
       }
     }
-  });
 
-  ws.addEventListener("close", event => {
-    console.log("WebSocket closed, reconnecting:", event.code, event.reason);
-    rejoin();
-  });
-  ws.addEventListener("error", event => {
-    console.log("WebSocket error, reconnecting:", event);
-    rejoin();
-  });
-}
+    ws.addEventListener("open", event => {
+      currentWebSocket = ws;
 
-function addChatMessage(name, text) {
-  let p = document.createElement("p");
-  if (name) {
-    let tag = document.createElement("span");
-    tag.className = "username";
-    tag.innerText = name + ": ";
-    p.appendChild(tag);
+      // Send user info message.
+      ws.send(JSON.stringify({ name: username }));
+    });
+
+    ws.addEventListener("message", event => {
+      let data = JSON.parse(event.data);
+
+      if (data.error) {
+        addChatMessage(null, "* Error: " + data.error);
+      } else if (data.joined) {
+        let userItem = document.createElement("div");
+        userItem.className = "user-item";
+
+        let userName = document.createElement("span");
+        userName.innerText = data.joined + (data.joined === username ? " (me)" : "");
+        userItem.appendChild(userName);
+
+        // Add logout button only for current user
+        if (data.joined === username) {
+          let logoutBtn = document.createElement("button");
+          logoutBtn.className = "logout-btn";
+          logoutBtn.innerText = "×";
+          logoutBtn.title = "Logout and change username";
+          logoutBtn.onclick = (e) => {
+            e.stopPropagation();
+            // Clear saved username
+            localStorage.removeItem('chatUsername');
+            // Close WebSocket
+            if (currentWebSocket) {
+              currentWebSocket.close();
+            }
+            // Reload page without hash to start fresh
+            window.location.href = window.location.href.split('#')[0];
+          };
+          userItem.appendChild(logoutBtn);
+        }
+
+        roster.appendChild(userItem);
+      } else if (data.quit) {
+        for (let child of roster.childNodes) {
+          const userName = child.querySelector ? child.querySelector("span")?.innerText : child.innerText;
+          if (userName == data.quit || userName == data.quit + " (me)") {
+            roster.removeChild(child);
+            break;
+          }
+        }
+      } else if (data.ready) {
+        // All pre-join messages have been delivered.
+        if (!wroteWelcomeMessages) {
+          wroteWelcomeMessages = true;
+          addChatMessage(null,
+            "* This is a app built with Cloudflare Workers Durable Objects. The source code " +
+            "can be found at: https://github.com/bytemain/workers-chat");
+          addChatMessage(null,
+            "* WARNING: Participants in this chat are random people on the internet. " +
+            "Names are not authenticated; anyone can pretend to be anyone. The people " +
+            "you are chatting with are NOT Cloudflare employees. Chat history is saved.");
+          if (roomname.length == 64) {
+            addChatMessage(null,
+              "* This is a private room. You can invite someone to the room by sending them the URL.");
+          } else {
+            addChatMessage(null,
+              "* Welcome to #" + roomname + ". Say hi!");
+          }
+        }
+      } else {
+        // A regular chat message.
+        if (data.timestamp > lastSeenTimestamp) {
+          addChatMessage(data.name, data.message);
+          lastSeenTimestamp = data.timestamp;
+
+          // Scroll to bottom if we were at bottom (includes our own messages)
+          if (isAtBottom) {
+            chatlog.scrollBy(0, 1e8);
+          }
+        }
+      }
+    });
+
+    ws.addEventListener("close", event => {
+      console.log("WebSocket closed, reconnecting:", event.code, event.reason);
+      rejoin();
+    });
+    ws.addEventListener("error", event => {
+      console.log("WebSocket error, reconnecting:", event);
+      rejoin();
+    });
   }
-  
-  // Check if this is a file message
-  if (text.startsWith("FILE:")) {
-    const parts = text.substring(5).split("|");
-    const fileUrl = parts[0];
-    const fileName = parts[1] || "file";
-    const fileType = parts[2] || "";
 
-    // If it's an image, display it inline
-    if (fileType.startsWith("image/")) {
-      const img = document.createElement("img");
-      img.src = fileUrl;
-      img.alt = fileName;
-      img.style.maxWidth = "300px";
-      img.style.maxHeight = "300px";
-      img.style.display = "block";
-      img.style.marginTop = "5px";
-      img.style.cursor = "pointer";
-      img.onclick = () => window.open(fileUrl, "_blank");
-      p.appendChild(img);
-      
-      const link = document.createElement("a");
-      link.href = fileUrl;
-      link.target = "_blank";
-      link.innerText = fileName;
-      link.style.fontSize = "0.9em";
-      p.appendChild(document.createElement("br"));
-      p.appendChild(link);
-    } else {
-      // For other files, just show a download link
-      const link = document.createElement("a");
-      link.href = fileUrl;
-      link.download = fileName;
-      link.target = "_blank";
-      link.innerText = "📎 " + fileName;
-      p.appendChild(link);
+  function addChatMessage(name, text) {
+    let p = document.createElement("p");
+    if (name) {
+      let tag = document.createElement("span");
+      tag.className = "username";
+      tag.innerText = name + ": ";
+      p.appendChild(tag);
     }
-  } else {
-    p.appendChild(document.createTextNode(text));
+
+    // Check if this is a file message
+    if (text.startsWith("FILE:")) {
+      const parts = text.substring(5).split("|");
+      const fileUrl = parts[0];
+      const fileName = parts[1] || "file";
+      const fileType = parts[2] || "";
+
+      // If it's an image, display it inline
+      if (fileType.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = fileUrl;
+        img.alt = fileName;
+        img.style.maxWidth = "300px";
+        img.style.maxHeight = "300px";
+        img.style.display = "block";
+        img.style.marginTop = "5px";
+        img.style.cursor = "pointer";
+        img.onclick = () => window.open(fileUrl, "_blank");
+        p.appendChild(img);
+
+        const link = document.createElement("a");
+        link.href = fileUrl;
+        link.target = "_blank";
+        link.innerText = fileName;
+        link.style.fontSize = "0.9em";
+        p.appendChild(document.createElement("br"));
+        p.appendChild(link);
+      } else {
+        // For other files, just show a download link
+        const link = document.createElement("a");
+        link.href = fileUrl;
+        link.download = fileName;
+        link.target = "_blank";
+        link.innerText = "📎 " + fileName;
+        p.appendChild(link);
+      }
+    } else {
+      p.appendChild(document.createTextNode(text));
+    }
+
+    // Append the new chat line, making sure that if the chatlog was scrolled to the bottom
+    // before, it remains scrolled to the bottom, and otherwise the scroll position doesn't
+    // change.
+    chatlog.appendChild(p);
+    if (isAtBottom) {
+      chatlog.scrollBy(0, 1e8);
+    }
   }
 
-  // Append the new chat line, making sure that if the chatlog was scrolled to the bottom
-  // before, it remains scrolled to the bottom, and otherwise the scroll position doesn't
-  // change.
-  chatlog.appendChild(p);
-  if (isAtBottom) {
-    chatlog.scrollBy(0, 1e8);
-  }
-}
-
-startNameChooser();
+  startNameChooser();
 </script>
 <!--===================================================================================-->
+
 </html>
