@@ -482,6 +482,62 @@ export class ChatRoom {
         }
 
         default:
+          // Handle thread endpoint: /thread/:messageId
+          if (url.pathname.startsWith("/thread/")) {
+            const pathParts = url.pathname.split('/');
+            const messageId = pathParts[2]; // /thread/:messageId
+            
+            if (request.method !== "GET" || !messageId) {
+              return new Response("Method not allowed", { status: 405 });
+            }
+
+            try {
+              // Check if nested parameter is set
+              const nested = url.searchParams.get('nested') === 'true';
+              
+              if (nested) {
+                // Return all nested replies recursively
+                const allReplies = await this.getAllThreadReplies(messageId);
+                return new Response(JSON.stringify({ replies: allReplies }), {
+                  headers: { 
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                  }
+                });
+              } else {
+                // Return only direct replies (original behavior)
+                const threadKey = `thread:${messageId}`;
+                const threadReplies = await this.storage.get(threadKey) || [];
+                
+                // Load the actual reply messages
+                const replies = [];
+                for (const reply of threadReplies) {
+                  try {
+                    const msgData = await this.storage.get(reply.key);
+                    if (msgData) {
+                      const msg = typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
+                      replies.push(msg);
+                    }
+                  } catch (e) {
+                    console.error('Failed to load reply:', e);
+                  }
+                }
+                
+                return new Response(JSON.stringify({ replies }), {
+                  headers: { 
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                  }
+                });
+              }
+            } catch (err) {
+              return new Response(JSON.stringify({ error: err.message }), {
+                status: 500,
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+          }
+          
           return new Response("Not found", { status: 404 });
       }
     });
@@ -518,6 +574,17 @@ export class ChatRoom {
     let backlog = [...storage.values()];
     backlog.reverse();
     backlog.forEach(value => {
+      // Ensure old messages have messageId for compatibility
+      try {
+        const msg = typeof value === 'string' ? JSON.parse(value) : value;
+        if (!msg.messageId && msg.timestamp && msg.name) {
+          // Generate legacy messageId for old messages
+          msg.messageId = `${msg.timestamp}-${msg.name}`;
+          value = JSON.stringify(msg);
+        }
+      } catch (e) {
+        // If parsing fails, use original value
+      }
       session.blockedMessages.push(value);
     });
   }
@@ -597,7 +664,12 @@ export class ChatRoom {
       }
 
       // Construct sanitized message for storage and broadcast.
-      data = { name: session.name, message: "" + data.message };
+      data = { 
+        name: session.name, 
+        message: "" + data.message,
+        messageId: data.messageId || crypto.randomUUID(),  // Generate UUID if not provided
+        replyTo: data.replyTo || null  // Include reply information if present
+      };
 
       // Check if this is a file message
       if (data.message.startsWith("FILE:")) {
@@ -625,6 +697,11 @@ export class ChatRoom {
       // Save message.
       let key = new Date(data.timestamp).toISOString();
       await this.storage.put(key, dataStr);
+      
+      // If this is a reply, update thread index
+      if (data.replyTo && data.replyTo.messageId) {
+        await this.updateThreadIndex(data.replyTo.messageId, key, data);
+      }
 
       // Index hashtags in the message
       await this.hashtagManager.indexMessage(key, data.message, data.timestamp);
@@ -652,6 +729,98 @@ export class ChatRoom {
 
   async webSocketError(webSocket, error) {
     this.closeOrErrorHandler(webSocket)
+  }
+
+  // Update thread index when a reply is posted
+  async updateThreadIndex(parentMessageId, replyKey, replyData) {
+    try {
+      // Get or create thread index
+      const threadKey = `thread:${parentMessageId}`;
+      let threadReplies = await this.storage.get(threadKey) || [];
+      
+      // Add this reply to the thread
+      threadReplies.push({
+        key: replyKey,
+        timestamp: replyData.timestamp
+      });
+      
+      // Save updated thread index
+      await this.storage.put(threadKey, threadReplies);
+      
+      // Update parent message's threadInfo
+      // Try to find the parent message by searching storage
+      // Since messageId might be UUID or timestamp-based, we need to search
+      const messages = await this.storage.list();
+      for (const [key, value] of messages) {
+        if (key.startsWith('thread:')) continue; // Skip thread indexes
+        
+        try {
+          const msg = typeof value === 'string' ? JSON.parse(value) : value;
+          if (msg.messageId === parentMessageId) {
+            msg.threadInfo = {
+              replyCount: threadReplies.length,
+              lastReplyTime: replyData.timestamp
+            };
+            await this.storage.put(key, JSON.stringify(msg));
+            
+            // Broadcast the updated threadInfo to all clients
+            this.broadcast({
+              threadUpdate: {
+                messageId: parentMessageId,
+                threadInfo: msg.threadInfo
+              }
+            });
+            break;
+          }
+        } catch (e) {
+          // Skip invalid entries
+          continue;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to update thread index:', err);
+    }
+  }
+
+  // Get all replies for a thread recursively (including nested replies)
+  async getAllThreadReplies(rootMessageId) {
+    const allReplies = [];
+    const visited = new Set();
+    
+    // Recursive function to collect replies
+    const collectReplies = async (messageId) => {
+      if (visited.has(messageId)) {
+        return; // Prevent infinite loops
+      }
+      visited.add(messageId);
+      
+      // Get direct replies to this message
+      const threadKey = `thread:${messageId}`;
+      const threadReplies = await this.storage.get(threadKey) || [];
+      
+      // Load each reply message
+      for (const replyRef of threadReplies) {
+        try {
+          const msgData = await this.storage.get(replyRef.key);
+          if (msgData) {
+            const msg = typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
+            allReplies.push(msg);
+            
+            // Recursively get replies to this reply
+            if (msg.messageId) {
+              await collectReplies(msg.messageId);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to load reply:', e);
+        }
+      }
+    };
+    
+    // Start collecting from the root message
+    await collectReplies(rootMessageId);
+    
+    return allReplies;
   }
 
   // broadcast() broadcasts a message to all clients.

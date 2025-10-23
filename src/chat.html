@@ -22,7 +22,11 @@
       overflow-y: auto;
       padding: 8px;
       overflow-wrap: break-word;
-      transition: bottom 0.1s ease;
+      transition: right 0.3s ease, bottom 0.1s ease;
+    }
+
+    #chatlog.thread-open {
+      right: 600px;
     }
 
     #chatlog span.username {
@@ -130,12 +134,15 @@
       display: block;
     }
 
-    #roster {
+    #roster-container {
       font-weight: bold;
       padding: 8px;
+      flex: 1;
+      overflow-y: auto;
+      background: white;
     }
 
-    #roster h3 {
+    #roster-container h3 {
       margin: 0 0 8px 0;
       font-size: 1em;
       color: #333;
@@ -189,9 +196,47 @@
         display: none;
       }
 
+      #thread-panel {
+        display: none !important;
+      }
+
       #chatlog {
         right: 0;
       }
+    }
+
+    #reply-indicator {
+      position: fixed;
+      left: 0;
+      bottom: 45px;
+      width: 100%;
+      background: #f0f7ff;
+      border-top: 1px solid #1da1f2;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.9em;
+      color: #666;
+      z-index: 100;
+    }
+
+    #reply-indicator .reply-indicator-text {
+      flex: 1;
+      font-style: italic;
+    }
+
+    #reply-indicator .reply-indicator-close {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.2em;
+      color: #999;
+      padding: 0 8px;
+    }
+
+    #reply-indicator .reply-indicator-close:hover {
+      color: #333;
     }
 
     #chat-input {
@@ -551,6 +596,210 @@
       background: #ffb300;
     }
 
+    /* Thread Panel Styles */
+    #thread-panel {
+      position: fixed;
+      right: 200px;
+      top: 0;
+      bottom: 32px;
+      width: 400px;
+      background: white;
+      border-left: 1px solid #ddd;
+      display: none;
+      flex-direction: column;
+      z-index: 50;
+      transition: bottom 0.1s ease;
+    }
+
+    #thread-panel.visible {
+      display: flex;
+    }
+
+    #thread-header {
+      padding: 12px 16px;
+      border-bottom: 2px solid #ddd;
+      background: #fafafa;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    #thread-header h3 {
+      margin: 0;
+      font-size: 1em;
+      color: #333;
+    }
+
+    #thread-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #thread-close:hover {
+      color: #000;
+      background: #e0e0e0;
+      border-radius: 3px;
+    }
+
+    #thread-original-message {
+      padding: 12px 16px;
+      border-bottom: 1px solid #eee;
+      background: #f9f9f9;
+      flex-shrink: 0;
+    }
+
+    #thread-replies {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    #thread-input-container {
+      border-top: 1px solid #ddd;
+      padding: 8px;
+      flex-shrink: 0;
+    }
+
+    #thread-input {
+      width: 100%;
+      min-height: 60px;
+      max-height: 120px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      resize: vertical;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 14px;
+      outline: none;
+    }
+
+    #thread-input:focus {
+      border-color: #1da1f2;
+    }
+
+    /* Message Actions */
+    .message-wrapper {
+      position: relative;
+      padding: 4px 0;
+      margin: 4px 0;
+      border-radius: 4px;
+    }
+
+    .message-wrapper:hover {
+      background: #f8f8f8;
+    }
+
+    .message-wrapper:hover .message-actions {
+      display: flex;
+    }
+
+    .message-actions {
+      position: absolute;
+      right: 8px;
+      top: 4px;
+      display: none;
+      gap: 4px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 2px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .message-action-btn {
+      background: none;
+      border: none;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 14px;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #666;
+    }
+
+    .message-action-btn:hover {
+      background: #f0f0f0;
+      color: #000;
+    }
+
+    .thread-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.85em;
+      color: #1da1f2;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-top: 4px;
+    }
+
+    .thread-indicator:hover {
+      background: #e8f5fd;
+      text-decoration: underline;
+    }
+
+    .reply-reference {
+      background: #f5f5f5;
+      border-left: 3px solid #1da1f2;
+      padding: 4px 10px;
+      margin: 4px 0 8px 0;
+      border-radius: 3px;
+      font-size: 0.85em;
+      color: #666;
+      cursor: pointer;
+      font-style: italic;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .reply-reference:hover {
+      background: #ebebeb;
+    }
+
+    .reply-reference .reply-icon {
+      color: #1da1f2;
+      font-style: normal;
+      flex-shrink: 0;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+    }
+
+    .reply-reference .reply-author {
+      font-weight: 600;
+      color: #1da1f2;
+      font-style: normal;
+      flex-shrink: 0;
+    }
+
+    .reply-reference .reply-separator {
+      font-style: normal;
+      flex-shrink: 0;
+    }
+
+    .reply-reference .reply-preview {
+      color: #555;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+
     @media(max-width:600px) {
       #hashtag-panel {
         display: none !important;
@@ -600,6 +849,17 @@
     </h3>
     <div id="hashtag-list"></div>
   </div>
+  <div id="thread-panel">
+    <div id="thread-header">
+      <h3>💬 Thread</h3>
+      <button id="thread-close" title="Close thread">✕</button>
+    </div>
+    <div id="thread-original-message"></div>
+    <div id="thread-replies"></div>
+    <div id="thread-input-container">
+      <textarea id="thread-input" placeholder="Reply in thread..." rows="3"></textarea>
+    </div>
+  </div>
   <form id="chatroom" action="/fake-form-action">
     <div id="chatlog">
       <div id="spacer"></div>
@@ -616,9 +876,16 @@
           <textarea id="room-note" placeholder="Add room description..."></textarea>
         </div>
       </div>
-      <div id="roster">
+      <div id="roster-container">
         <h3>👥 Online Members</h3>
+        <div id="roster">
+        </div>
       </div>
+
+    </div>
+    <div id="reply-indicator" style="display:none;">
+      <button type="button" class="reply-indicator-close">✕</button>
+      <span class="reply-indicator-text"></span>
     </div>
     <textarea id="chat-input" rows="1" placeholder="Type a message..."></textarea>
     <input type="file" id="file-input" accept="image/*,application/pdf,.doc,.docx,.txt">
@@ -683,9 +950,44 @@
       const username = this.getAttribute('username');
       const message = this.getAttribute('message');
       const timestamp = this.getAttribute('timestamp');
+      const messageId = this.getAttribute('message-id');
+      const replyTo = this.getAttribute('reply-to');
+      const threadCount = this.getAttribute('thread-count') || '0';
+      const isInThread = this.getAttribute('is-in-thread') === 'true';
 
       // Clear existing content
       this.innerHTML = '';
+
+      // Add reply reference if this is a reply and not in thread view
+      if (replyTo && !isInThread) {
+        try {
+          const replyData = JSON.parse(replyTo);
+          const replyRef = document.createElement('div');
+          replyRef.className = 'reply-reference';
+          replyRef.innerHTML = `
+            <span class="reply-icon">↩</span>
+            <span class="reply-author">${replyData.username}</span>
+            <span class="reply-separator">:</span>
+            <span class="reply-preview">${replyData.preview}</span>
+          `;
+          replyRef.onclick = () => {
+            // Scroll to and highlight the original message
+            const originalMsg = document.querySelector(`[data-message-id="${replyData.messageId}"]`);
+            if (originalMsg) {
+              originalMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              originalMsg.style.background = '#fff3cd';
+              setTimeout(() => {
+                originalMsg.style.background = '';
+              }, 2000);
+            }
+            // Open the thread for the referenced message
+            window.openThread(replyData.messageId);
+          };
+          this.appendChild(replyRef);
+        } catch (e) {
+          console.error('Failed to parse replyTo:', e);
+        }
+      }
 
       // Add time if present
       if (timestamp) {
@@ -715,6 +1017,21 @@
       } else {
         // Handle regular text messages with link detection
         this.renderTextMessage(message);
+      }
+
+      // Add thread indicator if there are replies
+      if (parseInt(threadCount) > 0) {
+        const threadIndicator = document.createElement('div');
+        threadIndicator.className = 'thread-indicator';
+        threadIndicator.innerHTML = `💬 ${threadCount} ${parseInt(threadCount) === 1 ? 'reply' : 'replies'}`;
+        threadIndicator.onclick = (e) => {
+          e.stopPropagation();
+          if (messageId) {
+            window.openThread(messageId);
+          }
+        };
+        this.appendChild(document.createElement('br'));
+        this.appendChild(threadIndicator);
       }
     }
 
@@ -839,6 +1156,17 @@
   let hashtagFilterBanner = document.querySelector("#hashtag-filter-banner");
   let activeHashtagSpan = document.querySelector("#active-hashtag");
 
+  // Thread panel elements
+  let threadPanel = document.querySelector("#thread-panel");
+  let threadClose = document.querySelector("#thread-close");
+  let threadOriginalMessage = document.querySelector("#thread-original-message");
+  let threadReplies = document.querySelector("#thread-replies");
+  let threadInput = document.querySelector("#thread-input");
+
+  // Reply indicator elements
+  let replyIndicator = document.querySelector("#reply-indicator");
+  let replyIndicatorClose = replyIndicator.querySelector(".reply-indicator-close");
+
   // Is the chatlog scrolled to the bottom?
   let isAtBottom = true;
 
@@ -846,6 +1174,32 @@
   let roomname;
   let currentHashtagFilter = null; // Current active hashtag filter
   let allHashtags = []; // Cache of all hashtags
+
+  // Thread state
+  let currentThreadId = null;  // Currently open thread
+  let messagesCache = new Map();  // messageId -> message data
+  let threadsCache = new Map();   // messageId -> array of reply messages
+
+  // Reply state for main chat input
+  let currentReplyTo = null;  // {messageId, username, preview, rootMessageId}
+
+  // Generate UUID v4 using crypto.randomUUID or fallback
+  function generateUUID() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    // Fallback for older browsers
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  // Generate message ID from timestamp and username for legacy messages
+  function generateLegacyMessageId(timestamp, username) {
+    return `${timestamp}-${username}`;
+  }
 
   let hostname = window.location.host;
   if (hostname == "") {
@@ -924,6 +1278,274 @@
 
   // Initialize API client
   const api = new ChatAPI(hostname);
+
+  // Thread functions
+  window.openThread = async function (messageId) {
+    // Find the root message of the thread
+    let rootMessageId = messageId;
+    let currentMsg = messagesCache.get(messageId);
+
+    if (!currentMsg) {
+      console.error('Message not found in cache:', messageId);
+      return;
+    }
+
+    // Traverse up to find the root (a message without replyTo)
+    let visitedIds = new Set([messageId]); // Prevent infinite loops
+    while (currentMsg && currentMsg.replyTo && currentMsg.replyTo.messageId) {
+      const parentId = currentMsg.replyTo.messageId;
+
+      // Check for circular reference
+      if (visitedIds.has(parentId)) {
+        console.warn('Circular reference detected in thread');
+        break;
+      }
+      visitedIds.add(parentId);
+
+      rootMessageId = parentId;
+      const parentMsg = messagesCache.get(parentId);
+
+      // If parent not in cache, stop here and use current rootMessageId
+      if (!parentMsg) {
+        console.warn('Parent message not in cache:', parentId, '- using current as root');
+        break;
+      }
+
+      currentMsg = parentMsg;
+    }
+
+    currentThreadId = rootMessageId;
+    threadPanel.classList.add('visible');
+    chatlog.classList.add('thread-open');
+
+    // Load and display root message
+    const rootMessage = messagesCache.get(rootMessageId);
+    if (rootMessage) {
+      threadOriginalMessage.innerHTML = '';
+      const msgElement = createMessageElement(rootMessage, false, true);
+      threadOriginalMessage.appendChild(msgElement);
+    } else {
+      threadOriginalMessage.innerHTML = '<p style="color:#999;padding:16px;">Original message not available</p>';
+    }
+
+    // Load thread replies
+    await loadThreadReplies(rootMessageId);
+
+    // Focus thread input
+    threadInput.focus();
+  };
+
+  window.closeThread = function () {
+    currentThreadId = null;
+    threadPanel.classList.remove('visible');
+    chatlog.classList.remove('thread-open');
+    threadInput.value = '';
+  };
+
+  // Reply indicator functions
+  function setReplyTo(messageId, username, preview, rootMessageId) {
+    currentReplyTo = { messageId, username, preview, rootMessageId };
+    const indicator = document.getElementById('reply-indicator');
+    const text = indicator.querySelector('.reply-indicator-text');
+    text.innerHTML = `Replying to <strong>${username}</strong>: ${preview}`;
+    indicator.style.display = 'flex';
+    document.getElementById('chat-input').focus();
+  }
+
+  function clearReplyTo() {
+    currentReplyTo = null;
+    document.getElementById('reply-indicator').style.display = 'none';
+  }
+
+  // Recursively collect all replies in a thread (depth-first traversal)
+  function collectAllThreadReplies(rootMessageId) {
+    const allReplies = [];
+    const visited = new Set();
+    
+    function collectReplies(messageId) {
+      if (visited.has(messageId)) return;
+      visited.add(messageId);
+      
+      // Get direct replies from threadsCache
+      const directReplies = threadsCache.get(messageId) || [];
+      
+      for (const reply of directReplies) {
+        allReplies.push(reply);
+        // Recursively collect replies to this reply
+        collectReplies(reply.messageId);
+      }
+    }
+    
+    collectReplies(rootMessageId);
+    return allReplies;
+  }
+
+  // Count total replies for a message (including nested)
+  function countTotalReplies(messageId) {
+    const visited = new Set();
+    
+    function countReplies(msgId) {
+      if (visited.has(msgId)) return 0;
+      visited.add(msgId);
+      
+      let count = 0;
+      // Count direct replies
+      for (const [cachedMsgId, cachedMsg] of messagesCache.entries()) {
+        if (cachedMsg.replyTo && cachedMsg.replyTo.messageId === msgId) {
+          count++;
+          // Recursively count replies to this reply
+          count += countReplies(cachedMsgId);
+        }
+      }
+      return count;
+    }
+    
+    return countReplies(messageId);
+  }
+
+  async function loadThreadReplies(messageId) {
+    try {
+      // Load all thread replies from server in one request
+      // Server should return all nested replies in a flat array
+      const response = await fetch(`${api.baseUrl}/room/${roomname}/thread/${messageId}?nested=true`);
+      if (!response.ok) throw new Error('Failed to load thread');
+
+      const data = await response.json();
+      const allReplies = data.replies || [];
+
+      // Cache all replies in messagesCache and organize by parent
+      const replyMap = new Map();
+      allReplies.forEach(reply => {
+        // Cache the message
+        messagesCache.set(reply.messageId, reply);
+        
+        // Organize by parent messageId for threadsCache
+        const parentId = reply.replyTo?.messageId;
+        if (parentId) {
+          if (!replyMap.has(parentId)) {
+            replyMap.set(parentId, []);
+          }
+          replyMap.get(parentId).push(reply);
+        }
+      });
+
+      // Update threadsCache with organized replies
+      replyMap.forEach((replies, parentId) => {
+        threadsCache.set(parentId, replies);
+      });
+
+      // Update root message with total reply count
+      const rootMessage = messagesCache.get(messageId);
+      if (rootMessage) {
+        rootMessage.threadInfo = {
+          replyCount: allReplies.length,
+          lastReplyTime: allReplies.length > 0 ? Math.max(...allReplies.map(r => r.timestamp)) : null
+        };
+
+        // Re-render the root message with updated count
+        threadOriginalMessage.innerHTML = '';
+        const msgElement = createMessageElement(rootMessage, false, true);
+        threadOriginalMessage.appendChild(msgElement);
+      }
+
+      // Render all replies (sorted by timestamp)
+      threadReplies.innerHTML = '';
+      allReplies.sort((a, b) => a.timestamp - b.timestamp);
+      allReplies.forEach(reply => {
+        const replyElement = createMessageElement(reply, true);
+        threadReplies.appendChild(replyElement);
+      });
+
+      // Scroll to bottom
+      threadReplies.scrollTop = threadReplies.scrollHeight;
+    } catch (err) {
+      console.error('Failed to load thread replies:', err);
+      threadReplies.innerHTML = '<p style="color:#999;padding:16px;text-align:center;">Failed to load replies</p>';
+    }
+  }
+
+  function createMessageElement(data, isInThread = false, isThreadOriginal = false) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message-wrapper';
+    wrapper.setAttribute('data-message-id', data.messageId);
+
+    const p = document.createElement('p');
+    p.style.margin = '0';
+
+    const chatMessage = document.createElement('chat-message');
+    chatMessage.setAttribute('username', data.name);
+    chatMessage.setAttribute('message', data.message);
+    chatMessage.setAttribute('timestamp', String(data.timestamp));
+    chatMessage.setAttribute('message-id', data.messageId);
+    chatMessage.setAttribute('is-in-thread', isInThread ? 'true' : 'false');
+
+    if (data.replyTo) {
+      chatMessage.setAttribute('reply-to', JSON.stringify(data.replyTo));
+    }
+
+    if (data.threadInfo && data.threadInfo.replyCount > 0) {
+      chatMessage.setAttribute('thread-count', String(data.threadInfo.replyCount));
+    }
+
+    p.appendChild(chatMessage);
+    wrapper.appendChild(p);
+
+    // Add message actions
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+
+    if (isInThread || isThreadOriginal) {
+      // In thread panel - show Locate button
+      const locateBtn = document.createElement('button');
+      locateBtn.className = 'message-action-btn';
+      locateBtn.innerHTML = '📍 Locate';
+      locateBtn.title = 'Locate in main chat';
+      locateBtn.onclick = (e) => {
+        e.stopPropagation();
+        locateMessageInMainChat(data.messageId);
+      };
+      actions.appendChild(locateBtn);
+    } else {
+      // In main chat - show Reply button
+      const replyBtn = document.createElement('button');
+      replyBtn.className = 'message-action-btn';
+      replyBtn.innerHTML = '💬 Reply';
+      replyBtn.onclick = (e) => {
+        e.stopPropagation();
+        // Set reply target instead of opening thread
+        const preview = data.message.substring(0, 50);
+        setReplyTo(data.messageId, data.name, preview, data.messageId);
+      };
+      actions.appendChild(replyBtn);
+    }
+
+    wrapper.appendChild(actions);
+
+    return wrapper;
+  }
+
+  // Locate and highlight a message in the main chat area
+  function locateMessageInMainChat(messageId) {
+    // Find the message in main chat
+    const mainChatMsg = chatlog.querySelector(`[data-message-id="${messageId}"]`);
+    
+    if (mainChatMsg) {
+      // Scroll to the message
+      mainChatMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Highlight the message
+      mainChatMsg.style.background = '#fff3cd';
+      mainChatMsg.style.transition = 'background 0.3s ease';
+      
+      // Remove highlight after 2 seconds
+      setTimeout(() => {
+        mainChatMsg.style.background = '';
+      }, 2000);
+    } else {
+      // Message not found in current view (might be filtered or not loaded)
+      addSystemMessage('* Message not found in current chat view');
+    }
+  }
 
   // Hashtag functionality
   window.filterByHashtag = function (tag) {
@@ -1425,7 +2047,20 @@
       if (currentWebSocket) {
         let message = chatInput.value.trim();
         if (message.length > 0) {
-          currentWebSocket.send(JSON.stringify({ message: message }));
+          const payload = { message: message };
+
+          // If replying to a message, include replyTo information
+          if (currentReplyTo) {
+            payload.replyTo = {
+              messageId: currentReplyTo.messageId,
+              username: currentReplyTo.username,
+              preview: currentReplyTo.preview
+            };
+            // Clear reply state after sending
+            clearReplyTo();
+          }
+
+          currentWebSocket.send(JSON.stringify(payload));
           chatInput.value = "";
           autoResizeTextarea(); // Reset height after sending
 
@@ -1469,6 +2104,45 @@
         loadHashtags();
       }
     });
+
+    // Thread panel close
+    threadClose.addEventListener("click", event => {
+      event.stopPropagation();
+      window.closeThread();
+    });
+
+    // Reply indicator close button
+    replyIndicatorClose.addEventListener("click", () => {
+      clearReplyTo();
+    });
+
+    // Thread input - send reply
+    threadInput.addEventListener("keydown", event => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendThreadReply();
+      }
+    });
+
+    async function sendThreadReply() {
+      const message = threadInput.value.trim();
+      if (!message || !currentThreadId || !currentWebSocket) return;
+
+      const originalMessage = messagesCache.get(currentThreadId);
+      if (!originalMessage) return;
+
+      // Send reply with replyTo information
+      currentWebSocket.send(JSON.stringify({
+        message: message,
+        replyTo: {
+          messageId: currentThreadId,
+          username: originalMessage.name,
+          preview: originalMessage.message.substring(0, 100)
+        }
+      }));
+
+      threadInput.value = '';
+    }
 
     // Upload file function
     async function uploadFile(file, fileName = null) {
@@ -1607,6 +2281,32 @@
 
       if (data.error) {
         addSystemMessage("* Error: " + data.error);
+      } else if (data.threadUpdate) {
+        // Thread info has been updated
+        const msgElement = document.querySelector(`[data-message-id="${data.threadUpdate.messageId}"]`);
+        if (msgElement) {
+          const chatMessage = msgElement.querySelector('chat-message');
+          if (chatMessage && data.threadUpdate.threadInfo) {
+            chatMessage.setAttribute('thread-count', String(data.threadUpdate.threadInfo.replyCount));
+            chatMessage.render();  // Re-render to show updated thread count
+          }
+        }
+
+        // Update cache
+        const cachedMsg = messagesCache.get(data.threadUpdate.messageId);
+        if (cachedMsg) {
+          cachedMsg.threadInfo = data.threadUpdate.threadInfo;
+        }
+
+        // If this is the current open thread, update the top message display
+        if (currentThreadId === data.threadUpdate.messageId) {
+          const rootMessage = messagesCache.get(currentThreadId);
+          if (rootMessage) {
+            threadOriginalMessage.innerHTML = '';
+            const msgElement = createMessageElement(rootMessage, false, true);
+            threadOriginalMessage.appendChild(msgElement);
+          }
+        }
       } else if (data.roomInfoUpdate) {
         // Room info has been updated, refresh the display
         // Skip if this is our own update to avoid flickering
@@ -1689,7 +2389,7 @@
               ". Say hi!"
             );
           }
-          
+
           loadHashtags().then(() => {
             // Check if there's a tag filter in the URL
             const urlParams = new URLSearchParams(window.location.search);
@@ -1707,7 +2407,11 @@
       } else {
         // A regular chat message.
         if (data.timestamp > lastSeenTimestamp) {
-          addChatMessage(data.name, data.message, data.timestamp);
+          addChatMessage(data.name, data.message, data.timestamp, {
+            messageId: data.messageId,
+            replyTo: data.replyTo,
+            threadInfo: data.threadInfo
+          });
           lastSeenTimestamp = data.timestamp;
 
           // Scroll to bottom if we were at bottom (includes our own messages)
@@ -1749,12 +2453,29 @@
     chatlog.scrollBy(0, 1e8);
   }
 
-  function addChatMessage(name, text, ts) {
+  function addChatMessage(name, text, ts, msgData = {}) {
     // ts: message timestamp (ms)
     let timestamp = ts;
     if (typeof timestamp !== 'number') {
       timestamp = Date.now();
     }
+
+    // Generate or use existing messageId
+    const messageId = msgData.messageId || generateLegacyMessageId(timestamp, name);
+
+    // Create complete message data
+    const messageData = {
+      name: name,
+      message: text,
+      timestamp: timestamp,
+      messageId: messageId,
+      replyTo: msgData.replyTo || null,
+      threadInfo: msgData.threadInfo || null
+    };
+
+    // Cache the message
+    messagesCache.set(messageId, messageData);
+
     const date = new Date(timestamp);
     const dateStr = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
 
@@ -1771,24 +2492,64 @@
       chatlog.appendChild(divider);
     }
 
-    let p = document.createElement("p");
-
-    const chatMessage = document.createElement('chat-message');
-    chatMessage.setAttribute('username', name);
-    chatMessage.setAttribute('message', text);
-    chatMessage.setAttribute('timestamp', String(timestamp));
-    p.appendChild(chatMessage);
+    // Create message element using new function
+    const messageElement = createMessageElement(messageData, false);
 
     // Check if message should be hidden based on current filter
     if (currentHashtagFilter) {
       const hasTag = text.toLowerCase().includes('#' + currentHashtagFilter.toLowerCase());
       if (!hasTag) {
-        p.style.display = 'none';
+        messageElement.style.display = 'none';
       }
     }
 
-    // Append the new chat line, keeping scroll position if needed
-    chatlog.appendChild(p);
+    // Append message to main chat
+    chatlog.appendChild(messageElement);
+
+    // If this is a reply and the thread is open, also add to thread panel
+    if (msgData.replyTo) {
+      // Find the root message of this reply
+      let rootId = msgData.replyTo.messageId;
+      let parentMsg = messagesCache.get(rootId);
+      while (parentMsg && parentMsg.replyTo) {
+        rootId = parentMsg.replyTo.messageId;
+        parentMsg = messagesCache.get(rootId);
+      }
+
+      // Update root message's reply count
+      const rootMessage = messagesCache.get(rootId);
+      if (rootMessage) {
+        const totalReplies = countTotalReplies(rootId);
+        rootMessage.threadInfo = rootMessage.threadInfo || {};
+        rootMessage.threadInfo.replyCount = totalReplies;
+        rootMessage.threadInfo.lastReplyTime = timestamp;
+
+        // Update the message in main chat list
+        const mainChatMsg = document.querySelector(`[data-message-id="${rootId}"]`);
+        if (mainChatMsg) {
+          const chatMessage = mainChatMsg.querySelector('chat-message');
+          if (chatMessage) {
+            chatMessage.setAttribute('thread-count', String(totalReplies));
+            chatMessage.render();
+          }
+        }
+      }
+
+      // If this reply belongs to the currently open thread, add it
+      if (currentThreadId === rootId) {
+        const threadReplyElement = createMessageElement(messageData, true);
+        threadReplies.appendChild(threadReplyElement);
+        threadReplies.scrollTop = threadReplies.scrollHeight;
+
+        // Update thread count on the top message in thread panel
+        if (rootMessage) {
+          threadOriginalMessage.innerHTML = '';
+          const msgElement = createMessageElement(rootMessage, false, true);
+          threadOriginalMessage.appendChild(msgElement);
+        }
+      }
+    }
+
     if (isAtBottom) {
       chatlog.scrollBy(0, 1e8);
     }
