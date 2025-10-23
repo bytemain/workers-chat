@@ -107,6 +107,10 @@ export default {
           // This is a request for `/api/...`, call the API handler.
           return handleApiRequest(path.slice(1), request, env);
 
+        case "files":
+          // This is a request for `/files/...`, serve files from R2.
+          return handleFileRequest(path.slice(1), request, env);
+
         default:
           return new Response("Not found", {status: 404});
       }
@@ -198,6 +202,29 @@ async function handleApiRequest(path, request, env) {
   }
 }
 
+async function handleFileRequest(path, request, env) {
+  // Handle file retrieval from R2
+  if (request.method !== "GET" || !path[0]) {
+    return new Response("Not found", {status: 404});
+  }
+
+  // Get the file from R2
+  const fileKey = path.join("/");
+  const object = await env.CHAT_FILES.get(fileKey);
+
+  if (object === null) {
+    return new Response("File not found", {status: 404});
+  }
+
+  // Return the file with appropriate headers
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("Cache-Control", "public, max-age=31536000");
+
+  return new Response(object.body, { headers });
+}
+
 // =======================================================================================
 // The ChatRoom Durable Object Class
 
@@ -275,6 +302,71 @@ export class ChatRoom {
 
           // Now we return the other end of the pair to the client.
           return new Response(null, { status: 101, webSocket: pair[0] });
+        }
+
+        case "/upload": {
+          // Handle file upload
+          if (request.method !== "POST") {
+            return new Response("Method not allowed", {status: 405});
+          }
+
+          // Get the client's IP address for rate limiting
+          let ip = request.headers.get("CF-Connecting-IP");
+
+          // Check rate limit
+          let limiterId = this.env.limiters.idFromName(ip);
+          let limiter = this.env.limiters.get(limiterId);
+          let response = await limiter.fetch("https://dummy-url", {method: "POST"});
+          let cooldown = +(await response.text());
+          if (cooldown > 0) {
+            return new Response(JSON.stringify({error: "Rate limited. Please try again later."}), {
+              status: 429,
+              headers: {"Content-Type": "application/json"}
+            });
+          }
+
+          // Parse multipart form data
+          const formData = await request.formData();
+          const file = formData.get("file");
+          
+          if (!file || !(file instanceof File)) {
+            return new Response(JSON.stringify({error: "No file provided"}), {
+              status: 400,
+              headers: {"Content-Type": "application/json"}
+            });
+          }
+
+          // Validate file size (10MB max)
+          if (file.size > 10 * 1024 * 1024) {
+            return new Response(JSON.stringify({error: "File too large. Maximum size is 10MB."}), {
+              status: 400,
+              headers: {"Content-Type": "application/json"}
+            });
+          }
+
+          // Generate unique file key
+          const fileId = crypto.randomUUID();
+          const fileExtension = file.name.split('.').pop() || 'bin';
+          const fileKey = `${fileId}.${fileExtension}`;
+
+          // Upload to R2
+          await this.env.CHAT_FILES.put(fileKey, file.stream(), {
+            httpMetadata: {
+              contentType: file.type || "application/octet-stream"
+            }
+          });
+
+          // Return the file URL
+          const fileUrl = `/files/${fileKey}`;
+          return new Response(JSON.stringify({
+            success: true,
+            fileUrl: fileUrl,
+            fileName: file.name,
+            fileType: file.type,
+            fileSize: file.size
+          }), {
+            headers: {"Content-Type": "application/json"}
+          });
         }
 
         default:
@@ -373,11 +465,17 @@ export class ChatRoom {
       // Construct sanitized message for storage and broadcast.
       data = { name: session.name, message: "" + data.message };
 
-      // Block people from sending overly long messages. This is also enforced on the client,
-      // so to trigger this the user must be bypassing the client code.
-      if (data.message.length > 6000) {
-        webSocket.send(JSON.stringify({error: "Message too long."}));
-        return;
+      // Check if this is a file message
+      if (data.message.startsWith("FILE:")) {
+        // File messages have format: "FILE:{fileUrl}|{fileName}|{fileType}"
+        // No additional validation needed as the file was already uploaded
+      } else {
+        // Block people from sending overly long messages. This is also enforced on the client,
+        // so to trigger this the user must be bypassing the client code.
+        if (data.message.length > 6000) {
+          webSocket.send(JSON.stringify({error: "Message too long."}));
+          return;
+        }
       }
 
       // Add timestamp. Here's where this.lastTimestamp comes in -- if we receive a bunch of
