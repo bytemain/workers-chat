@@ -285,18 +285,7 @@ if (hostname == "") {
 }
 
 function startNameChooser() {
-  // Check if username is saved in localStorage
-  const savedUsername = localStorage.getItem('chatUsername');
-  if (savedUsername && document.location.hash.length > 1) {
-    // Auto-login with saved username if we have a room hash
-    nameInput.value = savedUsername;
-    // Trigger form submit to go through normal flow
-    setTimeout(() => {
-      nameForm.dispatchEvent(new Event('submit'));
-    }, 0);
-    return;
-  }
-
+  // Bind event listeners first
   nameForm.addEventListener("submit", event => {
     event.preventDefault();
     username = nameInput.value.trim();
@@ -312,6 +301,18 @@ function startNameChooser() {
       event.currentTarget.value = event.currentTarget.value.slice(0, 32);
     }
   });
+
+  // Check if username is saved in localStorage
+  const savedUsername = localStorage.getItem('chatUsername');
+  if (savedUsername && document.location.hash.length > 1) {
+    // Auto-login with saved username if we have a room hash
+    nameInput.value = savedUsername;
+    // Trigger form submit to go through normal flow
+    setTimeout(() => {
+      nameForm.dispatchEvent(new Event('submit'));
+    }, 0);
+    return;
+  }
 
   nameInput.focus();
 }
