@@ -1521,6 +1521,15 @@
       return await response.json();
     }
 
+    // Get thread replies
+    async getThreadReplies(roomName, messageId, nested = true) {
+      const response = await fetch(`${this.baseUrl}/room/${roomName}/thread/${messageId}?nested=${nested}`);
+      if (!response.ok) {
+        throw new Error('Failed to load thread');
+      }
+      return await response.json();
+    }
+
     // Get WebSocket URL
     getWebSocketUrl(roomName) {
       const wss = window.location.protocol === "http:" ? "ws://" : "wss://";
@@ -1675,10 +1684,7 @@
     try {
       // Load all thread replies from server in one request
       // Server should return all nested replies in a flat array
-      const response = await fetch(`${api.baseUrl}/room/${roomname}/thread/${messageId}?nested=true`);
-      if (!response.ok) throw new Error('Failed to load thread');
-
-      const data = await response.json();
+      const data = await api.getThreadReplies(roomname, messageId, true);
       const allReplies = data.replies || [];
 
       // Cache all replies in messagesCache and organize by parent
