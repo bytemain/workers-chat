@@ -25,9 +25,6 @@ async function handleErrors(request, func) {
   }
 }
 
-
-
-
 function ignite(mount) {
   const app = new Hono();
 

@@ -29,7 +29,7 @@
       right: 600px;
     }
 
-    #chatlog span.username {
+    chat-message .username {
       font-weight: bold;
     }
 
@@ -1014,7 +1014,7 @@
           const replyRef = document.createElement('div');
           replyRef.className = 'reply-reference';
           replyRef.innerHTML = `
-            <span class="reply-icon">↩</span>
+            <span class="reply-icon">Reply to</span>
             <span class="reply-author">${replyData.username}</span>
             <span class="reply-separator">:</span>
             <span class="reply-preview">${replyData.preview}</span>
