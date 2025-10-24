@@ -627,18 +627,26 @@ export class ChatRoom {
         }
 
         // Check if this username is already taken
-        let nameTaken = false;
-        for (let otherSession of this.sessions.values()) {
+        let existingSession = null;
+        for (let [ws, otherSession] of this.sessions.entries()) {
           if (otherSession.name === requestedName && otherSession !== session) {
-            nameTaken = true;
+            existingSession = { ws, session: otherSession };
             break;
           }
         }
 
-        if (nameTaken) {
-          webSocket.send(JSON.stringify({ error: "Username '" + requestedName + "' is already taken in this room." }));
-          webSocket.close(1008, "Username already taken.");
-          return;
+        // If the username is taken, kick out the old connection (likely a stale connection)
+        if (existingSession) {
+          try {
+            // Close the old connection
+            existingSession.ws.close(1000, "Reconnected from another session");
+            this.sessions.delete(existingSession.ws);
+            // Broadcast that the user left
+            this.broadcast({ quit: requestedName });
+          } catch (err) {
+            // If closing fails, the connection is probably already dead, which is fine
+            console.log("Failed to close existing session:", err);
+          }
         }
 
         session.name = requestedName;

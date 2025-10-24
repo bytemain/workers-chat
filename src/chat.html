@@ -2521,11 +2521,16 @@
 
     ws.addEventListener("close", event => {
       console.log("WebSocket closed, reconnecting:", event.code, event.reason);
-      if (event.code === 1008 || event.code === 1009) {
-        // Username invalid or banned - clear saved username
+      if (event.code === 1000 && event.reason === "Reconnected from another session") {
+        // This connection was replaced by a new one (e.g., user refreshed the page)
+        // Don't reconnect since the new connection is already active
+        addSystemMessage("* Connection replaced by a new session");
+      } else if (event.code === 1009) {
+        // Name too long or invalid - clear saved username
         localStorage.removeItem('chatUsername');
-        shouldReconnect = false; // Don't reconnect
-      } else {
+        addSystemMessage("* Connection closed: " + event.reason);
+      } else if (event.code !== 1000) {
+        // Unexpected closure, try to reconnect
         updateConnectionStatus('reconnecting');
         rejoin();
       }
