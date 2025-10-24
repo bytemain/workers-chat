@@ -1880,6 +1880,55 @@
   // Initialize API client
   const api = new ChatAPI(hostname);
 
+  // User message API - handles sending messages through WebSocket
+  class UserMessageAPI {
+    /**
+     * Send a text message
+     * @param {string} message - The message text to send
+     * @param {object} replyTo - Optional reply information {messageId, username, preview}
+     */
+    sendMessage(message, replyTo = null) {
+      if (!currentWebSocket || !message || message.length === 0) {
+        return false;
+      }
+
+      const payload = { message: message };
+
+      // Include replyTo information if provided
+      if (replyTo) {
+        payload.replyTo = {
+          messageId: replyTo.messageId,
+          username: replyTo.username,
+          preview: replyTo.preview
+        };
+      }
+
+      currentWebSocket.send(JSON.stringify(payload));
+
+      // Scroll to bottom whenever sending a message
+      chatlog.scrollBy(0, 1e8);
+      // Set flag to scroll when we receive our own message back
+      isAtBottom = true;
+
+      return true;
+    }
+
+    /**
+     * Send a file message
+     * @param {string} fileUrl - The uploaded file URL
+     * @param {string} fileName - The file name
+     * @param {string} fileType - The file MIME type
+     * @param {object} replyTo - Optional reply information {messageId, username, preview}
+     */
+    sendFileMessage(fileUrl, fileName, fileType, replyTo = null) {
+      const fileMessage = `FILE:${fileUrl}|${fileName}|${fileType}`;
+      return this.sendMessage(fileMessage, replyTo);
+    }
+  }
+
+  // Initialize user message API
+  const userApi = new UserMessageAPI();
+
   // Thread functions
   window.openThread = async function (messageId) {
     // Find the root message of the thread
@@ -2678,26 +2727,14 @@
       chatInputComponent.addEventListener('submit', (event) => {
         const message = event.detail.message;
 
-        if (currentWebSocket && message.length > 0) {
-          const payload = { message: message };
+        if (message.length > 0) {
+          // Send message using userApi
+          const sent = userApi.sendMessage(message, currentReplyTo);
 
-          // If replying to a message, include replyTo information
-          if (currentReplyTo) {
-            payload.replyTo = {
-              messageId: currentReplyTo.messageId,
-              username: currentReplyTo.username,
-              preview: currentReplyTo.preview
-            };
+          if (sent && currentReplyTo) {
             // Clear reply state after sending
             clearReplyTo();
           }
-
-          currentWebSocket.send(JSON.stringify(payload));
-
-          // Scroll to bottom whenever sending a message.
-          chatlog.scrollBy(0, 1e8);
-          // Set flag to scroll when we receive our own message back
-          isAtBottom = true;
         }
       });
 
@@ -2705,17 +2742,7 @@
       chatInputComponent.onFileUpload = async (file) => {
         addSystemMessage("* Uploading file...");
 
-        // Prepare replyTo info if replying to a message
-        let replyToInfo = null;
-        if (currentReplyTo) {
-          replyToInfo = {
-            messageId: currentReplyTo.messageId,
-            username: currentReplyTo.username,
-            preview: currentReplyTo.preview
-          };
-        }
-
-        const success = await uploadFile(file, null, replyToInfo);
+        const success = await uploadFile(file, null, currentReplyTo);
         if (success && currentReplyTo) {
           // Clear reply state after successful upload
           clearReplyTo();
@@ -2935,7 +2962,7 @@
     }
 
     async function sendThreadReply() {
-      if (!threadInputComponent || !currentThreadId || !currentWebSocket) return;
+      if (!threadInputComponent || !currentThreadId) return;
 
       const message = threadInputComponent.getValue().trim();
       if (!message) return;
@@ -2943,17 +2970,19 @@
       const originalMessage = messagesCache.get(currentThreadId);
       if (!originalMessage) return;
 
-      // Send reply with replyTo information
-      currentWebSocket.send(JSON.stringify({
-        message: message,
-        replyTo: {
-          messageId: currentThreadId,
-          username: originalMessage.name,
-          preview: originalMessage.message.substring(0, 100)
-        }
-      }));
+      // Prepare replyTo information
+      const replyTo = {
+        messageId: currentThreadId,
+        username: originalMessage.name,
+        preview: originalMessage.message.substring(0, 100)
+      };
 
-      threadInputComponent.clear();
+      // Send reply using userApi
+      const sent = userApi.sendMessage(message, replyTo);
+
+      if (sent) {
+        threadInputComponent.clear();
+      }
     }
 
     // Upload file function
@@ -2966,23 +2995,8 @@
         // Upload file
         const result = await api.uploadFile(roomname, formData);
 
-        // Send file message through WebSocket
-        if (currentWebSocket) {
-          const fileMessage = `FILE:${result.fileUrl}|${result.fileName}|${result.fileType}`;
-          const payload = { message: fileMessage };
-
-          // Include replyTo information if provided
-          if (replyTo) {
-            payload.replyTo = replyTo;
-          }
-
-          currentWebSocket.send(JSON.stringify(payload));
-
-          // Scroll to bottom whenever sending a file message
-          chatlog.scrollBy(0, 1e8);
-          // Set flag to scroll when we receive our own message back
-          isAtBottom = true;
-        }
+        // Send file message using userApi
+        userApi.sendFileMessage(result.fileUrl, result.fileName, result.fileType, replyTo);
 
         return true;
       } catch (err) {

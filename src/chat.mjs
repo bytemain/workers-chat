@@ -2,6 +2,7 @@ import HTML from "./chat.html";
 import { HashtagManager } from "./hashtag.mjs";
 import { Hono } from 'hono'
 import { getPath, splitPath } from 'hono/utils/url'
+import { showRoutes } from 'hono/dev'
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -39,6 +40,9 @@ function ignite(mount) {
     return c.text('Error: ' + err.message, 500)
   });
 
+  showRoutes(app, {
+    verbose: true,
+  });
   return app;
 }
 
