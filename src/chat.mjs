@@ -1,64 +1,7 @@
-// ===============================
-// Introduction to Modules
-// ===============================
-//
-// The first thing you might notice, if you are familiar with the Workers platform, is that this
-// Worker is written differently from others you may have seen. It even has a different file
-// extension. The `mjs` extension means this JavaScript is an ES Module, which, among other things,
-// means it has imports and exports. Unlike other Workers, this code doesn't use
-// `addEventListener("fetch", handler)` to register its main HTTP handler; instead, it _exports_
-// a handler, as we'll see below.
-//
-// This is a new way of writing Workers that we expect to introduce more broadly in the future. We
-// like this syntax because it is *composable*: You can take two workers written this way and
-// merge them into one worker, by importing the two Workers' exported handlers yourself, and then
-// exporting a new handler that call into the other Workers as appropriate.
-//
-// This new syntax is required when using Durable Objects, because your Durable Objects are
-// implemented by classes, and those classes need to be exported. The new syntax can be used for
-// writing regular Workers (without Durable Objects) too, but for now, you must be in the Durable
-// Objects beta to be able to use the new syntax, while we work out the quirks.
-//
-// To see an example configuration for uploading module-based Workers, check out the wrangler.toml
-// file or one of our Durable Object templates for Wrangler:
-//   * https://github.com/cloudflare/durable-objects-template
-//   * https://github.com/cloudflare/durable-objects-rollup-esm
-//   * https://github.com/cloudflare/durable-objects-webpack-commonjs
-
-// ===============================
-// Required Environment
-// ===============================
-//
-// This worker, when deployed, must be configured with two environment bindings:
-// * rooms: A Durable Object namespace binding mapped to the ChatRoom class.
-// * limiters: A Durable Object namespace binding mapped to the RateLimiter class.
-//
-// Incidentally, in pre-modules Workers syntax, "bindings" (like KV bindings, secrets, etc.)
-// appeared in your script as global variables, but in the new modules syntax, this is no longer
-// the case. Instead, bindings are now delivered in an "environment object" when an event handler
-// (or Durable Object class constructor) is called. Look for the variable `env` below.
-//
-// We made this change, again, for composability: The global scope is global, but if you want to
-// call into existing code that has different environment requirements, then you need to be able
-// to pass the environment as a parameter instead.
-//
-// Once again, see the wrangler.toml file to understand how the environment is configured.
-
-// =======================================================================================
-// The regular Worker part...
-//
-// This section of the code implements a normal Worker that receives HTTP requests from external
-// clients. This part is stateless.
-
-// With the introduction of modules, we're experimenting with allowing text/data blobs to be
-// uploaded and exposed as synthetic modules. In wrangler.toml we specify a rule that files ending
-// in .html should be uploaded as "Data", equivalent to content-type `application/octet-stream`.
-// So when we import it as `HTML` here, we get the HTML content as an `ArrayBuffer`. This lets us
-// serve our app's static asset without relying on any separate storage. (However, the space
-// available for assets served this way is very limited; larger sites should continue to use Workers
-// KV to serve assets.)
 import HTML from "./chat.html";
 import { HashtagManager } from "./hashtag.mjs";
+import { Hono } from 'hono'
+import { getPath, splitPath } from 'hono/utils/url'
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -82,87 +25,70 @@ async function handleErrors(request, func) {
   }
 }
 
-// In modules-syntax workers, we use `export default` to export our script's main event handlers.
-// Here, we export one handler, `fetch`, for receiving HTTP requests. In pre-modules workers, the
-// fetch handler was registered using `addEventHandler("fetch", event => { ... })`; this is just
-// new syntax for essentially the same thing.
-//
-// `fetch` isn't the only handler. If your worker runs on a Cron schedule, it will receive calls
-// to a handler named `scheduled`, which should be exported here in a similar way. We will be
-// adding other handlers for other types of events over time.
-export default {
-  async fetch(request, env) {
-    return await handleErrors(request, async () => {
-      // We have received an HTTP request! Parse the URL and route the request.
 
-      let url = new URL(request.url);
-      let path = url.pathname.slice(1).split('/');
 
-      if (!path[0]) {
-        // Serve our HTML at the root path.
-        return new Response(HTML, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
-      }
 
-      switch (path[0]) {
-        case "api":
-          // This is a request for `/api/...`, call the API handler.
-          return handleApiRequest(path.slice(1), request, env);
+function ignite(mount) {
+  const app = new Hono();
 
-        case "files":
-          // This is a request for `/files/...`, serve files from R2.
-          return handleFileRequest(path.slice(1), request, env);
+  mount(app);
 
-        default:
-          return new Response("Not found", { status: 404 });
-      }
-    });
-  }
+  app.notFound((c) => {
+    return c.text('not found', 404)
+  });
+
+  app.onError((err, c) => {
+    console.error(`${err}`)
+    return c.text('Error: ' + err.message, 500)
+  });
+
+  return app;
 }
 
+const app = ignite((app) => {
+  function apiRoutes() {
+    const api = new Hono();
 
-async function handleApiRequest(path, request, env) {
-  // We've received at API request. Route the request based on the path.
+    api.post('/room', (c) => {
+      // POST to /api/room creates a private room.
+      //
+      // Incidentally, this code doesn't actually store anything. It just generates a valid
+      // unique ID for this namespace. Each durable object namespace has its own ID space, but
+      // IDs from one namespace are not valid for any other.
+      //
+      // The IDs returned by `newUniqueId()` are unguessable, so are a valid way to implement
+      // "anyone with the link can access" sharing. Additionally, IDs generated this way have
+      // a performance benefit over IDs generated from names: When a unique ID is generated,
+      // the system knows it is unique without having to communicate with the rest of the
+      // world -- i.e., there is no way that someone in the UK and someone in New Zealand
+      // could coincidentally create the same ID at the same time, because unique IDs are,
+      // well, unique!
+      let id = env.rooms.newUniqueId();
+      return new Response(id.toString(), { headers: { "Access-Control-Allow-Origin": "*" } });
+    });
 
-  switch (path[0]) {
-    case "room": {
-      // Request for `/api/room/...`.
-
-      if (!path[1]) {
-        // The request is for just "/api/room", with no ID.
-        if (request.method == "POST") {
-          // POST to /api/room creates a private room.
-          //
-          // Incidentally, this code doesn't actually store anything. It just generates a valid
-          // unique ID for this namespace. Each durable object namespace has its own ID space, but
-          // IDs from one namespace are not valid for any other.
-          //
-          // The IDs returned by `newUniqueId()` are unguessable, so are a valid way to implement
-          // "anyone with the link can access" sharing. Additionally, IDs generated this way have
-          // a performance benefit over IDs generated from names: When a unique ID is generated,
-          // the system knows it is unique without having to communicate with the rest of the
-          // world -- i.e., there is no way that someone in the UK and someone in New Zealand
-          // could coincidentally create the same ID at the same time, because unique IDs are,
-          // well, unique!
-          let id = env.rooms.newUniqueId();
-          return new Response(id.toString(), { headers: { "Access-Control-Allow-Origin": "*" } });
-        } else {
-          // If we wanted to support returning a list of public rooms, this might be a place to do
-          // it. The list of room names might be a good thing to store in KV, though a singleton
-          // Durable Object is also a possibility as long as the Cache API is used to cache reads.
-          // (A caching layer would be needed because a single Durable Object is single-threaded,
-          // so the amount of traffic it can handle is limited. Also, caching would improve latency
-          // for users who don't happen to be located close to the singleton.)
-          //
-          // For this demo, though, we're not implementing a public room list, mainly because
-          // inevitably some trolls would probably register a bunch of offensive room names. Sigh.
-          return new Response("Method not allowed", { status: 405 });
-        }
+    api.all('/room/*', async (c, next) => {
+      const path = getPath(c.req)
+      console.log("Processing path:", path);
+      const segments = splitPath(path);
+      console.log("Segments:", segments);
+      const name = segments[2];
+      if (!name) {
+        return new Response("You must specify a room name", { status: 401 });
       }
+      c.set('name', name);
+      c.set('path', segments.slice(3).join('/'));
+      await next()
+    })
 
-      // OK, the request is for `/api/room/<name>/...`. It's time to route to the Durable Object
+    api.all('/room/*', async (c) => {
+      // OK, the request is for `/api/room/<name>/...{path}`. It's time to route to the Durable Object
       // for the specific room.
-      let name = path[1];
-
+      const name = c.get('name')
+      const path = c.get('path')
+      console.log("Routing to room:", name, path);
+      const { env } = c;
+      const request = c.req.raw;
       // Each Durable Object has a 256-bit unique ID. IDs can be derived from string names, or
       // chosen randomly by the system.
       let id;
@@ -186,44 +112,58 @@ async function handleApiRequest(path, request, env) {
       // created on-demand when the ID is first used, there's nothing to wait for anyway; we know
       // an object will be available somewhere to receive our requests.
       let roomObject = env.rooms.get(id);
-
-      // Compute a new URL with `/api/room/<name>` removed. We'll forward the rest of the path
-      // to the Durable Object.
-      let newUrl = new URL(request.url);
-      newUrl.pathname = "/" + path.slice(2).join("/");
+      const newUrl = new URL(request.url);
+      newUrl.pathname = "/" + path;
+      console.log("Forwarding to DO with path:", newUrl.toString());
 
       // Send the request to the object. The `fetch()` method of a Durable Object stub has the
       // same signature as the global `fetch()` function, but the request is always sent to the
       // object, regardless of the request's URL.
       return roomObject.fetch(newUrl, request);
+    });
+
+    // Define API routes here
+    return api;
+  }
+
+  app.get('/', () => {
+    return new Response(HTML, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
+  });
+
+  app.route('/api', apiRoutes());
+  app.get('/files/*', async (c) => {
+    const { env, req } = c;
+    const url = new URL(req.url);
+    const path = url.pathname.slice(7).split('/'); // Remove '/files/' prefix
+
+    if (!path[0]) {
+      return new Response("Not found", { status: 404 });
     }
 
-    default:
-      return new Response("Not found", { status: 404 });
+    // Get the file from R2
+    const fileKey = path.join("/");
+    const object = await env.CHAT_FILES.get(fileKey);
+
+    if (object === null) {
+      return new Response("File not found", { status: 404 });
+    }
+
+    // Return the file with appropriate headers
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("etag", object.httpEtag);
+    headers.set("Cache-Control", "public, max-age=31536000");
+
+    return new Response(object.body, { headers });
+  });
+});
+
+export default {
+  async fetch(request, env, ctx) {
+    return await handleErrors(request, async () => {
+      return app.fetch(request, env, ctx);
+    });
   }
-}
-
-async function handleFileRequest(path, request, env) {
-  // Handle file retrieval from R2
-  if (request.method !== "GET" || !path[0]) {
-    return new Response("Not found", { status: 404 });
-  }
-
-  // Get the file from R2
-  const fileKey = path.join("/");
-  const object = await env.CHAT_FILES.get(fileKey);
-
-  if (object === null) {
-    return new Response("File not found", { status: 404 });
-  }
-
-  // Return the file with appropriate headers
-  const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set("etag", object.httpEtag);
-  headers.set("Cache-Control", "public, max-age=31536000");
-
-  return new Response(object.body, { headers });
 }
 
 // =======================================================================================
@@ -273,6 +213,243 @@ export class ChatRoom {
     // no need to store this to disk since we assume if the object is destroyed and recreated, much
     // more than a millisecond will have gone by.
     this.lastTimestamp = 0;
+    this.app = this.createApp();
+  }
+
+  createApp() {
+    return ignite(app => {
+      app.all('/websocket', async (c) => {
+        const { req } = c;
+        const request = req.raw;
+        // The request is to `/api/room/<name>/websocket`. A client is trying to establish a new
+        // WebSocket session.
+        if (request.headers.get("Upgrade") != "websocket") {
+          return new Response("expected websocket", { status: 400 });
+        }
+
+        // Get the client's IP address for use with the rate limiter.
+        let ip = request.headers.get("CF-Connecting-IP");
+
+        // To accept the WebSocket request, we create a WebSocketPair (which is like a socketpair,
+        // i.e. two WebSockets that talk to each other), we return one end of the pair in the
+        // response, and we operate on the other end. Note that this API is not part of the
+        // Fetch API standard; unfortunately, the Fetch API / Service Workers specs do not define
+        // any way to act as a WebSocket server today.
+        let pair = new WebSocketPair();
+
+        // We're going to take pair[1] as our end, and return pair[0] to the client.
+        await this.handleSession(pair[1], ip);
+
+        // Now we return the other end of the pair to the client.
+        return new Response(null, { status: 101, webSocket: pair[0] });
+      });
+
+      app.post('/upload', async (c) => {
+        // Handle file upload
+        const { req } = c;
+        const request = req.raw;
+        // Get the client's IP address for rate limiting
+        let ip = request.headers.get("CF-Connecting-IP");
+
+        // Check rate limit
+        let limiterId = this.env.limiters.idFromName(ip);
+        let limiter = this.env.limiters.get(limiterId);
+        let response = await limiter.fetch("https://dummy-url", { method: "POST" });
+        let cooldown = +(await response.text());
+        if (cooldown > 0) {
+          return new Response(JSON.stringify({ error: "Rate limited. Please try again later." }), {
+            status: 429,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Parse multipart form data
+        const formData = await request.formData();
+        const file = formData.get("file");
+
+        if (!file || !(file instanceof File)) {
+          return new Response(JSON.stringify({ error: "No file provided" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Validate file size (10MB max)
+        if (file.size > 10 * 1024 * 1024) {
+          return new Response(JSON.stringify({ error: "File too large. Maximum size is 10MB." }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Generate unique file key
+        const fileId = crypto.randomUUID();
+        const fileExtension = file.name.split('.').pop() || 'bin';
+        const fileKey = `${fileId}.${fileExtension}`;
+
+        // Upload to R2
+        await this.env.CHAT_FILES.put(fileKey, file.stream(), {
+          httpMetadata: {
+            contentType: file.type || "application/octet-stream"
+          }
+        });
+
+        // Return the file URL
+        const fileUrl = `/files/${fileKey}`;
+        return new Response(JSON.stringify({
+          success: true,
+          fileUrl: fileUrl,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size
+        }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      });
+
+      app.get('/hashtags', async (c) => {
+        const tags = await this.hashtagManager.getAllHashtags(100);
+        return new Response(JSON.stringify({ hashtags: tags }), {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+      });
+
+      app.get('/hashtag', async (c) => {
+        const tag = c.req.query("tag");
+        if (!tag) {
+          return new Response(JSON.stringify({ error: "Missing 'tag' parameter" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        const messages = await this.hashtagManager.getMessagesForTag(tag, 100);
+        return new Response(JSON.stringify({ tag, messages }), {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+      });
+
+      app.get('/hashtag/search', async (c) => {
+        const query = c.req.query("q") || "";
+        const tags = await this.hashtagManager.searchHashtags(query, 20);
+        return new Response(JSON.stringify({ query, results: tags }), {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+      });
+
+      app.get('/info', async (c) => {
+        const info = await this.storage.get("room-info") || {};
+        return new Response(JSON.stringify(info), {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+      });
+
+      app.put('/info', async (c) => {
+        const data = c.json();
+        let info = await this.storage.get("room-info") || {};
+
+        // Track what changed
+        let changed = false;
+
+        // Update name if provided
+        if (data.name !== undefined && data.name !== info.name) {
+          info.name = data.name;
+          changed = true;
+        }
+
+        // Update note if provided
+        if (data.note !== undefined && data.note !== info.note) {
+          info.note = data.note;
+          changed = true;
+        }
+
+        await this.storage.put("room-info", info);
+
+        // Broadcast the update to all connected clients
+        if (changed) {
+          // Create a plain object to ensure JSON serialization works
+          this.broadcast({
+            roomInfoUpdate: {
+              name: info.name,
+              note: info.note
+            }
+          });
+        }
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+      });
+
+      app.get('/thread/:messageId', async (c) => {
+        const messageId = c.req.param('messageId');
+
+        if (!messageId) {
+          return new Response("Method not allowed", { status: 405 });
+        }
+        try {
+          // Check if nested parameter is set
+          const nested = c.req.query('nested') === 'true';
+
+          if (nested) {
+            // Return all nested replies recursively
+            const allReplies = await this.getAllThreadReplies(messageId);
+            return new Response(JSON.stringify({ replies: allReplies }), {
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+              }
+            });
+          } else {
+            // Return only direct replies (original behavior)
+            const threadKey = `thread:${messageId}`;
+            const threadReplies = await this.storage.get(threadKey) || [];
+
+            // Load the actual reply messages
+            const replies = [];
+            for (const reply of threadReplies) {
+              try {
+                const msgData = await this.storage.get(reply.key);
+                if (msgData) {
+                  const msg = typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
+                  replies.push(msg);
+                }
+              } catch (e) {
+                console.error('Failed to load reply:', e);
+              }
+            }
+
+            return new Response(JSON.stringify({ replies }), {
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+              }
+            });
+          }
+        } catch (err) {
+          return new Response(JSON.stringify({ error: err.message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+      });
+
+    });
   }
 
   // The system will call fetch() whenever an HTTP request is sent to this Object. Such requests
@@ -282,264 +459,8 @@ export class ChatRoom {
   async fetch(request) {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
-
-      switch (url.pathname) {
-        case "/websocket": {
-          // The request is to `/api/room/<name>/websocket`. A client is trying to establish a new
-          // WebSocket session.
-          if (request.headers.get("Upgrade") != "websocket") {
-            return new Response("expected websocket", { status: 400 });
-          }
-
-          // Get the client's IP address for use with the rate limiter.
-          let ip = request.headers.get("CF-Connecting-IP");
-
-          // To accept the WebSocket request, we create a WebSocketPair (which is like a socketpair,
-          // i.e. two WebSockets that talk to each other), we return one end of the pair in the
-          // response, and we operate on the other end. Note that this API is not part of the
-          // Fetch API standard; unfortunately, the Fetch API / Service Workers specs do not define
-          // any way to act as a WebSocket server today.
-          let pair = new WebSocketPair();
-
-          // We're going to take pair[1] as our end, and return pair[0] to the client.
-          await this.handleSession(pair[1], ip);
-
-          // Now we return the other end of the pair to the client.
-          return new Response(null, { status: 101, webSocket: pair[0] });
-        }
-
-        case "/upload": {
-          // Handle file upload
-          if (request.method !== "POST") {
-            return new Response("Method not allowed", { status: 405 });
-          }
-
-          // Get the client's IP address for rate limiting
-          let ip = request.headers.get("CF-Connecting-IP");
-
-          // Check rate limit
-          let limiterId = this.env.limiters.idFromName(ip);
-          let limiter = this.env.limiters.get(limiterId);
-          let response = await limiter.fetch("https://dummy-url", { method: "POST" });
-          let cooldown = +(await response.text());
-          if (cooldown > 0) {
-            return new Response(JSON.stringify({ error: "Rate limited. Please try again later." }), {
-              status: 429,
-              headers: { "Content-Type": "application/json" }
-            });
-          }
-
-          // Parse multipart form data
-          const formData = await request.formData();
-          const file = formData.get("file");
-
-          if (!file || !(file instanceof File)) {
-            return new Response(JSON.stringify({ error: "No file provided" }), {
-              status: 400,
-              headers: { "Content-Type": "application/json" }
-            });
-          }
-
-          // Validate file size (10MB max)
-          if (file.size > 10 * 1024 * 1024) {
-            return new Response(JSON.stringify({ error: "File too large. Maximum size is 10MB." }), {
-              status: 400,
-              headers: { "Content-Type": "application/json" }
-            });
-          }
-
-          // Generate unique file key
-          const fileId = crypto.randomUUID();
-          const fileExtension = file.name.split('.').pop() || 'bin';
-          const fileKey = `${fileId}.${fileExtension}`;
-
-          // Upload to R2
-          await this.env.CHAT_FILES.put(fileKey, file.stream(), {
-            httpMetadata: {
-              contentType: file.type || "application/octet-stream"
-            }
-          });
-
-          // Return the file URL
-          const fileUrl = `/files/${fileKey}`;
-          return new Response(JSON.stringify({
-            success: true,
-            fileUrl: fileUrl,
-            fileName: file.name,
-            fileType: file.type,
-            fileSize: file.size
-          }), {
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        case "/hashtags": {
-          // GET /hashtags - Get all hashtags used in this room
-          if (request.method !== "GET") {
-            return new Response("Method not allowed", { status: 405 });
-          }
-
-          const tags = await this.hashtagManager.getAllHashtags(100);
-          return new Response(JSON.stringify({ hashtags: tags }), {
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*"
-            }
-          });
-        }
-
-        case "/hashtag": {
-          // GET /hashtag?tag=xxx - Get messages for a specific hashtag
-          if (request.method !== "GET") {
-            return new Response("Method not allowed", { status: 405 });
-          }
-
-          const tag = url.searchParams.get("tag");
-          if (!tag) {
-            return new Response(JSON.stringify({ error: "Missing 'tag' parameter" }), {
-              status: 400,
-              headers: { "Content-Type": "application/json" }
-            });
-          }
-
-          const messages = await this.hashtagManager.getMessagesForTag(tag, 100);
-          return new Response(JSON.stringify({ tag, messages }), {
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*"
-            }
-          });
-        }
-
-        case "/hashtag/search": {
-          // GET /hashtag/search?q=xxx - Search hashtags by prefix
-          if (request.method !== "GET") {
-            return new Response("Method not allowed", { status: 405 });
-          }
-
-          const query = url.searchParams.get("q") || "";
-          const tags = await this.hashtagManager.searchHashtags(query, 20);
-          return new Response(JSON.stringify({ query, results: tags }), {
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*"
-            }
-          });
-        }
-
-        case "/info": {
-          // GET /info - Get room info (name, note, etc.)
-          // PUT /info - Update room info
-          if (request.method === "GET") {
-            const info = await this.storage.get("room-info") || {};
-            return new Response(JSON.stringify(info), {
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-              }
-            });
-          } else if (request.method === "PUT") {
-            const data = await request.json();
-            let info = await this.storage.get("room-info") || {};
-
-            // Track what changed
-            let changed = false;
-
-            // Update name if provided
-            if (data.name !== undefined && data.name !== info.name) {
-              info.name = data.name;
-              changed = true;
-            }
-
-            // Update note if provided
-            if (data.note !== undefined && data.note !== info.note) {
-              info.note = data.note;
-              changed = true;
-            }
-
-            await this.storage.put("room-info", info);
-
-            // Broadcast the update to all connected clients
-            if (changed) {
-              // Create a plain object to ensure JSON serialization works
-              this.broadcast({
-                roomInfoUpdate: {
-                  name: info.name,
-                  note: info.note
-                }
-              });
-            }
-
-            return new Response(JSON.stringify({ success: true }), {
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-              }
-            });
-          } else {
-            return new Response("Method not allowed", { status: 405 });
-          }
-        }
-
-        default:
-          // Handle thread endpoint: /thread/:messageId
-          if (url.pathname.startsWith("/thread/")) {
-            const pathParts = url.pathname.split('/');
-            const messageId = pathParts[2]; // /thread/:messageId
-            
-            if (request.method !== "GET" || !messageId) {
-              return new Response("Method not allowed", { status: 405 });
-            }
-
-            try {
-              // Check if nested parameter is set
-              const nested = url.searchParams.get('nested') === 'true';
-              
-              if (nested) {
-                // Return all nested replies recursively
-                const allReplies = await this.getAllThreadReplies(messageId);
-                return new Response(JSON.stringify({ replies: allReplies }), {
-                  headers: { 
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Origin": "*"
-                  }
-                });
-              } else {
-                // Return only direct replies (original behavior)
-                const threadKey = `thread:${messageId}`;
-                const threadReplies = await this.storage.get(threadKey) || [];
-                
-                // Load the actual reply messages
-                const replies = [];
-                for (const reply of threadReplies) {
-                  try {
-                    const msgData = await this.storage.get(reply.key);
-                    if (msgData) {
-                      const msg = typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
-                      replies.push(msg);
-                    }
-                  } catch (e) {
-                    console.error('Failed to load reply:', e);
-                  }
-                }
-                
-                return new Response(JSON.stringify({ replies }), {
-                  headers: { 
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Origin": "*"
-                  }
-                });
-              }
-            } catch (err) {
-              return new Response(JSON.stringify({ error: err.message }), {
-                status: 500,
-                headers: { "Content-Type": "application/json" }
-              });
-            }
-          }
-          
-          return new Response("Not found", { status: 404 });
-      }
+      console.log("ChatRoom handling request for:", url.pathname);
+      return this.app.fetch(request);
     });
   }
 
@@ -672,8 +593,8 @@ export class ChatRoom {
       }
 
       // Construct sanitized message for storage and broadcast.
-      data = { 
-        name: session.name, 
+      data = {
+        name: session.name,
         message: "" + data.message,
         messageId: data.messageId || crypto.randomUUID(),  // Generate UUID if not provided
         replyTo: data.replyTo || null  // Include reply information if present
@@ -705,7 +626,7 @@ export class ChatRoom {
       // Save message.
       let key = new Date(data.timestamp).toISOString();
       await this.storage.put(key, dataStr);
-      
+
       // If this is a reply, update thread index
       if (data.replyTo && data.replyTo.messageId) {
         await this.updateThreadIndex(data.replyTo.messageId, key, data);
@@ -745,23 +666,23 @@ export class ChatRoom {
       // Get or create thread index
       const threadKey = `thread:${parentMessageId}`;
       let threadReplies = await this.storage.get(threadKey) || [];
-      
+
       // Add this reply to the thread
       threadReplies.push({
         key: replyKey,
         timestamp: replyData.timestamp
       });
-      
+
       // Save updated thread index
       await this.storage.put(threadKey, threadReplies);
-      
+
       // Update parent message's threadInfo
       // Try to find the parent message by searching storage
       // Since messageId might be UUID or timestamp-based, we need to search
       const messages = await this.storage.list();
       for (const [key, value] of messages) {
         if (key.startsWith('thread:')) continue; // Skip thread indexes
-        
+
         try {
           const msg = typeof value === 'string' ? JSON.parse(value) : value;
           if (msg.messageId === parentMessageId) {
@@ -770,7 +691,7 @@ export class ChatRoom {
               lastReplyTime: replyData.timestamp
             };
             await this.storage.put(key, JSON.stringify(msg));
-            
+
             // Broadcast the updated threadInfo to all clients
             this.broadcast({
               threadUpdate: {
@@ -794,18 +715,18 @@ export class ChatRoom {
   async getAllThreadReplies(rootMessageId) {
     const allReplies = [];
     const visited = new Set();
-    
+
     // Recursive function to collect replies
     const collectReplies = async (messageId) => {
       if (visited.has(messageId)) {
         return; // Prevent infinite loops
       }
       visited.add(messageId);
-      
+
       // Get direct replies to this message
       const threadKey = `thread:${messageId}`;
       const threadReplies = await this.storage.get(threadKey) || [];
-      
+
       // Load each reply message
       for (const replyRef of threadReplies) {
         try {
@@ -813,7 +734,7 @@ export class ChatRoom {
           if (msgData) {
             const msg = typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
             allReplies.push(msg);
-            
+
             // Recursively get replies to this reply
             if (msg.messageId) {
               await collectReplies(msg.messageId);
@@ -824,10 +745,10 @@ export class ChatRoom {
         }
       }
     };
-    
+
     // Start collecting from the root message
     await collectReplies(rootMessageId);
-    
+
     return allReplies;
   }
 
