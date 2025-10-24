@@ -1453,15 +1453,27 @@
         img.style.marginTop = "5px";
         img.style.cursor = "pointer";
         img.onclick = () => window.open(fileUrl, "_blank");
-        this.appendChild(img);
 
-        const link = document.createElement("a");
-        link.href = fileUrl;
-        link.target = "_blank";
-        link.textContent = fileName;
-        link.style.fontSize = "0.9em";
-        this.appendChild(document.createElement("br"));
-        this.appendChild(link);
+        // Determine which scroll container this image belongs to
+        const isInThreadPanel = this.closest('#thread-panel') !== null;
+        const scrollContainer = isInThreadPanel
+          ? document.querySelector('#thread-replies')
+          : document.querySelector('#chatlog');
+
+        // Setup scroll handler to maintain position at bottom when image loads
+        if (scrollContainer) {
+          const shouldScroll = isInThreadPanel
+            ? () => {
+              // For thread panel, check if we're at bottom
+              const container = document.querySelector('#thread-replies');
+              return container && Math.abs(container.scrollTop + container.clientHeight - container.scrollHeight) < 2;
+            }
+            : () => window.isAtBottom; // For main chat, use the global isAtBottom flag
+
+          window.setupImageScrollHandler(img, scrollContainer, shouldScroll);
+        }
+
+        this.appendChild(img);
       } else {
         // For other files, just show a download link
         const link = document.createElement("a");
@@ -1581,6 +1593,20 @@
   let roomname;
   let currentHashtagFilter = null; // Current active hashtag filter
   let allHashtags = []; // Cache of all hashtags
+
+  // Helper function to setup image load handlers for maintaining scroll position
+  function setupImageScrollHandler(img, scrollContainer, shouldScrollToBottom) {
+    img.addEventListener('load', () => {
+      if (shouldScrollToBottom && shouldScrollToBottom()) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
+    });
+
+    // Also handle error case to prevent hanging
+    img.addEventListener('error', () => {
+      console.warn('Image failed to load:', img.src);
+    });
+  }
 
   // Connection status tracking
   let connectionStatusTimeout = null;
@@ -2831,6 +2857,11 @@
           }
 
           currentWebSocket.send(JSON.stringify(payload));
+
+          // Scroll to bottom whenever sending a file message
+          chatlog.scrollBy(0, 1e8);
+          // Set flag to scroll when we receive our own message back
+          isAtBottom = true;
         }
 
         return true;
