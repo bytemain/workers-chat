@@ -2,15 +2,21 @@
 <html>
 
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <!--===================================================================================-->
+  <meta name="viewport"
+    content="width=device-width, height=device-height,  initial-scale=1.0, user-scalable=no ;user-scalable=0;" />
   <style type="text/css">
     * {
       box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
     }
 
     body {
       font-family: Arial, Helvetica, sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
     }
 
     #chatlog {
@@ -27,6 +33,89 @@
 
     #chatlog.thread-open {
       right: 600px;
+    }
+
+    /* Mobile-specific styles */
+    @media (max-width: 600px) {
+
+      /* Prevent body scroll when thread is open */
+      body.thread-open {
+        overflow: hidden;
+      }
+
+      /* Make touch targets larger on mobile */
+      .message-action-btn {
+        padding: 8px 12px;
+        font-size: 16px;
+      }
+
+      .thread-indicator {
+        padding: 6px 10px;
+        font-size: 0.9em;
+      }
+
+      /* Adjust message wrapper for mobile */
+      .message-wrapper {
+        padding: 8px 4px;
+      }
+
+      /* Improve readability on mobile */
+      chat-message {
+        font-size: 16px;
+        line-height: 1.4;
+      }
+
+      /* Better spacing for reply indicators */
+      #reply-indicator {
+        padding: 12px;
+        font-size: 14px;
+      }
+
+      /* Adjust thread panel header for mobile */
+      #thread-header {
+        padding: 16px;
+      }
+
+      #thread-header h3 {
+        font-size: 1.1em;
+      }
+
+      #thread-close {
+        width: 32px;
+        height: 32px;
+        font-size: 24px;
+      }
+
+      /* Better spacing in thread panel */
+      #thread-original-message {
+        padding: 16px;
+      }
+
+      #thread-replies {
+        padding: 12px;
+      }
+
+      #thread-input-container {
+        padding: 12px;
+      }
+
+      /* Ensure inputs are readable */
+      input,
+      textarea,
+      button {
+        font-size: max(16px, 1em) !important;
+      }
+
+      /* Adjust room info display in mobile dropdown */
+      #right-sidebar #room-info {
+        border-bottom: 2px solid #ddd;
+      }
+
+      /* Make sure content doesn't overlap with top bar */
+      #name-form,
+      #room-form {
+        padding-top: 48px;
+      }
     }
 
     chat-message .username {
@@ -134,7 +223,7 @@
       border: 1px solid #1da1f2;
       border-radius: 3px;
       font-family: Arial, sans-serif;
-      font-size: 0.9em;
+      font-size: max(16px, 0.9em);
       margin-bottom: 12px;
       display: none;
     }
@@ -165,7 +254,7 @@
       border: 1px solid #ddd;
       border-radius: 3px;
       font-family: Arial, sans-serif;
-      font-size: 0.9em;
+      font-size: max(16px, 0.9em);
       resize: vertical;
       background: white;
       display: none;
@@ -182,10 +271,9 @@
     }
 
     #roster-container {
-      font-weight: bold;
       padding: 8px;
-      flex: 1;
-      overflow-y: auto;
+      flex-shrink: 0;
+      border-bottom: 1px solid #ddd;
       background: white;
     }
 
@@ -193,6 +281,21 @@
       margin: 0 0 8px 0;
       font-size: 1em;
       color: #333;
+      font-weight: bold;
+    }
+
+    #hashtag-container {
+      padding: 8px;
+      flex: 1;
+      overflow-y: auto;
+      background: white;
+    }
+
+    #hashtag-container h3 {
+      margin: 0 0 8px 0;
+      font-size: 1em;
+      color: #333;
+      font-weight: bold;
     }
 
     #roster .user-item {
@@ -238,17 +341,156 @@
       display: none;
     }
 
+    /* Mobile top bar */
+    #mobile-top-bar {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 48px;
+      background: linear-gradient(to bottom, #1da1f2, #1891d9);
+      color: white;
+      align-items: center;
+      padding: 0 16px;
+      z-index: 100;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.2s ease;
+    }
+
+    #mobile-top-bar:active {
+      background: #0d8dd9;
+    }
+
+    #mobile-top-bar-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+    }
+
+    #mobile-top-bar-title {
+      font-weight: bold;
+      font-size: 16px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mobile-top-bar-icon {
+      font-size: 20px;
+      margin-right: 8px;
+    }
+
+    #mobile-top-bar-arrow {
+      font-size: 14px;
+      transition: transform 0.3s ease;
+      margin-left: 8px;
+    }
+
+    #mobile-top-bar-arrow.open {
+      transform: rotate(180deg);
+    }
+
+    #mobile-top-bar+#chatlog {
+      top: 48px;
+    }
+
     @media(max-width:600px) {
-      #right-sidebar {
-        display: none;
+      #mobile-top-bar {
+        display: flex;
       }
 
-      #thread-panel {
-        display: none !important;
+      #chatlog {
+        top: 48px !important;
+      }
+
+      #hashtag-filter-banner {
+        top: 48px !important;
+        right: 0 !important;
+        z-index: 99;
+      }
+
+      /* When filter banner is visible on mobile, adjust chatlog */
+      body:has(#hashtag-filter-banner.visible) #chatlog {
+        top: 89px !important;
+        /* 48px (top bar) + 41px (filter banner) */
+      }
+
+      #right-sidebar {
+        position: fixed;
+        top: 48px;
+        right: 0;
+        left: 0;
+        width: 100%;
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+        z-index: 99;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        border-left: none;
+        border-bottom: 1px solid #ddd;
+      }
+
+      #right-sidebar.mobile-visible {
+        max-height: 60vh;
+        overflow-y: auto;
+      }
+
+      /* Overlay when room info is open */
+      #mobile-room-info-overlay {
+        display: none;
+        position: fixed;
+        top: 48px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 98;
+      }
+
+      #mobile-room-info-overlay.visible {
+        display: block;
       }
 
       #chatlog {
         right: 0;
+      }
+
+      /* Mobile thread panel - full screen overlay */
+      #thread-panel {
+        right: 0 !important;
+        left: 0;
+        top: 0;
+        width: 100% !important;
+        z-index: 200;
+      }
+
+      #thread-panel.visible {
+        display: flex !important;
+      }
+
+      /* Hide main chat when thread is open on mobile */
+      #chatlog.thread-open {
+        display: none;
+      }
+
+      #main-chat-input-container.thread-open {
+        display: none;
+      }
+
+      /* Hide top bar when thread is open */
+      body.thread-open #mobile-top-bar {
+        display: none;
+      }
+
+      /* Adjust chatlog when thread is open */
+      body.thread-open #chatlog {
+        top: 0;
       }
     }
 
@@ -316,6 +558,7 @@
       margin: 0;
       text-align: center;
       border: 1px solid #bbb;
+      font-size: max(16px, 200%);
     }
 
     #name-form p {
@@ -344,6 +587,7 @@
       height: 2em;
       width: 16em;
       padding-left: 1em;
+      font-size: max(16px, inherit);
     }
 
     #room-form button {
@@ -455,55 +699,19 @@
       text-decoration: underline;
     }
 
-    #hashtag-panel {
-      position: fixed;
-      right: 0;
-      top: 0;
-      bottom: 32px;
-      width: 200px;
-      border-left: 1px solid #ddd;
-      background: #fafafa;
-      overflow-y: auto;
+    /* Hashtag container is part of right-sidebar for both desktop and mobile */
+    #hashtag-container {
       padding: 8px;
-      font-size: 0.9em;
-      transition: bottom 0.1s ease;
-      display: none;
-      z-index: 100;
+      flex: 1;
+      overflow-y: auto;
+      background: white;
     }
 
-    #hashtag-panel.visible {
-      display: block;
-    }
-
-    #hashtag-panel h3 {
-      margin: 0 0 12px 0;
+    #hashtag-container h3 {
+      margin: 0 0 8px 0;
       font-size: 1em;
       color: #333;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    #hashtag-toggle {
-      position: fixed;
-      right: 0;
-      bottom: 32px;
-      width: 40px;
-      height: 32px;
-      background: #f0f0f0;
-      border: none;
-      border-top: 1px solid #ddd;
-      border-left: 1px solid #ddd;
-      cursor: pointer;
-      font-size: 18px;
-      z-index: 101;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    #hashtag-toggle:hover {
-      background: #e0e0e0;
+      font-weight: bold;
     }
 
     #hashtag-toggle .hashtag-close {
@@ -568,14 +776,15 @@
       display: none;
       align-items: center;
       justify-content: space-between;
-      z-index: 5;
+      z-index: 99;
     }
 
     #hashtag-filter-banner.visible {
       display: flex;
     }
 
-    #hashtag-filter-banner+#chatlog {
+    /* When filter banner is visible, adjust chatlog top position */
+    body:has(#hashtag-filter-banner.visible) #chatlog {
       top: 41px;
     }
 
@@ -779,24 +988,6 @@
       flex: 1;
       min-width: 0;
     }
-
-    @media(max-width:600px) {
-      #hashtag-panel {
-        display: none !important;
-      }
-
-      #hashtag-toggle {
-        display: none;
-      }
-
-      #chatlog {
-        right: 0;
-      }
-
-      #hashtag-filter-banner {
-        right: 0;
-      }
-    }
   </style>
 
 </head>
@@ -819,16 +1010,6 @@
       <div id="room-history-list"></div>
     </div>
   </form>
-  <div id="hashtag-filter-banner">
-    <span>Filtering by: <strong id="active-hashtag"></strong></span>
-    <button class="filter-clear-btn" onclick="clearHashtagFilter()">Clear Filter ✕</button>
-  </div>
-  <div id="hashtag-panel">
-    <h3>
-      <span>📌 Hashtags</span>
-    </h3>
-    <div id="hashtag-list"></div>
-  </div>
   <div id="thread-panel">
     <div id="thread-header">
       <h3>💬 Thread</h3>
@@ -865,6 +1046,10 @@
         <div id="roster">
         </div>
       </div>
+      <div id="hashtag-container">
+        <h3>📌 Hashtags</h3>
+        <div id="hashtag-list"></div>
+      </div>
     </div>
     <div id="reply-indicator" style="display:none;">
       <button type="button" class="reply-indicator-close">✕</button>
@@ -875,11 +1060,19 @@
       <chat-input-component id="chat-input" placeholder="Type a message..." rows="1" min-height="32px"
         max-height="150px" show-file-upload="true" show-prefix="true"></chat-input-component>
     </div>
-    <button type="button" id="hashtag-toggle" title="Toggle hashtags">
-      <span class="hashtag-icon">#</span>
-      <span class="hashtag-close">✕</span>
-    </button>
   </form>
+  <div id="mobile-top-bar">
+    <div id="mobile-top-bar-content">
+      <span id="mobile-top-bar-icon">🏠</span>
+      <span id="mobile-top-bar-title">Loading...</span>
+      <span id="mobile-top-bar-arrow">▼</span>
+    </div>
+  </div>
+  <div id="hashtag-filter-banner">
+    <span>Filtering by: <strong id="active-hashtag"></strong></span>
+    <button class="filter-clear-btn" onclick="clearHashtagFilter()">Clear Filter ✕</button>
+  </div>
+  <div id="mobile-room-info-overlay"></div>
 </body>
 <script type="text/javascript">
   function createReactiveState(initialState) {
@@ -961,7 +1154,7 @@
               resize: none;
               overflow-y: auto;
               font-family: Arial, Helvetica, sans-serif;
-              font-size: 14px;
+              font-size: 16px;
               line-height: 1.2;
               outline: none;
               box-sizing: border-box;
@@ -1356,11 +1549,16 @@
   let chatlog = document.querySelector("#chatlog");
   let chatInputComponent = null; // Will be initialized after DOM is ready
   let roster = document.querySelector("#roster");
-  let hashtagPanel = document.querySelector("#hashtag-panel");
-  let hashtagToggle = document.querySelector("#hashtag-toggle");
-  let hashtagList = document.querySelector("#hashtag-list");
+  let hashtagList = document.querySelector("#hashtag-list"); // Hashtag list in right-sidebar
   let hashtagFilterBanner = document.querySelector("#hashtag-filter-banner");
   let activeHashtagSpan = document.querySelector("#active-hashtag");
+
+  // Mobile room info elements
+  let mobileTopBar = document.querySelector("#mobile-top-bar");
+  let mobileTopBarTitle = document.querySelector("#mobile-top-bar-title");
+  let mobileTopBarArrow = document.querySelector("#mobile-top-bar-arrow");
+  let mobileRoomInfoOverlay = document.querySelector("#mobile-room-info-overlay");
+  let rightSidebar = document.querySelector("#right-sidebar");
 
   // Connection status element
   let connectionStatus = document.querySelector("#connection-status");
@@ -1579,6 +1777,17 @@
     threadPanel.classList.add('visible');
     chatlog.classList.add('thread-open');
 
+    // Also hide main chat input on mobile
+    const mainInputContainer = document.getElementById('main-chat-input-container');
+    if (mainInputContainer) {
+      mainInputContainer.classList.add('thread-open');
+    }
+
+    // Prevent body scroll on mobile when thread is open
+    if (window.innerWidth <= 600) {
+      document.body.classList.add('thread-open');
+    }
+
     // Update URL with thread ID
     const url = new URL(window.location);
     url.searchParams.set('thread', rootMessageId);
@@ -1612,6 +1821,16 @@
     window.history.pushState({}, '', url);
     threadPanel.classList.remove('visible');
     chatlog.classList.remove('thread-open');
+
+    // Show main chat input again
+    const mainInputContainer = document.getElementById('main-chat-input-container');
+    if (mainInputContainer) {
+      mainInputContainer.classList.remove('thread-open');
+    }
+
+    // Restore body scroll on mobile
+    document.body.classList.remove('thread-open');
+
     if (threadInputComponent) {
       threadInputComponent.clear();
     }
@@ -2140,6 +2359,11 @@
       if (property === 'name') {
         roomInfoNameDisplay.textContent = newValue;
 
+        // Update mobile top bar title
+        if (mobileTopBarTitle) {
+          mobileTopBarTitle.textContent = newValue;
+        }
+
         // Update document title
         let title = newValue;
         if (newValue && newValue !== roomname && urlRoomHash) {
@@ -2161,6 +2385,9 @@
 
     // Set initial display
     roomInfoNameDisplay.textContent = roomInfo.name;
+    if (mobileTopBarTitle) {
+      mobileTopBarTitle.textContent = roomInfo.name;
+    }
     documentTitlePrefix = roomInfo.name;
     document.title = documentTitlePrefix + " - Workers Chat";
 
@@ -2191,8 +2418,9 @@
       }
     }
 
-    // Load room info on start
+    // Load room info and hashtags on start
     loadRoomInfo();
+    loadHashtags();
 
     // Room name editing
     roomInfoNameDisplay.addEventListener("click", (event) => {
@@ -2436,14 +2664,33 @@
       }
     });
 
-    // Hashtag panel toggle
-    hashtagToggle.addEventListener("click", event => {
-      event.stopPropagation();
-      hashtagPanel.classList.toggle('visible');
-      if (hashtagPanel.classList.contains('visible')) {
-        loadHashtags();
-      }
-    });
+    // Mobile top bar toggle
+    if (mobileTopBar) {
+      mobileTopBar.addEventListener("click", event => {
+        event.stopPropagation();
+        const isOpen = rightSidebar.classList.contains('mobile-visible');
+        if (isOpen) {
+          rightSidebar.classList.remove('mobile-visible');
+          mobileRoomInfoOverlay.classList.remove('visible');
+          mobileTopBarArrow.classList.remove('open');
+        } else {
+          rightSidebar.classList.add('mobile-visible');
+          mobileRoomInfoOverlay.classList.add('visible');
+          mobileTopBarArrow.classList.add('open');
+          // Load hashtags when opening the sidebar
+          loadHashtags();
+        }
+      });
+    }
+
+    // Close mobile room info when clicking overlay
+    if (mobileRoomInfoOverlay) {
+      mobileRoomInfoOverlay.addEventListener("click", () => {
+        rightSidebar.classList.remove('mobile-visible');
+        mobileRoomInfoOverlay.classList.remove('visible');
+        mobileTopBarArrow.classList.remove('open');
+      });
+    }
 
     // Thread panel close
     threadClose.addEventListener("click", event => {
