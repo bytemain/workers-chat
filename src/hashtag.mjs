@@ -21,11 +21,12 @@ export function extractHashtags(text) {
   // - English letters (a-z, A-Z)
   // - Numbers (0-9)
   // - Underscores (_)
+  // - Hyphens (-)
   // - Chinese characters (Unicode range \u4e00-\u9fa5)
   // Minimum length: 2 characters after #
-  const regex = /#([a-zA-Z0-9_\u4e00-\u9fa5]{2,32})/g;
+  const regex = /#([a-zA-Z0-9_\-\u4e00-\u9fa5]{2,32})/g;
   const matches = [...text.matchAll(regex)];
-  
+
   // Extract unique hashtags, convert to lowercase for consistency
   const tags = matches.map(m => m[1].toLowerCase());
   return [...new Set(tags)]; // Remove duplicates
@@ -72,7 +73,7 @@ export class HashtagManager {
    */
   async indexMessage(messageKey, messageText, timestamp) {
     const tags = extractHashtags(messageText);
-    
+
     if (tags.length === 0) {
       return;
     }
@@ -82,7 +83,7 @@ export class HashtagManager {
     for (const tag of tags) {
       updates.push(this.addMessageToTag(tag, messageKey, timestamp));
     }
-    
+
     await Promise.all(updates);
   }
 
@@ -107,12 +108,12 @@ export class HashtagManager {
     // Add message key if not already present
     if (!index.includes(messageKey)) {
       index.push(messageKey);
-      
+
       // Keep only the latest 1000 messages per tag to avoid unbounded growth
       if (index.length > 1000) {
         index = index.slice(-1000);
       }
-      
+
       await this.storage.put(indexKey, JSON.stringify(index));
     }
 
@@ -126,7 +127,7 @@ export class HashtagManager {
 
     meta.count = index.length;
     meta.lastUsed = timestamp;
-    
+
     await this.storage.put(metaKey, JSON.stringify(meta));
 
     // Update the global hashtag list
@@ -147,7 +148,7 @@ export class HashtagManager {
     }
 
     allTags[tag] = timestamp;
-    
+
     await this.storage.put(HASHTAG_LIST_KEY, JSON.stringify(allTags));
   }
 
@@ -169,15 +170,15 @@ export class HashtagManager {
     const metaPromises = tagNames.map(async (tag) => {
       const metaKey = getHashtagMetaKey(tag);
       let meta = await this.storage.get(metaKey);
-      
+
       if (!meta) {
         return { tag, count: 0, lastUsed: tagList[tag] };
       }
-      
+
       if (typeof meta === 'string') {
         meta = JSON.parse(meta);
       }
-      
+
       return {
         tag,
         count: meta.count || 0,
@@ -235,13 +236,13 @@ export class HashtagManager {
    */
   async searchHashtags(prefix, limit = 10) {
     const allTags = await this.getAllHashtags(1000);
-    
+
     if (!prefix) {
       return allTags.slice(0, limit);
     }
 
     const normalizedPrefix = prefix.toLowerCase();
-    const matches = allTags.filter(item => 
+    const matches = allTags.filter(item =>
       item.tag.toLowerCase().startsWith(normalizedPrefix)
     );
 

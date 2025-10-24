@@ -1604,8 +1604,8 @@
     renderTextMessage(text) {
       // Combined regex pattern - matches URLs and hashtags
       // URLs: http://, https://, and www. URLs
-      // Hashtags: #word (2-32 chars, alphanumeric, underscore, Chinese)
-      const combinedRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(#[a-zA-Z0-9_\u4e00-\u9fa5]{2,32})/g;
+      // Hashtags: #word (2-32 chars, alphanumeric, underscore, hyphen, Chinese)
+      const combinedRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(#[a-zA-Z0-9_\-\u4e00-\u9fa5]{2,32})/g;
 
       let lastIndex = 0;
       let match;
@@ -2298,7 +2298,7 @@
 
   function updateHashtagsOnNewMessage(message) {
     // Extract hashtags from message
-    const hashtagRegex = /#([a-zA-Z0-9_\u4e00-\u9fa5]{2,32})/g;
+    const hashtagRegex = /#([a-zA-Z0-9_\-\u4e00-\u9fa5]{2,32})/g;
     const matches = [...message.matchAll(hashtagRegex)];
 
     if (matches.length > 0) {
