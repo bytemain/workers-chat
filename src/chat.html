@@ -286,64 +286,14 @@
       color: #333;
     }
 
-    #chat-input {
+    #main-chat-input-container {
       position: fixed;
-      width: calc(100% - 40px);
-      min-height: 32px;
-      max-height: 150px;
       bottom: 0;
       left: 0;
-      border: none;
-      border-top: none;
-      padding-left: 32px;
-      padding-top: 8px;
-      padding-bottom: 8px;
-      padding-right: 8px;
-      outline: none;
-      resize: none;
-      overflow-y: auto;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 16px;
-      line-height: 1.2;
-    }
-
-    #file-upload-btn {
-      position: fixed;
-      width: 40px;
-      min-height: 32px;
-      bottom: 0;
       right: 0;
-      border: none;
-      background: #f0f0f0;
-      cursor: pointer;
-      font-size: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    #file-upload-btn:hover {
-      background: #e0e0e0;
-    }
-
-    #file-input {
-      display: none;
-    }
-
-    #chatroom::before {
-      z-index: 1;
-      display: block;
-      content: ">";
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      width: 32px;
-      height: 32px;
-      line-height: 32px;
-      text-align: center;
-      font-weight: bold;
-      color: #888;
-      -webkit-text-stroke-width: 2px;
+      background: white;
+      border-top: 1px solid #ddd;
+      transition: bottom 0.1s ease;
     }
 
     #name-form {
@@ -717,23 +667,6 @@
       flex-shrink: 0;
     }
 
-    #thread-input {
-      width: 100%;
-      min-height: 60px;
-      max-height: 120px;
-      padding: 8px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      resize: vertical;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 14px;
-      outline: none;
-    }
-
-    #thread-input:focus {
-      border-color: #1da1f2;
-    }
-
     /* Message Actions */
     .message-wrapper {
       position: relative;
@@ -904,7 +837,8 @@
     <div id="thread-original-message"></div>
     <div id="thread-replies"></div>
     <div id="thread-input-container">
-      <textarea id="thread-input" placeholder="Reply in thread..." rows="3"></textarea>
+      <chat-input-component id="thread-input" placeholder="Reply in thread..." rows="3" min-height="60px"
+        max-height="120px" show-file-upload="true"></chat-input-component>
     </div>
   </div>
   <form id="chatroom" action="/fake-form-action">
@@ -936,9 +870,11 @@
       <button type="button" class="reply-indicator-close">✕</button>
       <span class="reply-indicator-text"></span>
     </div>
-    <textarea id="chat-input" rows="1" placeholder="Type a message..."></textarea>
-    <input type="file" id="file-input" accept="image/*,application/pdf,.doc,.docx,.txt">
-    <button type="button" id="file-upload-btn" title="Upload file">📎</button>
+    <div id="main-chat-input-container"
+      style="position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #ddd;">
+      <chat-input-component id="chat-input" placeholder="Type a message..." rows="1" min-height="32px"
+        max-height="150px" show-file-upload="true" show-prefix="true"></chat-input-component>
+    </div>
     <button type="button" id="hashtag-toggle" title="Toggle hashtags">
       <span class="hashtag-icon">#</span>
       <span class="hashtag-close">✕</span>
@@ -971,6 +907,229 @@
       }
     }
   }
+  // Chat input component custom element
+  class ChatInputComponent extends HTMLElement {
+    constructor() {
+      super();
+      this.onSubmit = null;
+      this.onResize = null;
+      this.onFileUpload = null;
+    }
+
+    connectedCallback() {
+      this.render();
+      this.setupEventListeners();
+    }
+
+    render() {
+      const placeholder = this.getAttribute('placeholder') || 'Type a message...';
+      const minHeight = this.getAttribute('min-height') || '32px';
+      const maxHeight = this.getAttribute('max-height') || '150px';
+      const rows = this.getAttribute('rows') || '1';
+      const showFileUpload = this.getAttribute('show-file-upload') === 'true';
+      const showPrefix = this.getAttribute('show-prefix') === 'true';
+
+      this.innerHTML = `
+        <div class="chat-input-wrapper" style="
+          display: flex;
+          align-items: flex-end;
+          position: relative;
+          width: 100%;
+        ">
+          ${showPrefix ? `<span class="chat-input-prefix" style="
+            position: absolute;
+            left: 8px;
+            bottom: 8px;
+            font-weight: bold;
+            color: #888;
+            z-index: 1;
+            pointer-events: none;
+          ">&gt;</span>` : ''}
+          <textarea 
+            class="chat-input-textarea" 
+            rows="${rows}" 
+            placeholder="${placeholder}"
+            style="
+              flex: 1;
+              min-height: ${minHeight};
+              max-height: ${maxHeight};
+              padding: 8px;
+              ${showPrefix ? 'padding-left: 24px;' : ''}
+              ${showFileUpload ? 'padding-right: 40px;' : ''}
+              border: 1px solid #ddd;
+              border-radius: 4px;
+              resize: none;
+              overflow-y: auto;
+              font-family: Arial, Helvetica, sans-serif;
+              font-size: 14px;
+              line-height: 1.2;
+              outline: none;
+              box-sizing: border-box;
+            "
+          ></textarea>
+          ${showFileUpload ? `
+            <input 
+              type="file" 
+              class="chat-input-file" 
+              accept="image/*,application/pdf,.doc,.docx,.txt"
+              style="display: none;"
+            >
+            <button 
+              type="button" 
+              class="chat-input-file-btn" 
+              title="Upload file"
+              style="
+                position: absolute;
+                right: 0;
+                bottom: 0;
+                width: 40px;
+                height: ${minHeight};
+                min-height: ${minHeight};
+                border: none;
+                background: #f0f0f0;
+                cursor: pointer;
+                font-size: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 0 4px 4px 0;
+                transition: background 0.2s;
+              "
+            >📎</button>
+          ` : ''}
+        </div>
+      `;
+
+      this.textarea = this.querySelector('.chat-input-textarea');
+      this.fileInput = this.querySelector('.chat-input-file');
+      this.fileBtn = this.querySelector('.chat-input-file-btn');
+    }
+
+    setupEventListeners() {
+      if (!this.textarea) return;
+
+      // Handle Enter key (submit on Enter, new line on Shift+Enter)
+      this.textarea.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          this.submit();
+          return;
+        }
+      });
+
+      // Auto-resize on input
+      this.textarea.addEventListener('input', (event) => {
+        // Limit length
+        if (event.currentTarget.value.length > 6000) {
+          event.currentTarget.value = event.currentTarget.value.slice(0, 6000);
+        }
+        this.autoResize();
+      });
+
+      // File upload button click
+      if (this.fileBtn) {
+        this.fileBtn.addEventListener('click', () => {
+          if (this.fileInput) {
+            this.fileInput.click();
+          }
+        });
+
+        // Add hover effect
+        this.fileBtn.addEventListener('mouseenter', () => {
+          this.fileBtn.style.background = '#e0e0e0';
+        });
+        this.fileBtn.addEventListener('mouseleave', () => {
+          this.fileBtn.style.background = '#f0f0f0';
+        });
+      }
+
+      // File input change
+      if (this.fileInput) {
+        this.fileInput.addEventListener('change', async (event) => {
+          const file = event.target.files[0];
+          if (file && this.onFileUpload) {
+            await this.onFileUpload(file);
+            // Clear the file input
+            this.fileInput.value = '';
+          }
+        });
+      }
+    }
+
+    autoResize() {
+      if (!this.textarea) return;
+
+      const maxHeight = parseInt(this.getAttribute('max-height')) || 150;
+
+      this.textarea.style.height = 'auto';
+      let newHeight = Math.min(this.textarea.scrollHeight, maxHeight);
+      this.textarea.style.height = newHeight + 'px';
+
+      // Update file button height if it exists
+      if (this.fileBtn) {
+        this.fileBtn.style.height = newHeight + 'px';
+        this.fileBtn.style.minHeight = newHeight + 'px';
+      }
+
+      // Notify parent about resize
+      if (this.onResize) {
+        this.onResize(newHeight);
+      }
+
+      // Dispatch custom event
+      this.dispatchEvent(new CustomEvent('resize', { detail: { height: newHeight } }));
+    }
+
+    submit() {
+      if (!this.textarea) return;
+
+      const message = this.textarea.value.trim();
+      if (message.length > 0) {
+        if (this.onSubmit) {
+          this.onSubmit(message);
+        }
+
+        // Dispatch custom event
+        this.dispatchEvent(new CustomEvent('submit', { detail: { message } }));
+
+        // Clear input and reset height
+        this.clear();
+      }
+    }
+
+    clear() {
+      if (this.textarea) {
+        this.textarea.value = '';
+        this.autoResize();
+      }
+    }
+
+    getValue() {
+      return this.textarea ? this.textarea.value : '';
+    }
+
+    setValue(value) {
+      if (this.textarea) {
+        this.textarea.value = value;
+        this.autoResize();
+      }
+    }
+
+    focus() {
+      if (this.textarea) {
+        this.textarea.focus();
+      }
+    }
+
+    // Handle paste events for files
+    onPaste(handler) {
+      if (this.textarea) {
+        this.textarea.addEventListener('paste', handler);
+      }
+    }
+  }
+  customElements.define('chat-input-component', ChatInputComponent);
+
   // System message custom element
   class SystemMessage extends HTMLElement {
     connectedCallback() {
@@ -1195,10 +1354,8 @@
   let goPrivateButton = document.querySelector("#go-private");
   let chatroom = document.querySelector("#chatroom");
   let chatlog = document.querySelector("#chatlog");
-  let chatInput = document.querySelector("#chat-input");
+  let chatInputComponent = null; // Will be initialized after DOM is ready
   let roster = document.querySelector("#roster");
-  let fileInput = document.querySelector("#file-input");
-  let fileUploadBtn = document.querySelector("#file-upload-btn");
   let hashtagPanel = document.querySelector("#hashtag-panel");
   let hashtagToggle = document.querySelector("#hashtag-toggle");
   let hashtagList = document.querySelector("#hashtag-list");
@@ -1213,7 +1370,7 @@
   let threadClose = document.querySelector("#thread-close");
   let threadOriginalMessage = document.querySelector("#thread-original-message");
   let threadReplies = document.querySelector("#thread-replies");
-  let threadInput = document.querySelector("#thread-input");
+  let threadInputComponent = null; // Will be initialized after DOM is ready
 
   // Reply indicator elements
   let replyIndicator = document.querySelector("#reply-indicator");
@@ -1427,14 +1584,18 @@
     await loadThreadReplies(rootMessageId);
 
     // Focus thread input
-    threadInput.focus();
+    if (threadInputComponent) {
+      threadInputComponent.focus();
+    }
   };
 
   window.closeThread = function () {
     currentThreadId = null;
     threadPanel.classList.remove('visible');
     chatlog.classList.remove('thread-open');
-    threadInput.value = '';
+    if (threadInputComponent) {
+      threadInputComponent.clear();
+    }
   };
 
   // Reply indicator functions
@@ -1444,7 +1605,9 @@
     const text = indicator.querySelector('.reply-indicator-text');
     text.innerHTML = `Replying to <strong>${username}</strong>: ${preview}`;
     indicator.style.display = 'flex';
-    document.getElementById('chat-input').focus();
+    if (chatInputComponent) {
+      chatInputComponent.focus();
+    }
   }
 
   function clearReplyTo() {
@@ -2088,60 +2251,44 @@
       event.stopPropagation();
     });
 
-    // Auto-resize textarea function
-    function autoResizeTextarea() {
-      chatInput.style.height = 'auto';
-      let newHeight = Math.min(chatInput.scrollHeight, 150);
-      chatInput.style.height = newHeight + 'px';
-
-      // Adjust file upload button height to match
-      let btn = document.querySelector("#file-upload-btn");
-      btn.style.height = newHeight + 'px';
-
-      // Adjust hashtag toggle button position
-      let hashtagBtn = document.querySelector("#hashtag-toggle");
-      hashtagBtn.style.bottom = newHeight + 'px';
-
-      // Adjust chatlog, right-sidebar, and hashtag panel bottom position
-      chatlog.style.bottom = newHeight + 'px';
-      let rightSidebar = document.querySelector("#right-sidebar");
-      if (rightSidebar) {
-        rightSidebar.style.bottom = newHeight + 'px';
-      }
-      if (hashtagPanel) {
-        hashtagPanel.style.bottom = newHeight + 'px';
-      }
-    }
-
-    chatInput.addEventListener("keydown", event => {
-      // Enter to send (without shift), Shift+Enter for new line
-      if (event.keyCode == 13 && !event.shiftKey) {
-        event.preventDefault();
-        chatroom.dispatchEvent(new Event('submit'));
-        return;
-      }
-
-      if (event.keyCode == 38 && chatInput.value === "") {
-        // up arrow (only if input is empty)
-        chatlog.scrollBy(0, -50);
-      } else if (event.keyCode == 40 && chatInput.value === "") {
-        // down arrow (only if input is empty)
-        chatlog.scrollBy(0, 50);
-      } else if (event.keyCode == 33) {
-        // page up
-        chatlog.scrollBy(0, -chatlog.clientHeight + 50);
-      } else if (event.keyCode == 34) {
-        // page down
-        chatlog.scrollBy(0, chatlog.clientHeight - 50);
-      }
+    // Prevent form submission (we handle it via custom events)
+    chatroom.addEventListener("submit", (event) => {
+      event.preventDefault();
     });
 
-    chatroom.addEventListener("submit", event => {
-      event.preventDefault();
+    // Initialize chat input component
+    chatInputComponent = document.querySelector("#chat-input");
+    threadInputComponent = document.querySelector("#thread-input");
 
-      if (currentWebSocket) {
-        let message = chatInput.value.trim();
-        if (message.length > 0) {
+    // Setup main chat input
+    if (chatInputComponent) {
+      // Handle resize events from the component
+      chatInputComponent.addEventListener('resize', (event) => {
+        const newHeight = event.detail.height;
+
+        // Adjust hashtag toggle button position
+        let hashtagBtn = document.querySelector("#hashtag-toggle");
+        hashtagBtn.style.bottom = newHeight + 'px';
+
+        // Adjust chatlog, right-sidebar, hashtag panel, and thread panel bottom position
+        chatlog.style.bottom = newHeight + 'px';
+        let rightSidebar = document.querySelector("#right-sidebar");
+        if (rightSidebar) {
+          rightSidebar.style.bottom = newHeight + 'px';
+        }
+        if (hashtagPanel) {
+          hashtagPanel.style.bottom = newHeight + 'px';
+        }
+        if (threadPanel) {
+          threadPanel.style.bottom = newHeight + 'px';
+        }
+      });
+
+      // Handle submit events from the component
+      chatInputComponent.addEventListener('submit', (event) => {
+        const message = event.detail.message;
+
+        if (currentWebSocket && message.length > 0) {
           const payload = { message: message };
 
           // If replying to a message, include replyTo information
@@ -2156,38 +2303,120 @@
           }
 
           currentWebSocket.send(JSON.stringify(payload));
-          chatInput.value = "";
-          autoResizeTextarea(); // Reset height after sending
 
           // Scroll to bottom whenever sending a message.
           chatlog.scrollBy(0, 1e8);
           // Set flag to scroll when we receive our own message back
           isAtBottom = true;
         }
-      }
-    });
+      });
 
-    chatInput.addEventListener("input", event => {
-      if (event.currentTarget.value.length > 6000) {
-        event.currentTarget.value = event.currentTarget.value.slice(0, 6000);
-      }
-      autoResizeTextarea();
-    });
+      // Handle file uploads from the component
+      chatInputComponent.onFileUpload = async (file) => {
+        addSystemMessage("* Uploading file...");
+
+        // Prepare replyTo info if replying to a message
+        let replyToInfo = null;
+        if (currentReplyTo) {
+          replyToInfo = {
+            messageId: currentReplyTo.messageId,
+            username: currentReplyTo.username,
+            preview: currentReplyTo.preview
+          };
+        }
+
+        const success = await uploadFile(file, null, replyToInfo);
+        if (success && currentReplyTo) {
+          // Clear reply state after successful upload
+          clearReplyTo();
+        }
+      };
+
+      // Handle navigation keys
+      chatInputComponent.textarea.addEventListener("keydown", event => {
+        if (event.keyCode == 38 && chatInputComponent.getValue() === "") {
+          // up arrow (only if input is empty)
+          chatlog.scrollBy(0, -50);
+        } else if (event.keyCode == 40 && chatInputComponent.getValue() === "") {
+          // down arrow (only if input is empty)
+          chatlog.scrollBy(0, 50);
+        } else if (event.keyCode == 33) {
+          // page up
+          chatlog.scrollBy(0, -chatlog.clientHeight + 50);
+        } else if (event.keyCode == 34) {
+          // page down
+          chatlog.scrollBy(0, chatlog.clientHeight - 50);
+        }
+      });
+
+      // Handle paste for file upload
+      chatInputComponent.onPaste(async (event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return;
+
+        // Check for any file (images, documents, etc.)
+        for (let item of items) {
+          // Skip plain text items (let them paste normally)
+          if (item.kind === "file") {
+            event.preventDefault();
+
+            const file = item.getAsFile();
+            if (!file) continue;
+
+            // Determine file type for display
+            const fileType = item.type.startsWith("image/") ? "image" : "file";
+
+            // Show uploading message
+            addSystemMessage(`* Uploading pasted ${fileType}...`);
+
+            // Use file name if available, otherwise generate one with timestamp
+            let fileName = file.name;
+            if (!fileName || fileName === 'image.png' || fileName === 'blob') {
+              // Generate filename with timestamp for unnamed files
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+              const extension = file.type.split('/')[1] || 'bin';
+              fileName = `pasted-${timestamp}.${extension}`;
+            }
+
+            // Prepare replyTo info if replying to a message
+            let replyToInfo = null;
+            if (currentReplyTo) {
+              replyToInfo = {
+                messageId: currentReplyTo.messageId,
+                username: currentReplyTo.username,
+                preview: currentReplyTo.preview
+              };
+            }
+
+            const success = await uploadFile(file, fileName, replyToInfo);
+            if (success && currentReplyTo) {
+              // Clear reply state after successful upload
+              clearReplyTo();
+            }
+
+            return; // Stop after processing the first file
+          }
+        }
+
+        // If no file was found, allow default text paste behavior
+      });
+
+      chatInputComponent.focus();
+    }
 
     chatlog.addEventListener("scroll", event => {
       // Allow 1px tolerance for floating point calculation errors
       isAtBottom = chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight - 1;
     });
 
-    chatInput.focus();
-    autoResizeTextarea(); // Initialize textarea size
-
     document.body.addEventListener("click", event => {
       // If the user clicked somewhere in the window without selecting any text, focus the chat
       // input. But don't steal focus from textareas or input fields.
       const isTextInput = event.target.tagName === 'TEXTAREA' || event.target.tagName === 'INPUT';
       if (window.getSelection().toString() == "" && !isTextInput) {
-        chatInput.focus();
+        if (chatInputComponent) {
+          chatInputComponent.focus();
+        }
       }
     });
 
@@ -2211,17 +2440,96 @@
       clearReplyTo();
     });
 
-    // Thread input - send reply
-    threadInput.addEventListener("keydown", event => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
+    // Setup thread input component
+    if (threadInputComponent) {
+      threadInputComponent.addEventListener('submit', (event) => {
         sendThreadReply();
-      }
-    });
+      });
+
+      // Handle file uploads from the thread input component
+      threadInputComponent.onFileUpload = async (file) => {
+        if (!currentThreadId) return;
+
+        addSystemMessage("* Uploading file...");
+
+        const originalMessage = messagesCache.get(currentThreadId);
+        if (!originalMessage) {
+          addSystemMessage("* Error: Thread message not found");
+          return;
+        }
+
+        // Prepare replyTo info for thread
+        const replyToInfo = {
+          messageId: currentThreadId,
+          username: originalMessage.name,
+          preview: originalMessage.message.substring(0, 100)
+        };
+
+        const success = await uploadFile(file, null, replyToInfo);
+        if (!success) {
+          // Error message already shown in uploadFile
+        }
+      };
+
+      // Handle paste for file upload in thread input
+      threadInputComponent.onPaste(async (event) => {
+        if (!currentThreadId) return;
+
+        const items = event.clipboardData?.items;
+        if (!items) return;
+
+        // Check for any file (images, documents, etc.)
+        for (let item of items) {
+          // Skip plain text items (let them paste normally)
+          if (item.kind === "file") {
+            event.preventDefault();
+
+            const file = item.getAsFile();
+            if (!file) continue;
+
+            // Determine file type for display
+            const fileType = item.type.startsWith("image/") ? "image" : "file";
+
+            // Show uploading message
+            addSystemMessage(`* Uploading pasted ${fileType}...`);
+
+            // Use file name if available, otherwise generate one with timestamp
+            let fileName = file.name;
+            if (!fileName || fileName === 'image.png' || fileName === 'blob') {
+              // Generate filename with timestamp for unnamed files
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+              const extension = file.type.split('/')[1] || 'bin';
+              fileName = `pasted-${timestamp}.${extension}`;
+            }
+
+            const originalMessage = messagesCache.get(currentThreadId);
+            if (!originalMessage) {
+              addSystemMessage("* Error: Thread message not found");
+              return;
+            }
+
+            // Prepare replyTo info for thread
+            const replyToInfo = {
+              messageId: currentThreadId,
+              username: originalMessage.name,
+              preview: originalMessage.message.substring(0, 100)
+            };
+
+            await uploadFile(file, fileName, replyToInfo);
+
+            return; // Stop after processing the first file
+          }
+        }
+
+        // If no file was found, allow default text paste behavior
+      });
+    }
 
     async function sendThreadReply() {
-      const message = threadInput.value.trim();
-      if (!message || !currentThreadId || !currentWebSocket) return;
+      if (!threadInputComponent || !currentThreadId || !currentWebSocket) return;
+
+      const message = threadInputComponent.getValue().trim();
+      if (!message) return;
 
       const originalMessage = messagesCache.get(currentThreadId);
       if (!originalMessage) return;
@@ -2236,11 +2544,11 @@
         }
       }));
 
-      threadInput.value = '';
+      threadInputComponent.clear();
     }
 
     // Upload file function
-    async function uploadFile(file, fileName = null) {
+    async function uploadFile(file, fileName = null, replyTo = null) {
       try {
         // Create form data
         const formData = new FormData();
@@ -2252,7 +2560,14 @@
         // Send file message through WebSocket
         if (currentWebSocket) {
           const fileMessage = `FILE:${result.fileUrl}|${result.fileName}|${result.fileType}`;
-          currentWebSocket.send(JSON.stringify({ message: fileMessage }));
+          const payload = { message: fileMessage };
+
+          // Include replyTo information if provided
+          if (replyTo) {
+            payload.replyTo = replyTo;
+          }
+
+          currentWebSocket.send(JSON.stringify(payload));
         }
 
         return true;
@@ -2261,64 +2576,6 @@
         return false;
       }
     }
-
-    // File upload button click handler
-    fileUploadBtn.addEventListener("click", event => {
-      fileInput.click();
-    });
-
-    // File input change handler
-    fileInput.addEventListener("change", async event => {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      // Show uploading message
-      addSystemMessage("* Uploading file...");
-
-      const success = await uploadFile(file);
-      if (success) {
-        // Clear the file input
-        fileInput.value = "";
-      }
-    });
-
-    // Handle paste events for files and text
-    chatInput.addEventListener("paste", async event => {
-      const items = event.clipboardData?.items;
-      if (!items) return;
-
-      // Check for any file (images, documents, etc.)
-      for (let item of items) {
-        // Skip plain text items (let them paste normally)
-        if (item.kind === "file") {
-          event.preventDefault();
-
-          const file = item.getAsFile();
-          if (!file) continue;
-
-          // Determine file type for display
-          const fileType = item.type.startsWith("image/") ? "image" : "file";
-
-          // Show uploading message
-          addSystemMessage(`* Uploading pasted ${fileType}...`);
-
-          // Use file name if available, otherwise generate one with timestamp
-          let fileName = file.name;
-          if (!fileName || fileName === 'image.png' || fileName === 'blob') {
-            // Generate filename with timestamp for unnamed files
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            const extension = file.type.split('/')[1] || 'bin';
-            fileName = `pasted-${timestamp}.${extension}`;
-          }
-
-          await uploadFile(file, fileName);
-
-          return; // Stop after processing the first file
-        }
-      }
-
-      // If no file was found, allow default text paste behavior
-    });
 
     // Detect mobile keyboard appearing and disappearing, and adjust the scroll as appropriate.
     if ('visualViewport' in window) {
