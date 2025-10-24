@@ -1570,6 +1570,11 @@
     threadPanel.classList.add('visible');
     chatlog.classList.add('thread-open');
 
+    // Update URL with thread ID
+    const url = new URL(window.location);
+    url.searchParams.set('thread', rootMessageId);
+    window.history.pushState({}, '', url);
+
     // Load and display root message
     const rootMessage = messagesCache.get(rootMessageId);
     if (rootMessage) {
@@ -1591,6 +1596,11 @@
 
   window.closeThread = function () {
     currentThreadId = null;
+
+    // Remove thread parameter from URL
+    const url = new URL(window.location);
+    url.searchParams.delete('thread');
+    window.history.pushState({}, '', url);
     threadPanel.classList.remove('visible');
     chatlog.classList.remove('thread-open');
     if (threadInputComponent) {
@@ -2750,6 +2760,12 @@
               // Apply the filter from URL
               window.filterByHashtag(tagParam);
             }
+
+            // Check if there's a thread ID in the URL
+            const threadParam = urlParams.get('thread');
+            if (threadParam) {
+              window.openThread(threadParam);
+            }
           });
         } else if (isReconnecting) {
 
@@ -2923,6 +2939,24 @@
     // Only reload if we're in a different room (not initial room setup)
     if (roomname && newRoomName !== roomname) {
       window.location.reload();
+    }
+  });
+
+  // Listen for browser back/forward button to handle thread navigation
+  window.addEventListener('popstate', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const threadParam = urlParams.get('thread');
+
+    if (threadParam) {
+      // Open the thread if it's in the URL
+      if (currentThreadId !== threadParam) {
+        window.openThread(threadParam);
+      }
+    } else {
+      // Close the thread if there's no thread parameter
+      if (currentThreadId) {
+        window.closeThread();
+      }
     }
   });
 
