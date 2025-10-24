@@ -1341,6 +1341,144 @@
   }
   customElements.define('system-message', SystemMessage);
 
+  // Lazy loading image custom element
+  class LazyImg extends HTMLElement {
+    constructor() {
+      super();
+      this.observer = null;
+      this.loaded = false;
+    }
+
+    connectedCallback() {
+      // Get attributes
+      const src = this.getAttribute('data-src');
+      const alt = this.getAttribute('alt') || '';
+      const maxWidth = this.getAttribute('max-width') || '300px';
+      const maxHeight = this.getAttribute('max-height') || '300px';
+
+      // Create image element with placeholder
+      const img = document.createElement('img');
+      img.alt = alt;
+      img.style.maxWidth = maxWidth;
+      img.style.maxHeight = maxHeight;
+      img.style.display = 'block';
+      img.style.marginTop = '5px';
+      img.style.cursor = 'pointer';
+      img.style.backgroundColor = '#f0f0f0'; // Placeholder background
+      img.style.minHeight = '100px'; // Minimum height for placeholder
+
+      // Set a placeholder or loading indicator
+      img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999" font-size="14"%3ELoading...%3C/text%3E%3C/svg%3E';
+
+      // Store the real src
+      this._realSrc = src;
+      this._img = img;
+
+      // Add click handler
+      img.onclick = () => {
+        if (this.loaded && src) {
+          window.open(src, "_blank");
+        }
+      };
+
+      this.appendChild(img);
+
+      // Setup IntersectionObserver for lazy loading
+      this.setupLazyLoading();
+    }
+
+    setupLazyLoading() {
+      // Check if IntersectionObserver is supported
+      if (!('IntersectionObserver' in window)) {
+        // Fallback: load image immediately if IntersectionObserver is not supported
+        this.loadImage();
+        return;
+      }
+
+      // Create observer
+      this.observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          // If the image is in the viewport
+          if (entry.isIntersecting) {
+            this.loadImage();
+            // Stop observing after loading
+            this.observer.unobserve(this);
+          }
+        });
+      }, {
+        // Start loading when image is 100px away from viewport
+        rootMargin: '100px',
+        threshold: 0.01
+      });
+
+      // Start observing
+      this.observer.observe(this);
+    }
+
+    loadImage() {
+      if (this.loaded || !this._realSrc) return;
+
+      const img = this._img;
+
+      // Create a new image to preload
+      const tempImg = new Image();
+
+      tempImg.onload = () => {
+        // Set the real src
+        img.src = this._realSrc;
+        img.style.backgroundColor = 'transparent';
+        img.style.minHeight = 'auto';
+        this.loaded = true;
+
+        // Handle scroll position maintenance
+        const isInThreadPanel = this.closest('#thread-panel') !== null;
+        const scrollContainer = isInThreadPanel
+          ? document.querySelector('#thread-replies')
+          : document.querySelector('#chatlog');
+
+        if (scrollContainer) {
+          const shouldScroll = isInThreadPanel
+            ? () => {
+              const container = document.querySelector('#thread-replies');
+              return container && Math.abs(container.scrollTop + container.clientHeight - container.scrollHeight) < 2;
+            }
+            : () => window.isAtBottom;
+
+          if (window.setupImageScrollHandler) {
+            // Use the existing scroll handler if available
+            window.setupImageScrollHandler(img, scrollContainer, shouldScroll);
+          } else {
+            // Fallback: simple scroll to bottom if at bottom
+            if (shouldScroll()) {
+              scrollContainer.scrollTop = scrollContainer.scrollHeight;
+            }
+          }
+        }
+
+        // Dispatch loaded event
+        this.dispatchEvent(new CustomEvent('lazy-loaded', { detail: { src: this._realSrc } }));
+      };
+
+      tempImg.onerror = () => {
+        console.warn('Failed to load lazy image:', this._realSrc);
+        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ffeeee" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23cc0000" font-size="12"%3ELoad Failed%3C/text%3E%3C/svg%3E';
+        img.style.backgroundColor = '#ffeeee';
+        img.style.cursor = 'default';
+      };
+
+      // Start loading
+      tempImg.src = this._realSrc;
+    }
+
+    disconnectedCallback() {
+      // Clean up observer when element is removed
+      if (this.observer) {
+        this.observer.disconnect();
+      }
+    }
+  }
+  customElements.define('lazy-img', LazyImg);
+
   // Define custom element for chat messages
   class ChatMessage extends HTMLElement {
     connectedCallback() {
@@ -1442,38 +1580,16 @@
       const fileName = parts[1] || "file";
       const fileType = parts[2] || "";
 
-      // If it's an image, display it inline
+      // If it's an image, display it inline with lazy loading
       if (fileType.startsWith("image/")) {
-        const img = document.createElement("img");
-        img.src = fileUrl;
-        img.alt = fileName;
-        img.style.maxWidth = "300px";
-        img.style.maxHeight = "300px";
-        img.style.display = "block";
-        img.style.marginTop = "5px";
-        img.style.cursor = "pointer";
-        img.onclick = () => window.open(fileUrl, "_blank");
+        // Use the lazy-img custom element for lazy loading
+        const lazyImg = document.createElement("lazy-img");
+        lazyImg.setAttribute('data-src', fileUrl);
+        lazyImg.setAttribute('alt', fileName);
+        lazyImg.setAttribute('max-width', '300px');
+        lazyImg.setAttribute('max-height', '300px');
 
-        // Determine which scroll container this image belongs to
-        const isInThreadPanel = this.closest('#thread-panel') !== null;
-        const scrollContainer = isInThreadPanel
-          ? document.querySelector('#thread-replies')
-          : document.querySelector('#chatlog');
-
-        // Setup scroll handler to maintain position at bottom when image loads
-        if (scrollContainer) {
-          const shouldScroll = isInThreadPanel
-            ? () => {
-              // For thread panel, check if we're at bottom
-              const container = document.querySelector('#thread-replies');
-              return container && Math.abs(container.scrollTop + container.clientHeight - container.scrollHeight) < 2;
-            }
-            : () => window.isAtBottom; // For main chat, use the global isAtBottom flag
-
-          window.setupImageScrollHandler(img, scrollContainer, shouldScroll);
-        }
-
-        this.appendChild(img);
+        this.appendChild(lazyImg);
       } else {
         // For other files, just show a download link
         const link = document.createElement("a");
@@ -2087,18 +2203,18 @@
     });
 
     // Filter messages in chatlog
-    const elements = chatlog.querySelectorAll('p');
+    const elements = chatlog.querySelectorAll('p.system-message');
     elements.forEach(elem => {
-      const chatMessage = elem.querySelector('chat-message');
-      const systemMessage = elem.querySelector('system-message');
+      elem.style.display = 'none';
+    });
 
-      // Always show system messages
-      if (systemMessage) {
-        elem.style.display = 'none';
-      } else if (chatMessage) {
+    const messageWrappers = chatlog.querySelectorAll('div.message-wrapper');
+    messageWrappers.forEach(wrapper => {
+      const chatMessage = wrapper.querySelector('chat-message');
+      if (chatMessage) {
         const text = chatMessage.getAttribute('message') || '';
         const hasTag = text.toLowerCase().includes('#' + tag.toLowerCase());
-        elem.style.display = hasTag ? 'block' : 'none';
+        wrapper.style.display = hasTag ? 'block' : 'none';
       }
     });
 
@@ -2121,9 +2237,13 @@
     });
 
     // Show all messages
-    const messages = chatlog.querySelectorAll('p');
+    const messages = chatlog.querySelectorAll('p.system-message');
     messages.forEach(msg => {
       msg.style.display = 'block';
+    });
+    const messageWrappers = chatlog.querySelectorAll('div.message-wrapper');
+    messageWrappers.forEach(wrapper => {
+      wrapper.style.display = 'block';
     });
 
     // Scroll to bottom
@@ -3104,6 +3224,7 @@
 
   function addSystemMessage(text) {
     let p = document.createElement("p");
+    p.className = "system-message";
     const sysMsg = document.createElement('system-message');
     sysMsg.setAttribute('message', text);
     p.appendChild(sysMsg);
