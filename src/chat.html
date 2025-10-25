@@ -2943,27 +2943,38 @@
     // Export all records
     async function exportRecords() {
       try {
-        addSystemMessage('* Exporting all records...');
+        addSystemMessage('* Exporting all records and files...');
 
         const response = await fetch(`/api/room/${roomname}/export`);
         if (!response.ok) {
           throw new Error('Failed to export records');
         }
 
-        const data = await response.json();
+        // Get the blob directly (ZIP file)
+        const blob = await response.blob();
+
+        // Extract filename from Content-Disposition header if available
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `chat-export-${roomname}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.zip`;
+
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+          if (filenameMatch && filenameMatch[1]) {
+            filename = filenameMatch[1];
+          }
+        }
 
         // Create a downloadable file
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `chat-export-${roomname}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.json`;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        addSystemMessage('* Export completed successfully');
+        addSystemMessage('* Export completed successfully (ZIP with all files)');
       } catch (err) {
         console.error('Failed to export records:', err);
         addSystemMessage('* Failed to export records');

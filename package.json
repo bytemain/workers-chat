@@ -5,6 +5,7 @@
   "module": "./src/chat.mjs",
   "private": true,
   "dependencies": {
-    "hono": "^4.10.2"
+    "hono": "^4.10.2",
+    "@zip.js/zip.js": "^2.7.52"
   }
 }
