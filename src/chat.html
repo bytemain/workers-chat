@@ -270,6 +270,117 @@
       display: block;
     }
 
+    /* Room destruction styles */
+    #room-destruction-container {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #eee;
+    }
+
+    #room-destruction-container h4 {
+      margin: 0 0 8px 0;
+      font-size: 0.9em;
+      color: #666;
+    }
+
+    .destruction-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .destruction-timer-select {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .destruction-timer-select label {
+      font-size: 0.85em;
+      color: #666;
+    }
+
+    .destruction-timer-select select {
+      flex: 1;
+      padding: 4px;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      font-size: max(16px, 0.85em);
+    }
+
+    .btn-destroy {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85em;
+      transition: background 0.2s;
+    }
+
+    .btn-destroy:hover {
+      background: #c82333;
+    }
+
+    .btn-cancel-destroy {
+      background: #ffc107;
+      color: #333;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85em;
+      transition: background 0.2s;
+    }
+
+    .btn-cancel-destroy:hover {
+      background: #e0a800;
+    }
+
+    .btn-export {
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85em;
+      transition: background 0.2s;
+    }
+
+    .btn-export:hover {
+      background: #218838;
+    }
+
+    .destruction-countdown {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 8px;
+      display: none;
+    }
+
+    .destruction-countdown.active {
+      display: block;
+    }
+
+    .countdown-text {
+      font-size: 0.85em;
+      color: #856404;
+      margin: 0 0 4px 0;
+      font-weight: bold;
+    }
+
+    .countdown-time {
+      font-size: 1.2em;
+      color: #dc3545;
+      font-weight: bold;
+      font-family: monospace;
+    }
+
     #roster-container {
       padding: 8px;
       flex-shrink: 0;
@@ -1039,6 +1150,31 @@
         <div id="room-description-container">
           <div id="room-description-label">📝 Description (click to edit)</div>
           <textarea id="room-note" placeholder="Add room description..."></textarea>
+        </div>
+        <div id="room-destruction-container">
+          <h4>🔥 Room Management</h4>
+          <div class="destruction-countdown" id="destruction-countdown">
+            <p class="countdown-text">⚠️ Room will be destroyed in:</p>
+            <div class="countdown-time" id="countdown-time">--:--</div>
+          </div>
+          <div class="destruction-controls" id="destruction-controls">
+            <div class="destruction-timer-select">
+              <label for="destruction-timer">Destroy after:</label>
+              <select id="destruction-timer">
+                <option value="0">Immediately</option>
+                <option value="5">5 minutes</option>
+                <option value="10">10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="30" selected>30 minutes</option>
+                <option value="60">1 hour</option>
+                <option value="120">2 hours</option>
+              </select>
+            </div>
+            <button class="btn-destroy" id="btn-start-destruction">🔥 Start Destruction</button>
+            <button class="btn-cancel-destroy" id="btn-cancel-destruction" style="display:none;">⏹️ Cancel
+              Destruction</button>
+            <button class="btn-export" id="btn-export-records">💾 Export All Records</button>
+          </div>
         </div>
       </div>
       <div id="roster-container">
@@ -2690,6 +2826,192 @@
       event.stopPropagation();
     });
 
+    // Room Destruction Management
+    let destructionCountdownInterval = null;
+    let destructionEndTime = null;
+
+    const destructionCountdown = document.querySelector("#destruction-countdown");
+    const countdownTime = document.querySelector("#countdown-time");
+    const btnStartDestruction = document.querySelector("#btn-start-destruction");
+    const btnCancelDestruction = document.querySelector("#btn-cancel-destruction");
+    const btnExportRecords = document.querySelector("#btn-export-records");
+    const destructionTimerSelect = document.querySelector("#destruction-timer");
+
+    // Update countdown display
+    function updateCountdownDisplay() {
+      if (!destructionEndTime) return;
+
+      const now = Date.now();
+      const remaining = Math.max(0, destructionEndTime - now);
+
+      if (remaining === 0) {
+        // Destruction time reached
+        destructionCountdown.classList.remove("active");
+        addSystemMessage("* Room has been destroyed!");
+        // The server will handle the actual destruction
+        return;
+      }
+
+      const minutes = Math.floor(remaining / 60000);
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      countdownTime.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    // Start destruction countdown
+    async function startDestruction() {
+      const minutes = parseInt(destructionTimerSelect.value);
+
+      const timeText = minutes === 0 ? 'immediately' : `in ${minutes} minutes`;
+      if (!confirm(`Are you sure you want to destroy this room ${timeText}? All messages and files will be permanently deleted!`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/room/${roomname}/destruction/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ minutes })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to start destruction');
+        }
+
+        const data = await response.json();
+        destructionEndTime = data.destructionTime;
+
+        if (minutes === 0) {
+          // Immediate destruction - no countdown needed
+          addSystemMessage(`* Room is being destroyed immediately...`);
+          // The server will handle the destruction and notify us
+        } else {
+          // Show countdown
+          destructionCountdown.classList.add("active");
+          btnStartDestruction.style.display = "none";
+          btnCancelDestruction.style.display = "block";
+          destructionTimerSelect.disabled = true;
+
+          // Start countdown interval
+          if (destructionCountdownInterval) {
+            clearInterval(destructionCountdownInterval);
+          }
+          destructionCountdownInterval = setInterval(updateCountdownDisplay, 1000);
+          updateCountdownDisplay();
+
+          addSystemMessage(`* Room destruction scheduled in ${minutes} minutes`);
+        }
+      } catch (err) {
+        console.error('Failed to start destruction:', err);
+        alert('Failed to start room destruction');
+      }
+    }
+
+    // Cancel destruction
+    async function cancelDestruction() {
+      if (!confirm('Cancel room destruction?')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/room/${roomname}/destruction/cancel`, {
+          method: 'POST'
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to cancel destruction');
+        }
+
+        // Clear countdown
+        destructionEndTime = null;
+        if (destructionCountdownInterval) {
+          clearInterval(destructionCountdownInterval);
+          destructionCountdownInterval = null;
+        }
+
+        destructionCountdown.classList.remove("active");
+        btnStartDestruction.style.display = "block";
+        btnCancelDestruction.style.display = "none";
+        destructionTimerSelect.disabled = false;
+
+        addSystemMessage('* Room destruction cancelled');
+      } catch (err) {
+        console.error('Failed to cancel destruction:', err);
+        alert('Failed to cancel room destruction');
+      }
+    }
+
+    // Export all records
+    async function exportRecords() {
+      try {
+        addSystemMessage('* Exporting all records...');
+
+        const response = await fetch(`/api/room/${roomname}/export`);
+        if (!response.ok) {
+          throw new Error('Failed to export records');
+        }
+
+        const data = await response.json();
+
+        // Create a downloadable file
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat-export-${roomname}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        addSystemMessage('* Export completed successfully');
+      } catch (err) {
+        console.error('Failed to export records:', err);
+        addSystemMessage('* Failed to export records');
+      }
+    }
+
+    // Bind event listeners
+    btnStartDestruction.addEventListener("click", startDestruction);
+    btnCancelDestruction.addEventListener("click", cancelDestruction);
+    btnExportRecords.addEventListener("click", exportRecords);
+
+    // Handle destruction updates from WebSocket
+    function handleDestructionUpdate(data) {
+      if (data.destructionStarted) {
+        destructionEndTime = data.destructionTime;
+        destructionCountdown.classList.add("active");
+        btnStartDestruction.style.display = "none";
+        btnCancelDestruction.style.display = "block";
+        destructionTimerSelect.disabled = true;
+
+        if (destructionCountdownInterval) {
+          clearInterval(destructionCountdownInterval);
+        }
+        destructionCountdownInterval = setInterval(updateCountdownDisplay, 1000);
+        updateCountdownDisplay();
+      } else if (data.destructionCancelled) {
+        destructionEndTime = null;
+        if (destructionCountdownInterval) {
+          clearInterval(destructionCountdownInterval);
+          destructionCountdownInterval = null;
+        }
+        destructionCountdown.classList.remove("active");
+        btnStartDestruction.style.display = "block";
+        btnCancelDestruction.style.display = "none";
+        destructionTimerSelect.disabled = false;
+      } else if (data.roomDestroyed) {
+        // Room has been destroyed
+        if (destructionCountdownInterval) {
+          clearInterval(destructionCountdownInterval);
+          destructionCountdownInterval = null;
+        }
+        addSystemMessage('* This room has been destroyed. Redirecting...');
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 2000);
+      }
+    }
+
     // Prevent form submission (we handle it via custom events)
     chatroom.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -2830,7 +3152,8 @@
       // If the user clicked somewhere in the window without selecting any text, focus the chat
       // input. But don't steal focus from textareas or input fields.
       const isTextInput = event.target.tagName === 'TEXTAREA' || event.target.tagName === 'INPUT';
-      if (window.getSelection().toString() == "" && !isTextInput) {
+      const isSelect = event.target.tagName === 'SELECT';
+      if (window.getSelection().toString() == "" && !isTextInput && !isSelect) {
         if (chatInputComponent) {
           chatInputComponent.focus();
         }
@@ -3109,6 +3432,9 @@
             addSystemMessage("* Room info has been updated");
           }
         }
+      } else if (data.destructionUpdate) {
+        // Handle room destruction updates
+        handleDestructionUpdate(data.destructionUpdate);
       } else if (data.joined) {
         let userItem = document.createElement("div");
         userItem.className = "user-item";

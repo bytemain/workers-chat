@@ -187,6 +187,10 @@ export class ChatRoom {
     // Initialize hashtag manager
     this.hashtagManager = new HashtagManager(this.storage);
 
+    // Destruction timer
+    this.destructionTimer = null;
+    this.destructionTime = null;
+
     // We will track metadata for each client WebSocket object in `sessions`.
     this.sessions = new Map();
     this.state.getWebSockets().forEach((webSocket) => {
@@ -215,6 +219,34 @@ export class ChatRoom {
     // more than a millisecond will have gone by.
     this.lastTimestamp = 0;
     this.app = this.createApp();
+
+    // Check if there's a pending destruction and restore the timer
+    this.restoreDestructionTimer();
+  }
+
+  // Restore destruction timer after DO restart
+  async restoreDestructionTimer() {
+    try {
+      const destructionTime = await this.storage.get('destruction-time');
+      if (destructionTime) {
+        const now = Date.now();
+        const remaining = destructionTime - now;
+
+        if (remaining <= 0) {
+          // Time has already passed, execute destruction immediately
+          await this.executeDestruction();
+        } else {
+          // Restore the timer
+          this.destructionTime = destructionTime;
+          this.destructionTimer = setTimeout(() => {
+            this.executeDestruction();
+          }, remaining);
+          console.log(`Restored destruction timer: ${Math.floor(remaining / 1000)}s remaining`);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to restore destruction timer:', err);
+    }
   }
 
   createApp() {
@@ -450,6 +482,134 @@ export class ChatRoom {
         }
       });
 
+      // Start room destruction countdown
+      app.post('/destruction/start', async (c) => {
+        try {
+          const data = await c.req.json();
+          const minutes = parseInt(data.minutes) || 30;
+
+          if (minutes === 0) {
+            // Execute destruction immediately
+            await this.executeDestruction();
+
+            return new Response(JSON.stringify({
+              success: true,
+              immediate: true
+            }), {
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          // Set destruction time
+          this.destructionTime = Date.now() + (minutes * 60 * 1000);
+          await this.storage.put('destruction-time', this.destructionTime);
+
+          // Clear any existing timer
+          if (this.destructionTimer) {
+            clearTimeout(this.destructionTimer);
+          }
+
+          // Set new timer
+          this.destructionTimer = setTimeout(() => {
+            this.executeDestruction();
+          }, minutes * 60 * 1000);
+
+          // Broadcast to all clients
+          this.broadcast({
+            destructionUpdate: {
+              destructionStarted: true,
+              destructionTime: this.destructionTime
+            }
+          });
+
+          return new Response(JSON.stringify({
+            success: true,
+            destructionTime: this.destructionTime
+          }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        } catch (err) {
+          return new Response(JSON.stringify({ error: err.message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+      });
+
+      // Cancel room destruction
+      app.post('/destruction/cancel', async (c) => {
+        try {
+          // Clear destruction time
+          this.destructionTime = null;
+          await this.storage.delete('destruction-time');
+
+          // Clear timer
+          if (this.destructionTimer) {
+            clearTimeout(this.destructionTimer);
+            this.destructionTimer = null;
+          }
+
+          // Broadcast to all clients
+          this.broadcast({
+            destructionUpdate: {
+              destructionCancelled: true
+            }
+          });
+
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        } catch (err) {
+          return new Response(JSON.stringify({ error: err.message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+      });
+
+      // Export all room data
+      app.get('/export', async (c) => {
+        try {
+          const exportData = {
+            roomInfo: await this.storage.get("room-info") || {},
+            messages: [],
+            hashtags: await this.hashtagManager.getAllHashtags(1000),
+            exportedAt: new Date().toISOString()
+          };
+
+          // Get all messages
+          const messages = await this.storage.list();
+          for (const [key, value] of messages) {
+            // Skip internal keys
+            if (key.startsWith('thread:') || key === 'room-info' || key === 'destruction-time') {
+              continue;
+            }
+
+            try {
+              const msg = typeof value === 'string' ? JSON.parse(value) : value;
+              exportData.messages.push(msg);
+            } catch (e) {
+              console.error('Failed to parse message:', e);
+            }
+          }
+
+          // Sort messages by timestamp
+          exportData.messages.sort((a, b) => a.timestamp - b.timestamp);
+
+          return new Response(JSON.stringify(exportData), {
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*"
+            }
+          });
+        } catch (err) {
+          return new Response(JSON.stringify({ error: err.message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+      });
+
     });
   }
 
@@ -589,7 +749,19 @@ export class ChatRoom {
         // Broadcast to all other connections that this user has joined.
         this.broadcast({ joined: session.name });
 
+        // Send ready signal
         webSocket.send(JSON.stringify({ ready: true }));
+
+        // If there's an ongoing destruction countdown, inform the new client
+        if (this.destructionTime) {
+          webSocket.send(JSON.stringify({
+            destructionUpdate: {
+              destructionStarted: true,
+              destructionTime: this.destructionTime
+            }
+          }));
+        }
+
         return;
       }
 
@@ -785,6 +957,84 @@ export class ChatRoom {
         this.broadcast({ quit: quitter.name });
       }
     });
+  }
+
+  // Execute room destruction - completely destroy all data
+  async executeDestruction() {
+    try {
+      console.log('Executing room destruction...');
+
+      // Notify all clients that the room is being destroyed
+      this.broadcast({
+        destructionUpdate: {
+          roomDestroyed: true
+        }
+      });
+
+      // Close all WebSocket connections
+      for (const [webSocket, session] of this.sessions.entries()) {
+        try {
+          webSocket.close(1000, "Room has been destroyed");
+        } catch (err) {
+          console.error('Failed to close WebSocket:', err);
+        }
+      }
+      this.sessions.clear();
+
+      // Collect all R2 file keys to delete
+      const filesToDelete = [];
+      const messages = await this.storage.list();
+
+      for (const [key, value] of messages) {
+        try {
+          // Skip internal keys
+          if (key.startsWith('thread:') || key === 'room-info' || key === 'destruction-time') {
+            continue;
+          }
+
+          const msg = typeof value === 'string' ? JSON.parse(value) : value;
+
+          // Check if message contains a file
+          if (msg.message && msg.message.startsWith('FILE:')) {
+            const parts = msg.message.substring(5).split('|');
+            const fileUrl = parts[0];
+
+            // Extract file key from URL (format: /files/{key})
+            if (fileUrl.startsWith('/files/')) {
+              const fileKey = fileUrl.substring(7);
+              filesToDelete.push(fileKey);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to process message for file deletion:', e);
+        }
+      }
+
+      // Delete all R2 files
+      console.log(`Deleting ${filesToDelete.length} files from R2...`);
+      for (const fileKey of filesToDelete) {
+        try {
+          await this.env.CHAT_FILES.delete(fileKey);
+        } catch (err) {
+          console.error(`Failed to delete file ${fileKey}:`, err);
+        }
+      }
+
+      // Delete all storage data
+      console.log('Deleting all storage data...');
+      await this.storage.deleteAll();
+
+      // Clear timers
+      if (this.destructionTimer) {
+        clearTimeout(this.destructionTimer);
+        this.destructionTimer = null;
+      }
+      this.destructionTime = null;
+
+      console.log('Room destruction completed');
+    } catch (err) {
+      console.error('Failed to execute room destruction:', err);
+    }
   }
 }
 
