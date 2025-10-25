@@ -2664,6 +2664,96 @@
     isLocalUpdate: false
   });
 
+  // Room Destruction Management (global scope for WebSocket access)
+  let destructionCountdownInterval = null;
+  let destructionEndTime = null;
+  let destructionCountdown = null;
+  let countdownTime = null;
+  let btnStartDestruction = null;
+  let btnCancelDestruction = null;
+  let btnExportRecords = null;
+  let destructionTimerSelect = null;
+
+  // Update countdown display
+  function updateCountdownDisplay() {
+    if (!destructionEndTime || !countdownTime) return;
+
+    const now = Date.now();
+    const remaining = Math.max(0, destructionEndTime - now);
+
+    if (remaining === 0) {
+      // Destruction time reached
+      if (destructionCountdown) {
+        destructionCountdown.classList.remove("active");
+      }
+      addSystemMessage("* Room has been destroyed!");
+      // The server will handle the actual destruction
+      return;
+    }
+
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+    countdownTime.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  // Handle destruction updates from WebSocket (global function)
+  function handleDestructionUpdate(data) {
+    if (data.destructionStarted) {
+      destructionEndTime = data.destructionTime;
+      if (destructionCountdown) {
+        destructionCountdown.classList.add("active");
+      }
+      if (btnStartDestruction) {
+        btnStartDestruction.style.display = "none";
+      }
+      if (btnCancelDestruction) {
+        btnCancelDestruction.style.display = "block";
+      }
+      if (destructionTimerSelect) {
+        destructionTimerSelect.disabled = true;
+      }
+
+      if (destructionCountdownInterval) {
+        clearInterval(destructionCountdownInterval);
+      }
+      destructionCountdownInterval = setInterval(updateCountdownDisplay, 1000);
+      updateCountdownDisplay();
+
+      // Show system message about ongoing destruction
+      const remaining = destructionEndTime - Date.now();
+      const minutes = Math.ceil(remaining / 60000);
+      addSystemMessage(`⚠️ Warning: This room will be destroyed in ${minutes} minute(s)!`);
+    } else if (data.destructionCancelled) {
+      destructionEndTime = null;
+      if (destructionCountdownInterval) {
+        clearInterval(destructionCountdownInterval);
+        destructionCountdownInterval = null;
+      }
+      if (destructionCountdown) {
+        destructionCountdown.classList.remove("active");
+      }
+      if (btnStartDestruction) {
+        btnStartDestruction.style.display = "block";
+      }
+      if (btnCancelDestruction) {
+        btnCancelDestruction.style.display = "none";
+      }
+      if (destructionTimerSelect) {
+        destructionTimerSelect.disabled = false;
+      }
+    } else if (data.roomDestroyed) {
+      // Room has been destroyed
+      if (destructionCountdownInterval) {
+        clearInterval(destructionCountdownInterval);
+        destructionCountdownInterval = null;
+      }
+      addSystemMessage('* This room has been destroyed. Redirecting...');
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 2000);
+    }
+  }
+
   function startChat() {
     roomForm.remove();
 
@@ -2826,36 +2916,13 @@
       event.stopPropagation();
     });
 
-    // Room Destruction Management
-    let destructionCountdownInterval = null;
-    let destructionEndTime = null;
-
-    const destructionCountdown = document.querySelector("#destruction-countdown");
-    const countdownTime = document.querySelector("#countdown-time");
-    const btnStartDestruction = document.querySelector("#btn-start-destruction");
-    const btnCancelDestruction = document.querySelector("#btn-cancel-destruction");
-    const btnExportRecords = document.querySelector("#btn-export-records");
-    const destructionTimerSelect = document.querySelector("#destruction-timer");
-
-    // Update countdown display
-    function updateCountdownDisplay() {
-      if (!destructionEndTime) return;
-
-      const now = Date.now();
-      const remaining = Math.max(0, destructionEndTime - now);
-
-      if (remaining === 0) {
-        // Destruction time reached
-        destructionCountdown.classList.remove("active");
-        addSystemMessage("* Room has been destroyed!");
-        // The server will handle the actual destruction
-        return;
-      }
-
-      const minutes = Math.floor(remaining / 60000);
-      const seconds = Math.floor((remaining % 60000) / 1000);
-      countdownTime.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
-    }
+    // Room Destruction Management - Initialize DOM elements
+    destructionCountdown = document.querySelector("#destruction-countdown");
+    countdownTime = document.querySelector("#countdown-time");
+    btnStartDestruction = document.querySelector("#btn-start-destruction");
+    btnCancelDestruction = document.querySelector("#btn-cancel-destruction");
+    btnExportRecords = document.querySelector("#btn-export-records");
+    destructionTimerSelect = document.querySelector("#destruction-timer");
 
     // Start destruction countdown
     async function startDestruction() {
@@ -2985,43 +3052,6 @@
     btnStartDestruction.addEventListener("click", startDestruction);
     btnCancelDestruction.addEventListener("click", cancelDestruction);
     btnExportRecords.addEventListener("click", exportRecords);
-
-    // Handle destruction updates from WebSocket
-    function handleDestructionUpdate(data) {
-      if (data.destructionStarted) {
-        destructionEndTime = data.destructionTime;
-        destructionCountdown.classList.add("active");
-        btnStartDestruction.style.display = "none";
-        btnCancelDestruction.style.display = "block";
-        destructionTimerSelect.disabled = true;
-
-        if (destructionCountdownInterval) {
-          clearInterval(destructionCountdownInterval);
-        }
-        destructionCountdownInterval = setInterval(updateCountdownDisplay, 1000);
-        updateCountdownDisplay();
-      } else if (data.destructionCancelled) {
-        destructionEndTime = null;
-        if (destructionCountdownInterval) {
-          clearInterval(destructionCountdownInterval);
-          destructionCountdownInterval = null;
-        }
-        destructionCountdown.classList.remove("active");
-        btnStartDestruction.style.display = "block";
-        btnCancelDestruction.style.display = "none";
-        destructionTimerSelect.disabled = false;
-      } else if (data.roomDestroyed) {
-        // Room has been destroyed
-        if (destructionCountdownInterval) {
-          clearInterval(destructionCountdownInterval);
-          destructionCountdownInterval = null;
-        }
-        addSystemMessage('* This room has been destroyed. Redirecting...');
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 2000);
-      }
-    }
 
     // Prevent form submission (we handle it via custom events)
     chatroom.addEventListener("submit", (event) => {

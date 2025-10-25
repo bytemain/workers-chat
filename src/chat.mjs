@@ -196,6 +196,7 @@ export class ChatRoom {
     // Destruction timer
     this.destructionTimer = null;
     this.destructionTime = null;
+    this.destructionBroadcastInterval = null; // Broadcast interval for destruction status
 
     // We will track metadata for each client WebSocket object in `sessions`.
     this.sessions = new Map();
@@ -247,6 +248,19 @@ export class ChatRoom {
           this.destructionTimer = setTimeout(() => {
             this.executeDestruction();
           }, remaining);
+
+          // Set up periodic broadcast (every 5 seconds)
+          this.destructionBroadcastInterval = setInterval(() => {
+            if (this.destructionTime) {
+              this.broadcast({
+                destructionUpdate: {
+                  destructionStarted: true,
+                  destructionTime: this.destructionTime
+                }
+              });
+            }
+          }, 5000);
+
           console.log(`Restored destruction timer: ${Math.floor(remaining / 1000)}s remaining`);
         }
       }
@@ -492,11 +506,20 @@ export class ChatRoom {
       app.post('/destruction/start', async (c) => {
         try {
           const data = await c.req.json();
-          const minutes = parseInt(data.minutes) || 30;
-
+          const minutes = data.minutes !== undefined ? parseInt(data.minutes) : 30;
+          console.log(`Starting destruction timer for ${minutes} minutes`);
           if (minutes === 0) {
-            // Execute destruction immediately
-            await this.executeDestruction();
+            // Immediate destruction - broadcast first, then execute
+            this.broadcast({
+              destructionUpdate: {
+                roomDestroyed: true
+              }
+            });
+
+            // Give clients a moment to receive the message before destroying
+            setTimeout(async () => {
+              await this.executeDestruction();
+            }, 1000);
 
             return new Response(JSON.stringify({
               success: true,
@@ -520,7 +543,24 @@ export class ChatRoom {
             this.executeDestruction();
           }, minutes * 60 * 1000);
 
-          // Broadcast to all clients
+          // Clear any existing broadcast interval
+          if (this.destructionBroadcastInterval) {
+            clearInterval(this.destructionBroadcastInterval);
+          }
+
+          // Set up periodic broadcast (every 5 seconds)
+          this.destructionBroadcastInterval = setInterval(() => {
+            if (this.destructionTime) {
+              this.broadcast({
+                destructionUpdate: {
+                  destructionStarted: true,
+                  destructionTime: this.destructionTime
+                }
+              });
+            }
+          }, 5000);
+
+          // Broadcast to all clients immediately
           this.broadcast({
             destructionUpdate: {
               destructionStarted: true,
@@ -553,6 +593,12 @@ export class ChatRoom {
           if (this.destructionTimer) {
             clearTimeout(this.destructionTimer);
             this.destructionTimer = null;
+          }
+
+          // Clear broadcast interval
+          if (this.destructionBroadcastInterval) {
+            clearInterval(this.destructionBroadcastInterval);
+            this.destructionBroadcastInterval = null;
           }
 
           // Broadcast to all clients
