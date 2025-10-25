@@ -132,11 +132,16 @@
       top: 0;
       bottom: 32px;
       width: 200px;
-      display: flex;
+      display: none;
+      /* Hidden by default, shown in startChat() */
       flex-direction: column;
       border-left: 1px solid #ddd;
       background: white;
       transition: bottom 0.1s ease;
+    }
+
+    #right-sidebar.visible {
+      display: flex;
     }
 
     #room-info {
