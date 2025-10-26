@@ -4,23 +4,7 @@ import { keyManager } from '../common/key-manager.js';
 import FileCrypto from '../common/file-crypto.js';
 import { getCryptoPool } from './crypto-worker-pool.js';
 
-let isKeyManagerReady = false;
-let cryptoPool = null;
-
-// Initialize crypto systems on page load
-(async () => {
-  try {
-    await keyManager.init();
-    isKeyManagerReady = true;
-    console.log('✅ E2EE KeyManager initialized');
-
-    // Initialize crypto worker pool
-    cryptoPool = getCryptoPool();
-    console.log('✅ Crypto Worker Pool initialized');
-  } catch (error) {
-    console.error('❌ Failed to initialize crypto systems:', error);
-  }
-})();
+const cryptoPool = getCryptoPool();
 
 function createReactiveState(initialState) {
   const listeners = new Set();
@@ -783,7 +767,6 @@ let mobileTopBar = document.querySelector('#mobile-top-bar');
 let mobileTopBarTitle = document.querySelector('#mobile-top-bar-title');
 let mobileTopBarArrow = document.querySelector('#mobile-top-bar-arrow');
 let mobileRoomInfoOverlay = document.querySelector('#mobile-room-info-overlay');
-let rightSidebar = document.querySelector('#right-sidebar');
 
 // Connection status element
 let connectionStatus = document.querySelector('#connection-status');
@@ -887,55 +870,6 @@ function generateLegacyMessageId(timestamp, username) {
 // ===== E2EE Helper Functions =====
 
 /**
- * Get room info including encryption status
- * @param {string} roomId - Room ID or name
- * @returns {Promise<Object>} Room information
- */
-async function getRoomInfo(roomId) {
-  try {
-    const response = await fetch(`/api/room/${roomId}/info`);
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (error) {
-    console.error('Failed to fetch room info:', error);
-  }
-  return {};
-}
-
-/**
- * Update room info (including encryption metadata)
- * @param {string} roomId - Room ID or name
- * @param {Object} data - Data to update
- * @returns {Promise<boolean>} Success status
- */
-async function updateRoomInfo(roomId, data) {
-  try {
-    const response = await fetch(`/api/room/${roomId}/info`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      // Parse error response
-      const errorData = await response.json().catch(() => ({}));
-      const error = new Error(errorData.error || 'Failed to update room info');
-      error.code = errorData.code;
-      error.status = response.status;
-      throw error;
-    }
-
-    return true;
-  } catch (error) {
-    // Re-throw to let caller handle it
-    throw error;
-  }
-}
-
-/**
  * Verify room password by attempting to decrypt verification data
  * @param {string} roomId - Room ID
  * @param {string} password - Password to verify
@@ -978,12 +912,13 @@ function showPasswordDialog(roomData) {
         <p style="margin: 0 0 8px 0;"><strong>Room:</strong> ${roomName}</p>
         <p style="margin: 0 0 16px 0; color: #666;">
           Enter your encryption key. If you don't have one yet, create one now. 
-          Share the same key with others to communicate.
+          Share the same key with others to communicate.<br>
+          <small style="color: #999;">Leave empty to clear the key and disable encryption.</small>
         </p>
         <input
           type="text"
           id="room-password-input"
-          placeholder="Enter or create encryption key"
+          placeholder="Enter or create encryption key (or leave empty to clear)"
           style="
             width: 100%;
             padding: 8px;
@@ -1002,7 +937,7 @@ function showPasswordDialog(roomData) {
             background: white;
             border-radius: 4px;
             cursor: pointer;
-          ">Skip</button>
+          ">Cancel</button>
           <button id="password-submit-btn" style="
             padding: 8px 16px;
             border: none;
@@ -1041,13 +976,9 @@ function showPasswordDialog(roomData) {
 
     submitBtn.onclick = () => {
       const password = input.value.trim();
-      if (password) {
-        cleanup();
-        resolve(password);
-      } else {
-        errorDiv.textContent = 'Please enter an encryption key';
-        errorDiv.style.display = 'block';
-      }
+      // Allow empty string (to clear key) or non-empty string (to set key)
+      cleanup();
+      resolve(password);
     };
 
     cancelBtn.onclick = () => {
@@ -1069,12 +1000,6 @@ function showPasswordDialog(roomData) {
  * @returns {Promise<boolean>} Whether initialization succeeded
  */
 async function initializeRoomEncryption(roomId) {
-  if (!isKeyManagerReady) {
-    console.warn('⚠️ KeyManager not ready yet, waiting...');
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    return await initializeRoomEncryption(roomId);
-  }
-
   console.log('🔐 Checking for saved encryption key...');
 
   // Check if we already have a password saved locally
@@ -1297,6 +1222,44 @@ class ChatAPI {
   getWebSocketUrl(roomName) {
     const wss = window.location.protocol === 'http:' ? 'ws://' : 'wss://';
     return `${wss}${this.hostname}/api/room/${roomName}/websocket`;
+  }
+
+  async exportData(roomName) {
+    const response = await fetch(`${this.baseUrl}/room/${roomName}/export`, {
+      method: 'GET',
+    });
+    if (!response.ok) {
+      throw new Error('Failed to export data');
+    }
+    return await response.blob();
+  }
+
+  // destruction/start
+  async destroyRoom(roomName, minutes) {
+    const response = await fetch(`/api/room/${roomName}/destruction/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ minutes }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to start destruction');
+    }
+
+    const data = await response.json();
+    return data;
+  }
+
+  async cancelRoomDestruction(roomName) {
+    const response = await fetch(`/api/room/${roomName}/destruction/cancel`, {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to cancel destruction');
+    }
+    const data = await response.json();
+    return data;
   }
 }
 
@@ -2306,22 +2269,33 @@ function startChat() {
       e.preventDefault();
 
       // Show dialog to enter new key
-      const newKey = await showPasswordDialog({ name: roomname });
+      const result = await showPasswordDialog({ name: roomname });
 
-      if (!newKey) {
-        // User cancelled
+      if (result === null) {
+        // User cancelled (clicked cancel or ESC)
         return;
       }
 
       try {
-        // Save the new key locally (no server verification)
-        await keyManager.saveRoomPassword(roomname, newKey);
-        currentRoomKey = await keyManager.getRoomKey(roomname);
-        isRoomEncrypted = true;
+        if (result === '') {
+          // Empty string means clear the key
+          await keyManager.deleteRoomPassword(roomname);
+          currentRoomKey = null;
+          isRoomEncrypted = false;
 
-        alert(
-          '✅ Encryption key saved locally!\n\nYou can now try to decrypt messages with this key.',
-        );
+          alert(
+            '✅ Encryption key cleared!\n\nThe room is now unencrypted for you.',
+          );
+        } else {
+          // Save the new key locally (no server verification)
+          await keyManager.saveRoomPassword(roomname, result);
+          currentRoomKey = await keyManager.getRoomKey(roomname);
+          isRoomEncrypted = true;
+
+          alert(
+            '✅ Encryption key saved locally!\n\nYou can now try to decrypt messages with this key.',
+          );
+        }
 
         // Reload the page to re-decrypt all messages with the new key
         window.location.reload();
@@ -2354,12 +2328,7 @@ function startChat() {
     }
 
     try {
-      const response = await fetch(`/api/room/${roomname}/destruction/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ minutes }),
-      });
-
+      const response = await api.destroyRoom(roomname, minutes);
       if (!response.ok) {
         throw new Error('Failed to start destruction');
       }
@@ -2403,14 +2372,7 @@ function startChat() {
     }
 
     try {
-      const response = await fetch(`/api/room/${roomname}/destruction/cancel`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to cancel destruction');
-      }
-
+      await api.cancelRoomDestruction(roomname);
       // Clear countdown
       destructionEndTime = null;
       if (destructionCountdownInterval) {
@@ -2435,13 +2397,7 @@ function startChat() {
     try {
       addSystemMessage('* Exporting all records and files...');
 
-      const response = await fetch(`/api/room/${roomname}/export`);
-      if (!response.ok) {
-        throw new Error('Failed to export records');
-      }
-
-      // Get the blob directly (ZIP file)
-      const blob = await response.blob();
+      const response = await api.exportData(roomname);
 
       // Extract filename from Content-Disposition header if available
       const contentDisposition = response.headers.get('Content-Disposition');
@@ -2878,7 +2834,7 @@ function join() {
     }
   };
 
-  ws.addEventListener('open', async (event) => {
+  ws.addEventListener('open', async () => {
     // Initialize encryption first
     console.log('🔐 Initializing room encryption...');
     const encryptionReady = await initializeRoomEncryption(roomname);
@@ -3002,6 +2958,9 @@ function join() {
           };
           userItem.appendChild(logoutBtn);
           userItem.classList.add('current-user');
+        } else {
+          userItem.classList.add('other-user');
+          addSystemMessage(`* ${data.joined} has joined the room`);
         }
 
         roster.appendChild(userItem);
@@ -3016,6 +2975,7 @@ function join() {
           break;
         }
       }
+      addSystemMessage(`* ${data.quit} has left the room`);
     } else if (data.ready) {
       // All pre-join messages have been delivered.
       if (!wroteWelcomeMessages) {
