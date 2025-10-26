@@ -2,12 +2,7 @@ import { HashtagManager } from "./hashtag.mjs";
 import { Hono } from 'hono'
 import { getPath, splitPath } from 'hono/utils/url'
 import { showRoutes } from 'hono/dev'
-import { ZipWriter, BlobReader, configure } from '@zip.js/zip.js';
-
-// Configure zip.js for Workers runtime
-configure({
-  useCompressionStream: false,
-});
+import { ZipWriter, BlobReader } from '@zip.js/zip.js';
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -691,7 +686,7 @@ export class ChatRoom {
               if (fileContent) {
                 // Create a safe filename (preserve original filename)
                 const safeFilename = `files/${fileInfo.filename}`;
-                promises.push(archive.add(safeFilename, new BlobReader(await fileContent.blob())));
+                promises.push(archive.add(safeFilename, fileContent.body));
               } else {
                 console.warn(`File not found in R2: ${fileInfo.r2key}`);
               }
