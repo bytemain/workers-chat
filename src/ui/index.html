@@ -276,6 +276,11 @@
         display: block;
       }
 
+      #btn-change-encryption-key:hover {
+        background-color: #f0f8ff;
+        text-decoration: underline;
+      }
+
       /* Room destruction styles */
       #room-destruction-container {
         margin-top: 12px;
@@ -420,6 +425,10 @@
         justify-content: space-between;
         align-items: center;
         margin-bottom: 4px;
+      }
+
+      #roster .user-item .current-user {
+        font-weight: bold;
       }
 
       #roster .logout-btn {
@@ -1406,159 +1415,24 @@
           🔒 Create a Private Room &raquo;
         </button>
 
-        <!-- E2EE Encryption Options -->
+        <!-- E2EE Info -->
         <div
-          id="encryption-options"
           style="
             margin-top: 1.5em;
             padding: 1em;
             background: #f0f8ff;
             border-radius: 8px;
             border: 1px solid #b3d9ff;
+            text-align: center;
           "
         >
-          <div style="text-align: center; margin-bottom: 1em">
-            <div style="font-size: 1.5em; margin-bottom: 0.3em">🔐</div>
-            <strong style="color: #0066cc"
-              >All rooms are end-to-end encrypted</strong
-            >
-          </div>
-
-          <div style="margin-bottom: 0.8em">
-            <label
-              style="
-                display: flex;
-                align-items: center;
-                padding: 0.8em;
-                cursor: pointer;
-                border-radius: 4px;
-                background: white;
-                border: 2px solid #0066cc;
-              "
-              class="privacy-option"
-            >
-              <input
-                type="radio"
-                name="privacy-level"
-                value="basic"
-                checked
-                style="
-                  margin-right: 0.8em;
-                  width: 18px;
-                  height: 18px;
-                  cursor: pointer;
-                "
-              />
-              <div>
-                <div style="font-weight: bold; color: #333">
-                  🔒 Use Room Name as Key
-                </div>
-                <div style="font-size: 0.85em; color: #666; margin-top: 0.2em">
-                  Anyone with the room name can join
-                </div>
-              </div>
-            </label>
-          </div>
-
-          <div style="margin-bottom: 0.8em">
-            <label
-              style="
-                display: flex;
-                align-items: center;
-                padding: 0.8em;
-                cursor: pointer;
-                border-radius: 4px;
-                background: white;
-                border: 2px solid #ddd;
-              "
-              class="privacy-option"
-            >
-              <input
-                type="radio"
-                name="privacy-level"
-                value="enhanced"
-                style="
-                  margin-right: 0.8em;
-                  width: 18px;
-                  height: 18px;
-                  cursor: pointer;
-                "
-              />
-              <div>
-                <div style="font-weight: bold; color: #333">
-                  🔐 Set Custom Key
-                </div>
-                <div style="font-size: 0.85em; color: #666; margin-top: 0.2em">
-                  More secure - share key separately
-                </div>
-              </div>
-            </label>
-          </div>
-
-          <div
-            id="custom-password-container"
-            style="
-              display: none;
-              margin-top: 1em;
-              padding: 1em;
-              background: white;
-              border-radius: 4px;
-              border: 1px solid #ddd;
-            "
+          <div style="font-size: 1.5em; margin-bottom: 0.3em">🔐</div>
+          <strong style="color: #0066cc"
+            >All rooms are end-to-end encrypted</strong
           >
-            <label
-              for="encryption-password"
-              style="
-                display: block;
-                font-size: 0.9em;
-                margin-bottom: 0.5em;
-                color: #333;
-                font-weight: bold;
-              "
-            >
-              Encryption Key:
-            </label>
-            <div style="position: relative">
-              <input
-                id="encryption-password"
-                type="text"
-                placeholder="Enter encryption key"
-                autocomplete="off"
-                style="
-                  width: 100%;
-                  padding: 0.6em;
-                  padding-right: 80px;
-                  border: 1px solid #ddd;
-                  border-radius: 4px;
-                  font-size: 0.95em;
-                  font-family: monospace;
-                "
-                maxlength="128"
-              />
-              <button
-                id="copy-key-btn"
-                type="button"
-                style="
-                  position: absolute;
-                  right: 5px;
-                  top: 50%;
-                  transform: translateY(-50%);
-                  padding: 0.4em 0.8em;
-                  background: #0066cc;
-                  color: white;
-                  border: none;
-                  border-radius: 3px;
-                  cursor: pointer;
-                  font-size: 0.85em;
-                "
-              >
-                Copy
-              </button>
-            </div>
-            <div style="font-size: 0.8em; color: #666; margin-top: 0.5em">
-              💡 <strong>Important:</strong> Share this key with room members to
-              grant access
-            </div>
+          <div style="font-size: 0.85em; color: #666; margin-top: 0.5em">
+            Each user manages their own encryption keys locally.<br />
+            Share the same key with others to communicate.
           </div>
         </div>
       </div>
@@ -1608,6 +1482,22 @@
               placeholder="Add room description..."
             ></textarea>
           </div>
+          <div style="margin-top: 12px">
+            <a
+              id="btn-change-encryption-key"
+              href="#"
+              style="
+                color: #0066cc;
+                text-decoration: none;
+                font-size: 0.9em;
+                display: inline-block;
+                padding: 4px;
+                border-radius: 3px;
+                transition: background-color 0.2s;
+              "
+              >🔑 Change Local Key</a
+            >
+          </div>
           <div id="room-destruction-container">
             <h4>🔥 Room Management</h4>
             <div class="destruction-countdown" id="destruction-countdown">
@@ -1655,6 +1545,28 @@
       <div id="reply-indicator" style="display: none">
         <button type="button" class="reply-indicator-close">✕</button>
         <span class="reply-indicator-text"></span>
+      </div>
+      <div
+        id="no-key-warning"
+        style="
+          display: none;
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          background: #fff3cd;
+          border-top: 2px solid #ffc107;
+          padding: 12px;
+          text-align: center;
+          font-size: 14px;
+          z-index: 999;
+        "
+      >
+        <strong>⚠️ Missing Encryption Key</strong><br />
+        <span style="font-size: 12px; color: #856404"
+          >You cannot send messages without the correct encryption key. Click
+          "🔑 Change Local Key" in the room info to enter it.</span
+        >
       </div>
       <div
         id="main-chat-input-container"

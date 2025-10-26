@@ -920,10 +920,20 @@ async function updateRoomInfo(roomId, data) {
       },
       body: JSON.stringify(data),
     });
-    return response.ok;
+
+    if (!response.ok) {
+      // Parse error response
+      const errorData = await response.json().catch(() => ({}));
+      const error = new Error(errorData.error || 'Failed to update room info');
+      error.code = errorData.code;
+      error.status = response.status;
+      throw error;
+    }
+
+    return true;
   } catch (error) {
-    console.error('Failed to update room info:', error);
-    return false;
+    // Re-throw to let caller handle it
+    throw error;
   }
 }
 
@@ -934,44 +944,10 @@ async function updateRoomInfo(roomId, data) {
  * @param {string} verificationData - Encrypted verification data
  * @returns {Promise<Object>} {success: boolean, key?: CryptoKey, error?: string}
  */
-async function verifyRoomPassword(roomId, password, verificationData) {
-  try {
-    // Parse encrypted data
-    if (!verificationData || !verificationData.startsWith('ENCRYPTED:')) {
-      return { success: false, error: 'Invalid verification data format' };
-    }
-
-    const encrypted = JSON.parse(verificationData.substring(10));
-
-    // Derive key from password
-    console.log('🔑 Deriving key from password...');
-    const key = await CryptoUtils.deriveKeyFromPassword(password, roomId);
-
-    // Try to decrypt
-    console.log('🔓 Attempting to decrypt verification data...');
-    const decrypted = await CryptoUtils.decryptMessage(encrypted, key);
-
-    // Parse and verify payload
-    const payload = JSON.parse(decrypted);
-
-    if (payload.type === 'room-verification' && payload.roomId === roomId) {
-      console.log('✅ Password verified successfully');
-      // Save password to key manager
-      await keyManager.saveRoomPassword(roomId, password);
-      return { success: true, key };
-    } else {
-      return { success: false, error: 'Invalid verification payload' };
-    }
-  } catch (error) {
-    console.error('❌ Password verification failed:', error);
-    return { success: false, error: 'Incorrect password' };
-  }
-}
-
 /**
- * Show password input dialog
- * @param {Object} roomData - Room information
- * @returns {Promise<string|null>} Entered password or null if cancelled
+ * Show encryption key input dialog
+ * @param {Object} roomData - Room information (only uses name)
+ * @returns {Promise<string|null>} Entered key or null if cancelled
  */
 function showPasswordDialog(roomData) {
   return new Promise((resolve) => {
@@ -989,20 +965,7 @@ function showPasswordDialog(roomData) {
       z-index: 10000;
     `;
 
-    const privacyLevel = roomData.privacyLevel || 'unknown';
     const roomName = roomData.name || 'this room';
-
-    let title = '🔐 Encryption Key Required';
-    let hint = 'Enter the encryption key to join this room.';
-
-    if (privacyLevel === 'basic') {
-      title = '🔐 Protected Room';
-      hint = `This room uses basic protection. Try entering the room name: <strong>${roomName}</strong>`;
-    } else if (privacyLevel === 'enhanced') {
-      title = '🔐 Highly Protected Room';
-      hint =
-        'This room uses enhanced privacy. Ask the room creator for the encryption key.';
-    }
 
     dialog.innerHTML = `
       <div style="
@@ -1013,13 +976,16 @@ function showPasswordDialog(roomData) {
         width: 90%;
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       ">
-        <h3 style="margin: 0 0 16px 0;">${title}</h3>
+        <h3 style="margin: 0 0 16px 0;">🔐 Encryption Key</h3>
         <p style="margin: 0 0 8px 0;"><strong>Room:</strong> ${roomName}</p>
-        <p style="margin: 0 0 16px 0; color: #666;">${hint}</p>
+        <p style="margin: 0 0 16px 0; color: #666;">
+          Enter your encryption key. If you don't have one yet, create one now. 
+          Share the same key with others to communicate.
+        </p>
         <input
           type="text"
           id="room-password-input"
-          placeholder="Enter encryption key"
+          placeholder="Enter or create encryption key"
           style="
             width: 100%;
             padding: 8px;
@@ -1038,7 +1004,7 @@ function showPasswordDialog(roomData) {
             background: white;
             border-radius: 4px;
             cursor: pointer;
-          ">Cancel</button>
+          ">Skip</button>
           <button id="password-submit-btn" style="
             padding: 8px 16px;
             border: none;
@@ -1046,7 +1012,7 @@ function showPasswordDialog(roomData) {
             color: white;
             border-radius: 4px;
             cursor: pointer;
-          ">Join Room</button>
+          ">Save Key</button>
         </div>
       </div>
     `;
@@ -1058,20 +1024,25 @@ function showPasswordDialog(roomData) {
     const submitBtn = dialog.querySelector('#password-submit-btn');
     const cancelBtn = dialog.querySelector('#password-cancel-btn');
 
-    // Auto-fill room name for basic privacy
-    if (privacyLevel === 'basic') {
-      input.value = roomName;
-      input.select();
-    }
-
     input.focus();
 
     const cleanup = () => {
       document.body.removeChild(dialog);
+      document.removeEventListener('keydown', handleEscape);
     };
 
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        cleanup();
+        resolve(null);
+      }
+    };
+
+    // Add escape key listener
+    document.addEventListener('keydown', handleEscape);
+
     submitBtn.onclick = () => {
-      const password = input.value;
+      const password = input.value.trim();
       if (password) {
         cleanup();
         resolve(password);
@@ -1106,157 +1077,113 @@ async function initializeRoomEncryption(roomId) {
     return await initializeRoomEncryption(roomId);
   }
 
-  // Get room info
-  const info = await getRoomInfo(roomId);
+  console.log('🔐 Checking for saved encryption key...');
 
-  if (!info.encrypted) {
-    console.log('ℹ️ Room is not encrypted');
-    isRoomEncrypted = false;
-    currentRoomKey = null;
-    return true;
-  }
-
-  console.log('🔐 Room is encrypted, checking for saved key...');
-  isRoomEncrypted = true;
-
-  // Check if we already have a password saved
+  // Check if we already have a password saved locally
   let key = await keyManager.getRoomKey(roomId);
 
   if (key) {
-    console.log('✅ Using saved key');
+    console.log('✅ Using saved key from IndexedDB');
     currentRoomKey = key;
+    isRoomEncrypted = true;
+    updateEncryptionUI();
     return true;
   }
 
-  // Try auto-join with room name for basic privacy
-  if (info.privacyLevel === 'basic' && info.verificationData) {
-    console.log(
-      '🔍 Attempting auto-join with room name (using roomId as key)...',
+  // No saved key found
+  console.log('ℹ️ No saved key found');
+
+  // Prompt user to enter a key or continue without encryption
+  const password = await showPasswordDialog({ name: roomId });
+
+  if (password) {
+    // User entered a key - save it locally
+    console.log('🔑 Saving user-provided key');
+    await keyManager.saveRoomPassword(roomId, password);
+    currentRoomKey = await keyManager.getRoomKey(roomId);
+    isRoomEncrypted = true;
+    updateEncryptionUI();
+    return true;
+  } else {
+    // User cancelled or skipped - enter without encryption
+    console.log('⚠️ User entered without encryption key');
+    addSystemMessage(
+      '* You entered the room without an encryption key. You can set one in the room settings.',
     );
-    // Use roomId (the actual room identifier from URL) as the password, not the display name
-    const result = await verifyRoomPassword(
-      roomId,
-      roomId,
-      info.verificationData,
-    );
-    if (result.success) {
-      console.log('✅ Auto-joined with room name');
-      currentRoomKey = result.key;
-      return true;
-    } else {
-      console.warn(
-        '⚠️ Auto-join failed, room may have been created with different key',
-      );
-    }
+    currentRoomKey = null;
+    isRoomEncrypted = false;
+    updateEncryptionUI();
+    return true;
   }
-
-  // Need to prompt for password
-  console.log('🔑 Encryption key required, showing dialog...');
-
-  let attempts = 0;
-  const maxAttempts = 3;
-
-  while (attempts < maxAttempts) {
-    const password = await showPasswordDialog(info);
-
-    if (!password) {
-      // User cancelled - allow them to enter but they won't be able to decrypt
-      console.log(
-        '⚠️ User cancelled key entry, entering room without decryption key',
-      );
-      addSystemMessage(
-        '* You entered the room without an encryption key. Messages will appear encrypted.',
-      );
-      currentRoomKey = null;
-      return true;
-    }
-
-    // Verify password
-    if (info.verificationData) {
-      const result = await verifyRoomPassword(
-        roomId,
-        password,
-        info.verificationData,
-      );
-      if (result.success) {
-        console.log('✅ Encryption key verified');
-        currentRoomKey = result.key;
-        return true;
-      } else {
-        attempts++;
-        if (attempts < maxAttempts) {
-          alert(`Incorrect key. ${maxAttempts - attempts} attempts remaining.`);
-        } else {
-          // After 3 failed attempts, let them enter but without decryption key
-          console.log(
-            '⚠️ Max attempts reached, entering room without decryption key',
-          );
-          alert(
-            'Incorrect key. You can still enter the room, but messages will appear encrypted.',
-          );
-          currentRoomKey = null;
-          return true;
-        }
-      }
-    } else {
-      // No verification data, just save the password
-      console.warn('⚠️ No verification data, using key without verification');
-      await keyManager.saveRoomPassword(roomId, password);
-      currentRoomKey = await keyManager.getRoomKey(roomId);
-      return true;
-    }
-  }
-
-  return false;
 }
 
 /**
- * Setup room encryption when creating a room
+ * Update UI based on encryption key availability
+ */
+function updateEncryptionUI() {
+  const noKeyWarning = document.querySelector('#no-key-warning');
+  const mainInputContainer = document.querySelector(
+    '#main-chat-input-container',
+  );
+
+  if (!noKeyWarning || !mainInputContainer) {
+    // UI elements not ready yet
+    return;
+  }
+
+  if (isRoomEncrypted && !currentRoomKey) {
+    // Show warning banner
+    noKeyWarning.style.display = 'block';
+    // Adjust input container position to be above warning
+    mainInputContainer.style.bottom = noKeyWarning.offsetHeight + 'px';
+
+    // Also disable input placeholder to indicate it's not usable
+    const chatInput = document.querySelector('#chat-input');
+    if (chatInput && chatInput.textarea) {
+      chatInput.textarea.placeholder =
+        '🔒 Enter encryption key to send messages...';
+    }
+  } else {
+    // Hide warning banner
+    noKeyWarning.style.display = 'none';
+    mainInputContainer.style.bottom = '0';
+
+    // Restore normal placeholder
+    const chatInput = document.querySelector('#chat-input');
+    if (chatInput && chatInput.textarea) {
+      chatInput.textarea.placeholder = 'Type a message...';
+    }
+  }
+}
+
+/**
+ * Setup room encryption when creating/joining a room
+ * E2EE: All encryption state is managed client-side in IndexedDB
  * @param {string} roomId - Room ID or name
  * @param {string} password - Encryption password
- * @param {string} privacyLevel - 'basic' or 'enhanced'
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>}
  */
-async function setupRoomEncryption(roomId, password, privacyLevel) {
+async function setupRoomEncryption(roomId, password) {
   try {
-    console.log(`🔐 Setting up ${privacyLevel} encryption for room...`);
+    console.log('🔐 Setting up encryption locally...');
 
-    // Generate verification data
-    const verificationData = await CryptoUtils.generateVerificationData(
-      roomId,
-      password,
-    );
+    // Save password to key manager (IndexedDB)
+    await keyManager.saveRoomPassword(roomId, password);
 
-    // Update room info with encryption settings
-    const success = await updateRoomInfo(roomId, {
-      encrypted: true,
-      verificationData: verificationData,
-      privacyLevel: privacyLevel,
-    });
+    // Get the derived key
+    currentRoomKey = await keyManager.getRoomKey(roomId);
+    isRoomEncrypted = true;
 
-    if (success) {
-      // Save password to key manager
-      await keyManager.saveRoomPassword(roomId, password);
-
-      // Get the derived key
-      currentRoomKey = await keyManager.getRoomKey(roomId);
-      isRoomEncrypted = true;
-
-      console.log('✅ Room encryption setup complete');
-    } else {
-      console.error('❌ Failed to update room info with encryption settings');
-    }
+    console.log('✅ Room encryption key saved locally');
+    return true;
   } catch (error) {
     console.error('❌ Failed to setup room encryption:', error);
     alert('Failed to setup encryption: ' + error.message);
+    return false;
   }
 }
 
 let hostname = window.location.host;
-if (hostname == '') {
-  // Probably testing the HTML locally.
-  hostname = 'edge-chat-demo.cloudflareworkers.com';
-}
 
 // API Client class for server requests
 class ChatAPI {
@@ -1302,7 +1229,11 @@ class ChatAPI {
       body: JSON.stringify(data),
     });
     if (!response.ok) {
-      throw new Error('Failed to save room info');
+      const errorData = await response.json().catch(() => ({}));
+      const error = new Error(errorData.error || 'Failed to save room info');
+      error.code = errorData.code;
+      error.status = response.status;
+      throw error;
     }
     return await response.json();
   }
@@ -1350,6 +1281,14 @@ class UserMessageAPI {
    */
   async sendMessage(message, replyTo = null) {
     if (!currentWebSocket || !message || message.length === 0) {
+      return false;
+    }
+
+    // Check if room is encrypted but user doesn't have the key
+    if (isRoomEncrypted && !currentRoomKey) {
+      alert(
+        '⚠️ Cannot send message: You need the correct encryption key to send messages in this room.\n\nClick "🔑 Change Local Key" in the room info panel to enter the key.',
+      );
       return false;
     }
 
@@ -1973,51 +1912,6 @@ function startRoomChooser() {
   // Display room history
   displayRoomHistory();
 
-  // E2EE: Handle privacy level selection
-  const privacyRadios = document.querySelectorAll(
-    'input[name="privacy-level"]',
-  );
-  const customPasswordContainer = document.querySelector(
-    '#custom-password-container',
-  );
-  const encryptionPasswordInput = document.querySelector(
-    '#encryption-password',
-  );
-  const copyKeyBtn = document.querySelector('#copy-key-btn');
-
-  // Copy encryption key to clipboard
-  if (copyKeyBtn) {
-    copyKeyBtn.addEventListener('click', async () => {
-      const key = encryptionPasswordInput.value;
-      if (key) {
-        try {
-          await navigator.clipboard.writeText(key);
-          const originalText = copyKeyBtn.textContent;
-          copyKeyBtn.textContent = '✓ Copied';
-          copyKeyBtn.style.background = '#28a745';
-          setTimeout(() => {
-            copyKeyBtn.textContent = originalText;
-            copyKeyBtn.style.background = '#0066cc';
-          }, 2000);
-        } catch (err) {
-          console.error('Failed to copy key:', err);
-          alert('Failed to copy key to clipboard');
-        }
-      }
-    });
-  }
-
-  privacyRadios.forEach((radio) => {
-    radio.addEventListener('change', (event) => {
-      if (event.target.value === 'enhanced') {
-        customPasswordContainer.style.display = 'block';
-        encryptionPasswordInput.focus();
-      } else {
-        customPasswordContainer.style.display = 'none';
-      }
-    });
-  });
-
   roomForm.addEventListener('submit', (event) => {
     event.preventDefault();
     roomname = roomNameInput.value;
@@ -2035,24 +1929,14 @@ function startRoomChooser() {
   goPublicButton.addEventListener('click', async (event) => {
     roomname = roomNameInput.value;
     if (roomname.length > 0) {
-      // All rooms are now encrypted - check privacy level
-      const selectedPrivacy = document.querySelector(
-        'input[name="privacy-level"]:checked',
-      ).value;
+      // E2EE: Each user sets their own encryption key locally
+      // Default: use room name as key (user can change later in settings)
+      const password = roomname;
 
-      const password =
-        selectedPrivacy === 'enhanced'
-          ? encryptionPasswordInput.value
-          : roomname; // Use room name as key for basic privacy
-
-      if (selectedPrivacy === 'enhanced' && !password) {
-        alert('Please enter a custom encryption key');
-        encryptionPasswordInput.focus();
-        return;
+      const success = await setupRoomEncryption(roomname, password);
+      if (success) {
+        startChat();
       }
-
-      await setupRoomEncryption(roomname, password, selectedPrivacy);
-      startChat();
     }
   });
 
@@ -2064,27 +1948,18 @@ function startRoomChooser() {
     try {
       roomname = await api.createPrivateRoom();
 
-      // All private rooms are encrypted - check privacy level
-      const selectedPrivacy = document.querySelector(
-        'input[name="privacy-level"]:checked',
-      ).value;
+      // E2EE: Use room ID as default key (user can change later)
+      const password = roomname;
 
-      const password =
-        selectedPrivacy === 'enhanced'
-          ? encryptionPasswordInput.value
-          : roomname; // Use room ID as key for basic privacy
-
-      if (selectedPrivacy === 'enhanced' && !password) {
-        alert('Please enter a custom encryption key');
+      const success = await setupRoomEncryption(roomname, password);
+      if (success) {
+        startChat();
+      } else {
+        // Re-enable buttons if setup failed
         roomNameInput.disabled = false;
         goPublicButton.disabled = false;
         event.currentTarget.disabled = false;
-        encryptionPasswordInput.focus();
-        return;
       }
-
-      await setupRoomEncryption(roomname, password, selectedPrivacy);
-      startChat();
     } catch (err) {
       alert('something went wrong');
       document.location.reload();
@@ -2391,6 +2266,41 @@ function startChat() {
     event.stopPropagation();
   });
 
+  // Encryption Key Management
+  const btnChangeEncryptionKey = document.querySelector(
+    '#btn-change-encryption-key',
+  );
+  if (btnChangeEncryptionKey) {
+    btnChangeEncryptionKey.addEventListener('click', async (e) => {
+      e.preventDefault();
+
+      // Show dialog to enter new key
+      const newKey = await showPasswordDialog({ name: roomname });
+
+      if (!newKey) {
+        // User cancelled
+        return;
+      }
+
+      try {
+        // Save the new key locally (no server verification)
+        await keyManager.saveRoomPassword(roomname, newKey);
+        currentRoomKey = await keyManager.getRoomKey(roomname);
+        isRoomEncrypted = true;
+
+        alert(
+          '✅ Encryption key saved locally!\n\nYou can now try to decrypt messages with this key.',
+        );
+
+        // Reload the page to re-decrypt all messages with the new key
+        window.location.reload();
+      } catch (error) {
+        console.error('Failed to update encryption key:', error);
+        alert('Failed to update key: ' + error.message);
+      }
+    });
+  }
+
   // Room Destruction Management - Initialize DOM elements
   destructionCountdown = document.querySelector('#destruction-countdown');
   countdownTime = document.querySelector('#countdown-time');
@@ -2556,9 +2466,7 @@ function startChat() {
       if (rightSidebar) {
         rightSidebar.style.bottom = newHeight + 'px';
       }
-      if (hashtagPanel) {
-        hashtagPanel.style.bottom = newHeight + 'px';
-      }
+
       if (threadPanel) {
         threadPanel.style.bottom = newHeight + 'px';
       }
@@ -3062,6 +2970,7 @@ function join() {
             window.location.href = window.location.href.split('#')[0];
           };
           userItem.appendChild(logoutBtn);
+          userItem.classList.add('current-user');
         }
 
         roster.appendChild(userItem);

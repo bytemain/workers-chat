@@ -439,43 +439,18 @@ export class ChatRoom {
           changed = true;
         }
 
-        // Update encryption status if provided (E2EE support)
-        if (data.encrypted !== undefined && data.encrypted !== info.encrypted) {
-          info.encrypted = data.encrypted;
-          changed = true;
-        }
-
-        // Update verification data if provided (E2EE support)
-        // Store the encrypted verification data (server doesn't know the content)
-        if (
-          data.verificationData !== undefined &&
-          data.verificationData !== info.verificationData
-        ) {
-          info.verificationData = data.verificationData;
-          changed = true;
-        }
-
-        // Update privacy level if provided (E2EE support)
-        if (
-          data.privacyLevel !== undefined &&
-          data.privacyLevel !== info.privacyLevel
-        ) {
-          info.privacyLevel = data.privacyLevel; // 'basic', 'enhanced', or 'public'
-          changed = true;
-        }
+        // E2EE: Server doesn't store encryption settings
+        // All encryption state is managed client-side in IndexedDB
+        // Server only stores basic room metadata (name, note)
 
         await this.storage.put('room-info', info);
 
         // Broadcast the update to all connected clients
         if (changed) {
-          // Create a plain object to ensure JSON serialization works
           this.broadcast({
             roomInfoUpdate: {
               name: info.name,
               note: info.note,
-              encrypted: info.encrypted,
-              privacyLevel: info.privacyLevel,
-              // Don't broadcast verificationData - clients will fetch it when needed
             },
           });
         }
