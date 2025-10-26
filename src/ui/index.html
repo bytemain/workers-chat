@@ -206,6 +206,51 @@
         }
       }
 
+      #encryption-status {
+        margin: 8px 0;
+        padding: 8px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85em;
+        transition: all 0.3s ease;
+      }
+
+      #encryption-status.encrypted {
+        background: #d4edda;
+        border: 1px solid #28a745;
+        color: #155724;
+      }
+
+      #encryption-status.not-encrypted {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        color: #856404;
+      }
+
+      #encryption-status-icon {
+        font-size: 1.2em;
+        flex-shrink: 0;
+      }
+
+      #encryption-status-text {
+        flex: 1;
+        line-height: 1.2;
+      }
+
+      /* Mobile optimization for encryption status */
+      @media (max-width: 600px) {
+        #encryption-status {
+          padding: 10px;
+          font-size: 0.9em;
+        }
+
+        #encryption-status-icon {
+          font-size: 1.4em;
+        }
+      }
+
       #room-name-display {
         font-weight: bold;
         color: #1da1f2;
@@ -495,6 +540,7 @@
         align-items: center;
         justify-content: space-between;
         width: 100%;
+        gap: 8px;
       }
 
       #mobile-top-bar-title {
@@ -508,13 +554,38 @@
 
       #mobile-top-bar-icon {
         font-size: 20px;
-        margin-right: 8px;
+        flex-shrink: 0;
+      }
+
+      #mobile-top-bar-encryption {
+        font-size: 18px;
+        flex-shrink: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        transition: all 0.2s ease;
+      }
+
+      #mobile-top-bar-encryption.visible {
+        display: flex;
+      }
+
+      #mobile-top-bar-encryption.encrypted {
+        background: rgba(40, 167, 69, 0.3);
+      }
+
+      #mobile-top-bar-encryption.not-encrypted {
+        background: rgba(255, 193, 7, 0.3);
       }
 
       #mobile-top-bar-arrow {
         font-size: 14px;
         transition: transform 0.3s ease;
-        margin-left: 8px;
+        flex-shrink: 0;
       }
 
       #mobile-top-bar-arrow.open {
@@ -1482,6 +1553,10 @@
               placeholder="Add room description..."
             ></textarea>
           </div>
+          <div id="encryption-status" class="not-encrypted">
+            <span id="encryption-status-icon">🔓</span>
+            <span id="encryption-status-text">Not Encrypted</span>
+          </div>
           <div style="margin-top: 12px">
             <a
               id="btn-change-encryption-key"
@@ -1547,28 +1622,6 @@
         <span class="reply-indicator-text"></span>
       </div>
       <div
-        id="no-key-warning"
-        style="
-          display: none;
-          position: fixed;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          background: #fff3cd;
-          border-top: 2px solid #ffc107;
-          padding: 12px;
-          text-align: center;
-          font-size: 14px;
-          z-index: 999;
-        "
-      >
-        <strong>⚠️ Missing Encryption Key</strong><br />
-        <span style="font-size: 12px; color: #856404"
-          >You cannot send messages without the correct encryption key. Click
-          "🔑 Change Local Key" in the room info to enter it.</span
-        >
-      </div>
-      <div
         id="main-chat-input-container"
         style="
           position: fixed;
@@ -1594,6 +1647,7 @@
       <div id="mobile-top-bar-content">
         <span id="mobile-top-bar-icon">🏠</span>
         <span id="mobile-top-bar-title">Loading...</span>
+        <span id="mobile-top-bar-encryption" title="Encryption Status"></span>
         <span id="mobile-top-bar-arrow">▼</span>
       </div>
     </div>

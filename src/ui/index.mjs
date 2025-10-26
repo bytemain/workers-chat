@@ -1119,22 +1119,57 @@ async function initializeRoomEncryption(roomId) {
  * Update UI based on encryption key availability
  */
 function updateEncryptionUI() {
-  const noKeyWarning = document.querySelector('#no-key-warning');
   const mainInputContainer = document.querySelector(
     '#main-chat-input-container',
   );
+  const encryptionStatus = document.querySelector('#encryption-status');
+  const encryptionStatusIcon = document.querySelector(
+    '#encryption-status-icon',
+  );
+  const encryptionStatusText = document.querySelector(
+    '#encryption-status-text',
+  );
+  const mobileTopBarEncryption = document.querySelector(
+    '#mobile-top-bar-encryption',
+  );
 
-  if (!noKeyWarning || !mainInputContainer) {
+  if (!mainInputContainer) {
     // UI elements not ready yet
     return;
   }
 
-  if (isRoomEncrypted && !currentRoomKey) {
-    // Show warning banner
-    noKeyWarning.style.display = 'block';
-    // Adjust input container position to be above warning
-    mainInputContainer.style.bottom = noKeyWarning.offsetHeight + 'px';
+  const hasValidKey = isRoomEncrypted && currentRoomKey;
 
+  // Update desktop encryption status indicator
+  if (encryptionStatus && encryptionStatusIcon && encryptionStatusText) {
+    if (hasValidKey) {
+      // Encrypted with valid key
+      encryptionStatus.className = 'encrypted';
+      encryptionStatusIcon.textContent = '🔒';
+      encryptionStatusText.textContent = 'End-to-End Encrypted';
+    } else {
+      // Not encrypted or missing key
+      encryptionStatus.className = 'not-encrypted';
+      encryptionStatusIcon.textContent = '🔓';
+      encryptionStatusText.textContent = 'Not Encrypted';
+    }
+  }
+
+  // Update mobile top bar encryption indicator
+  if (mobileTopBarEncryption) {
+    mobileTopBarEncryption.classList.add('visible');
+    if (hasValidKey) {
+      mobileTopBarEncryption.textContent = '🔒';
+      mobileTopBarEncryption.className = 'visible encrypted';
+      mobileTopBarEncryption.title = 'End-to-End Encrypted';
+    } else {
+      mobileTopBarEncryption.textContent = '🔓';
+      mobileTopBarEncryption.className = 'visible not-encrypted';
+      mobileTopBarEncryption.title = 'Not Encrypted';
+    }
+  }
+
+  if (isRoomEncrypted && !currentRoomKey) {
     // Also disable input placeholder to indicate it's not usable
     const chatInput = document.querySelector('#chat-input');
     if (chatInput && chatInput.textarea) {
@@ -1142,8 +1177,6 @@ function updateEncryptionUI() {
         '🔒 Enter encryption key to send messages...';
     }
   } else {
-    // Hide warning banner
-    noKeyWarning.style.display = 'none';
     mainInputContainer.style.bottom = '0';
 
     // Restore normal placeholder
