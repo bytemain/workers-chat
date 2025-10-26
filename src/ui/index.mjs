@@ -1,11 +1,9 @@
 import { regex } from '../common/hashtag.mjs';
 import CryptoUtils from '../common/crypto-utils.js';
-import { KeyManager } from '../common/key-manager.js';
+import { keyManager } from '../common/key-manager.js';
 import FileCrypto from '../common/file-crypto.js';
 import { getCryptoPool } from './crypto-worker-pool.js';
 
-// Initialize key manager (global instance)
-const keyManager = new KeyManager();
 let isKeyManagerReady = false;
 let cryptoPool = null;
 

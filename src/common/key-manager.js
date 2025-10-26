@@ -1,14 +1,14 @@
 /**
- * E2EE 密钥管理器
- * 负责在客户端管理加密密钥和密码
- * 使用 IndexedDB 持久化存储，支持跨会话访问
+ * E2EE Key Manager
+ * Manages encryption keys and passwords on client side
+ * Uses IndexedDB for persistent storage, supports cross-session access
  */
 
 import CryptoUtils from './crypto-utils.js';
 
 /**
- * 密钥管理器
- * 管理房间密码、派生密钥缓存、用户密钥对等
+ * Key Manager
+ * Manages room passwords, derived key cache, user key pairs, etc.
  */
 export class KeyManager {
   constructor() {
@@ -16,21 +16,21 @@ export class KeyManager {
     this.dbVersion = 1;
     this.db = null;
 
-    // 内存缓存（性能优化）
+    // Memory cache (performance optimization)
     this.passwordCache = new Map(); // roomId -> password
     this.keyCache = new Map(); // roomId -> {key, timestamp}
-    this.keyCacheMaxAge = 5 * 60 * 1000; // 5分钟过期
+    this.keyCacheMaxAge = 5 * 60 * 1000; // 5 minutes expiry
   }
 
   /**
-   * 初始化 IndexedDB
-   * 必须在使用其他方法前调用
+   * Initialize IndexedDB
+   * Must be called before using other methods
    *
    * @returns {Promise<void>}
    */
   async init() {
     if (this.db) {
-      return; // 已初始化
+      return; // Already initialized
     }
 
     return new Promise((resolve, reject) => {
@@ -50,7 +50,7 @@ export class KeyManager {
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
 
-        // 房间密码存储
+        // Room password storage
         if (!db.objectStoreNames.contains('roomPasswords')) {
           const passwordStore = db.createObjectStore('roomPasswords', {
             keyPath: 'roomId',
@@ -61,7 +61,7 @@ export class KeyManager {
           console.log('📦 Created roomPasswords object store');
         }
 
-        // 房间密钥缓存（可选，用于性能优化）
+        // Room key cache (optional, for performance optimization)
         if (!db.objectStoreNames.contains('roomKeys')) {
           const keyStore = db.createObjectStore('roomKeys', {
             keyPath: 'roomId',
@@ -70,7 +70,7 @@ export class KeyManager {
           console.log('📦 Created roomKeys object store');
         }
 
-        // 用户密钥对存储（用于高级密钥交换）
+        // User key pair storage (for advanced key exchange)
         if (!db.objectStoreNames.contains('userKeyPairs')) {
           const keyPairStore = db.createObjectStore('userKeyPairs', {
             keyPath: 'userId',
@@ -82,10 +82,10 @@ export class KeyManager {
   }
 
   /**
-   * 保存房间密码
+   * Save room password
    *
-   * @param {string} roomId - 房间ID
-   * @param {string} password - 用户输入的密码
+   * @param {string} roomId - Room ID
+   * @param {string} password - User entered password
    * @returns {Promise<void>}
    */
   async saveRoomPassword(roomId, password) {
@@ -98,11 +98,11 @@ export class KeyManager {
 
     await store.put({
       roomId,
-      password: password, // 存储明文密码（为了用户体验）
+      password: password, // Store plaintext password (for user experience)
       createdAt: Date.now(),
     });
 
-    // 同时缓存到内存
+    // Also cache in memory
     this.passwordCache.set(roomId, password);
 
     return new Promise((resolve, reject) => {
@@ -118,13 +118,13 @@ export class KeyManager {
   }
 
   /**
-   * 获取房间密码
+   * Get room password
    *
-   * @param {string} roomId - 房间ID
-   * @returns {Promise<string|null>} 密码或null（如果未找到）
+   * @param {string} roomId - Room ID
+   * @returns {Promise<string|null>} Password or null (if not found)
    */
   async getRoomPassword(roomId) {
-    // 先检查内存缓存
+    // Check memory cache first
     if (this.passwordCache.has(roomId)) {
       return this.passwordCache.get(roomId);
     }
@@ -133,7 +133,7 @@ export class KeyManager {
       throw new Error('KeyManager not initialized. Call init() first.');
     }
 
-    // 从数据库读取
+    // Read from database
     const tx = this.db.transaction('roomPasswords', 'readonly');
     const store = tx.objectStore('roomPasswords');
     const request = store.get(roomId);
@@ -156,9 +156,9 @@ export class KeyManager {
   }
 
   /**
-   * 删除房间密码
+   * Delete room password
    *
-   * @param {string} roomId - 房间ID
+   * @param {string} roomId - Room ID
    * @returns {Promise<void>}
    */
   async deleteRoomPassword(roomId) {
@@ -170,7 +170,7 @@ export class KeyManager {
     const store = tx.objectStore('roomPasswords');
     await store.delete(roomId);
 
-    // 清除内存缓存
+    // Clear memory cache
     this.passwordCache.delete(roomId);
     this.keyCache.delete(roomId);
 
@@ -184,7 +184,7 @@ export class KeyManager {
   }
 
   /**
-   * 获取所有已保存密码的房间
+   * Get all rooms with saved passwords
    *
    * @returns {Promise<Array<{roomId: string, createdAt: number}>>}
    */
@@ -210,21 +210,21 @@ export class KeyManager {
   }
 
   /**
-   * 从密码获取或派生房间密钥（带缓存）
+   * Get or derive room key from password (with cache)
    *
-   * @param {string} roomId - 房间ID
-   * @param {string} password - 房间密码（可选，如果不提供则从存储读取）
-   * @returns {Promise<CryptoKey|null>} 加密密钥或null
+   * @param {string} roomId - Room ID
+   * @param {string} password - Room password (optional, if not provided will read from storage)
+   * @returns {Promise<CryptoKey|null>} Encryption key or null
    */
   async getRoomKey(roomId, password = null) {
-    // 1. 检查内存缓存
+    // 1. Check memory cache
     const cached = this.keyCache.get(roomId);
     if (cached && Date.now() - cached.timestamp < this.keyCacheMaxAge) {
       console.log(`📦 Key cache hit for room ${roomId}`);
       return cached.key;
     }
 
-    // 2. 获取密码
+    // 2. Get password
     if (!password) {
       password = await this.getRoomPassword(roomId);
     }
@@ -233,11 +233,11 @@ export class KeyManager {
       return null;
     }
 
-    // 3. 从密码派生密钥
+    // 3. Derive key from password
     console.log(`🔑 Deriving key for room ${roomId}...`);
     const key = await CryptoUtils.deriveKeyFromPassword(password, roomId);
 
-    // 4. 缓存密钥（内存中，避免频繁派生）
+    // 4. Cache key (in memory, avoid frequent derivation)
     this.keyCache.set(roomId, {
       key: key,
       timestamp: Date.now(),
@@ -247,16 +247,16 @@ export class KeyManager {
   }
 
   /**
-   * 验证房间密码是否正确
+   * Verify if room password is correct
    *
-   * @param {string} roomId - 房间ID
-   * @param {string} password - 要验证的密码
-   * @param {string} verificationData - 用于测试的加密验证数据
+   * @param {string} roomId - Room ID
+   * @param {string} password - Password to verify
+   * @param {string} verificationData - Encrypted verification data for testing
    * @returns {Promise<{success: boolean, key?: CryptoKey, error?: string}>}
    */
   async verifyRoomPassword(roomId, password, verificationData) {
     try {
-      // 使用 CryptoUtils 验证密码
+      // Use CryptoUtils to verify password
       const result = await CryptoUtils.verifyPassword(
         password,
         roomId,
@@ -264,7 +264,7 @@ export class KeyManager {
       );
 
       if (result.success) {
-        // 密码正确，保存密码和缓存密钥
+        // Password correct, save password and cache key
         await this.saveRoomPassword(roomId, password);
         const key = await this.getRoomKey(roomId, password);
         return { success: true, key };
@@ -278,10 +278,10 @@ export class KeyManager {
   }
 
   /**
-   * 存储房间密钥（高级方案，直接存储派生的密钥）
+   * Store room key (advanced mode, directly store derived key)
    *
-   * @param {string} roomId - 房间ID
-   * @param {CryptoKey} key - 加密密钥
+   * @param {string} roomId - Room ID
+   * @param {CryptoKey} key - Encryption key
    * @returns {Promise<void>}
    */
   async saveRoomKey(roomId, key) {
@@ -299,7 +299,7 @@ export class KeyManager {
       createdAt: Date.now(),
     });
 
-    // 同时缓存到内存
+    // Also cache in memory
     this.keyCache.set(roomId, {
       key: key,
       timestamp: Date.now(),
@@ -315,9 +315,9 @@ export class KeyManager {
   }
 
   /**
-   * 获取存储的房间密钥
+   * Get stored room key
    *
-   * @param {string} roomId - 房间ID
+   * @param {string} roomId - Room ID
    * @returns {Promise<CryptoKey|null>}
    */
   async getStoredRoomKey(roomId) {
@@ -333,7 +333,7 @@ export class KeyManager {
       request.onsuccess = async () => {
         if (request.result) {
           const key = await CryptoUtils.importKey(request.result.key);
-          // 缓存到内存
+          // Cache in memory
           this.keyCache.set(roomId, {
             key: key,
             timestamp: Date.now(),
@@ -348,13 +348,13 @@ export class KeyManager {
   }
 
   /**
-   * 检查是否有房间密钥
+   * Check if room key exists
    *
-   * @param {string} roomId - 房间ID
+   * @param {string} roomId - Room ID
    * @returns {Promise<boolean>}
    */
   async hasRoomKey(roomId) {
-    // 检查内存缓存
+    // Check memory cache
     if (this.keyCache.has(roomId)) {
       const cached = this.keyCache.get(roomId);
       if (Date.now() - cached.timestamp < this.keyCacheMaxAge) {
@@ -362,22 +362,22 @@ export class KeyManager {
       }
     }
 
-    // 检查密码存储
+    // Check password storage
     const password = await this.getRoomPassword(roomId);
     if (password) {
       return true;
     }
 
-    // 检查密钥存储
+    // Check key storage
     const key = await this.getStoredRoomKey(roomId);
     return key !== null;
   }
 
   /**
-   * 保存用户密钥对（用于高级密钥交换）
+   * Save user key pair (for advanced key exchange)
    *
-   * @param {string} userId - 用户ID
-   * @param {CryptoKeyPair} keyPair - RSA密钥对
+   * @param {string} userId - User ID
+   * @param {CryptoKeyPair} keyPair - RSA key pair
    * @returns {Promise<void>}
    */
   async saveUserKeyPair(userId, keyPair) {
@@ -385,7 +385,7 @@ export class KeyManager {
       throw new Error('KeyManager not initialized. Call init() first.');
     }
 
-    // 导出密钥
+    // Export keys
     const publicKey = await crypto.subtle.exportKey('spki', keyPair.publicKey);
     const privateKey = await crypto.subtle.exportKey(
       'pkcs8',
@@ -412,9 +412,9 @@ export class KeyManager {
   }
 
   /**
-   * 获取用户密钥对
+   * Get user key pair
    *
-   * @param {string} userId - 用户ID
+   * @param {string} userId - User ID
    * @returns {Promise<CryptoKeyPair|null>}
    */
   async getUserKeyPair(userId) {
@@ -432,7 +432,7 @@ export class KeyManager {
           const { publicKey: pubKeyB64, privateKey: privKeyB64 } =
             request.result;
 
-          // 导入公钥
+          // Import public key
           const pubKeyData = Uint8Array.from(atob(pubKeyB64), (c) =>
             c.charCodeAt(0),
           );
@@ -444,7 +444,7 @@ export class KeyManager {
             ['encrypt'],
           );
 
-          // 导入私钥
+          // Import private key
           const privKeyData = Uint8Array.from(atob(privKeyB64), (c) =>
             c.charCodeAt(0),
           );
@@ -466,7 +466,7 @@ export class KeyManager {
   }
 
   /**
-   * 清理过期的密钥缓存（内存缓存）
+   * Clean up expired key cache (memory cache)
    */
   cleanupCache() {
     const now = Date.now();
@@ -485,8 +485,8 @@ export class KeyManager {
   }
 
   /**
-   * 清空所有存储的密钥和密码
-   * ⚠️ 危险操作，会导致无法解密历史消息
+   * Clear all stored keys and passwords
+   * ⚠️ Dangerous operation, will prevent decryption of historical messages
    *
    * @returns {Promise<void>}
    */
@@ -508,7 +508,7 @@ export class KeyManager {
     await keyStore.clear();
     await keyPairStore.clear();
 
-    // 清除内存缓存
+    // Clear memory cache
     this.passwordCache.clear();
     this.keyCache.clear();
 
@@ -522,7 +522,7 @@ export class KeyManager {
   }
 
   /**
-   * 导出所有密码（用于备份）
+   * Export all passwords (for backup)
    *
    * @returns {Promise<Array<{roomId: string, password: string}>>}
    */
@@ -548,10 +548,10 @@ export class KeyManager {
   }
 
   /**
-   * 导入密码（从备份恢复）
+   * Import passwords (restore from backup)
    *
-   * @param {Array<{roomId: string, password: string}>} passwords - 密码列表
-   * @returns {Promise<number>} 成功导入的数量
+   * @param {Array<{roomId: string, password: string}>} passwords - Password list
+   * @returns {Promise<number>} Number of successfully imported passwords
    */
   async importPasswords(passwords) {
     if (!this.db) {
@@ -585,8 +585,5 @@ export class KeyManager {
   }
 }
 
-// 创建全局单例实例
+// Create global singleton instance
 export const keyManager = new KeyManager();
-
-// 默认导出
-export default KeyManager;

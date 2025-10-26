@@ -1,31 +1,31 @@
 /**
- * E2EE 加密工具类
- * 提供 AES-GCM 加密/解密、PBKDF2 密钥派生等功能
- * 所有操作都在客户端完成，服务器只存储和转发密文
+ * E2EE Encryption Utilities
+ * Provides AES-GCM encryption/decryption, PBKDF2 key derivation, etc.
+ * All operations are performed on the client side, server only stores and forwards ciphertext
  */
 
 /**
- * 加密工具类
- * 使用 Web Crypto API 实现端对端加密
+ * Encryption utility class
+ * Implements end-to-end encryption using Web Crypto API
  */
 export class CryptoUtils {
-  // 加密版本，用于向后兼容
+  // Encryption version for backward compatibility
   static VERSION = '1.0';
 
-  // PBKDF2 默认迭代次数（100,000 次，平衡安全性和性能）
+  // PBKDF2 default iterations (100,000 times, balancing security and performance)
   static PBKDF2_ITERATIONS = 100000;
 
-  // AES-GCM IV 长度（12 字节 = 96 位）
+  // AES-GCM IV length (12 bytes = 96 bits)
   static IV_LENGTH = 12;
 
   /**
-   * 从密码派生加密密钥（推荐方法）
-   * 使用 PBKDF2-SHA256 从用户密码派生 AES-256 密钥
+   * Derive encryption key from password (recommended method)
+   * Uses PBKDF2-SHA256 to derive AES-256 key from user password
    *
-   * @param {string} password - 用户输入的房间密码
-   * @param {string} roomId - 房间ID（作为salt，确保不同房间不同密钥）
-   * @param {number} iterations - PBKDF2迭代次数（默认100000）
-   * @returns {Promise<CryptoKey>} AES-GCM密钥
+   * @param {string} password - User entered room password
+   * @param {string} roomId - Room ID (used as salt, ensures different keys for different rooms)
+   * @param {number} iterations - PBKDF2 iterations (default 100000)
+   * @returns {Promise<CryptoKey>} AES-GCM key
    *
    * @example
    * const key = await CryptoUtils.deriveKeyFromPassword('myPassword123', 'room-abc');
@@ -35,7 +35,7 @@ export class CryptoUtils {
     roomId,
     iterations = CryptoUtils.PBKDF2_ITERATIONS,
   ) {
-    // 1. 将密码转换为密钥材料
+    // 1. Convert password to key material
     const encoder = new TextEncoder();
     const passwordBuffer = encoder.encode(password);
 
@@ -47,10 +47,10 @@ export class CryptoUtils {
       ['deriveBits', 'deriveKey'],
     );
 
-    // 2. 使用 roomId 作为 salt（确保不同房间派生不同密钥）
+    // 2. Use roomId as salt (ensures different rooms derive different keys)
     const salt = encoder.encode(roomId);
 
-    // 3. 派生 AES-GCM 密钥
+    // 3. Derive AES-GCM key
     const derivedKey = await crypto.subtle.deriveKey(
       {
         name: 'PBKDF2',
@@ -60,7 +60,7 @@ export class CryptoUtils {
       },
       baseKey,
       { name: 'AES-GCM', length: 256 },
-      true, // 可导出（用于存储和传输）
+      true, // Exportable (for storage and transmission)
       ['encrypt', 'decrypt'],
     );
 
@@ -68,10 +68,10 @@ export class CryptoUtils {
   }
 
   /**
-   * 生成新的随机 AES-256 密钥（高级方案）
-   * 用于不基于密码的加密场景
+   * Generate new random AES-256 key (advanced mode)
+   * For encryption scenarios not based on password
    *
-   * @returns {Promise<CryptoKey>} AES-GCM密钥
+   * @returns {Promise<CryptoKey>} AES-GCM key
    */
   static async generateRoomKey() {
     return await crypto.subtle.generateKey(
@@ -82,32 +82,32 @@ export class CryptoUtils {
   }
 
   /**
-   * 加密文本消息
+   * Encrypt text message
    *
-   * @param {string} plaintext - 明文消息
-   * @param {CryptoKey} key - AES-GCM密钥
-   * @returns {Promise<Object>} 加密数据对象 {iv, ciphertext, version}
+   * @param {string} plaintext - Plain text message
+   * @param {CryptoKey} key - AES-GCM key
+   * @returns {Promise<Object>} Encrypted data object {iv, ciphertext, version}
    *
    * @example
    * const encrypted = await CryptoUtils.encryptMessage('Hello!', key);
-   * // 返回: {iv: [1,2,3,...], ciphertext: [4,5,6,...], version: '1.0'}
+   * // Returns: {iv: [1,2,3,...], ciphertext: [4,5,6,...], version: '1.0'}
    */
   static async encryptMessage(plaintext, key) {
-    // 1. 生成随机 IV (初始化向量)
-    // AES-GCM 需要唯一的 IV，每条消息都不同
+    // 1. Generate random IV (Initialization Vector)
+    // AES-GCM requires unique IV, different for each message
     const iv = crypto.getRandomValues(new Uint8Array(CryptoUtils.IV_LENGTH));
 
-    // 2. 将文本编码为字节
+    // 2. Encode text as bytes
     const encodedText = new TextEncoder().encode(plaintext);
 
-    // 3. 加密
+    // 3. Encrypt
     const ciphertext = await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv: iv },
       key,
       encodedText,
     );
 
-    // 4. 返回结构化数据（可序列化）
+    // 4. Return structured data (serializable)
     return {
       iv: Array.from(iv),
       ciphertext: Array.from(new Uint8Array(ciphertext)),
@@ -116,38 +116,38 @@ export class CryptoUtils {
   }
 
   /**
-   * 解密文本消息
+   * Decrypt text message
    *
-   * @param {Object} encryptedData - 加密数据 {iv, ciphertext, version}
-   * @param {CryptoKey} key - AES-GCM密钥
-   * @returns {Promise<string>} 明文消息
-   * @throws {Error} 解密失败（密钥错误或数据损坏）
+   * @param {Object} encryptedData - Encrypted data {iv, ciphertext, version}
+   * @param {CryptoKey} key - AES-GCM key
+   * @returns {Promise<string>} Plain text message
+   * @throws {Error} Decryption failed (wrong key or corrupted data)
    *
    * @example
    * const plaintext = await CryptoUtils.decryptMessage(encrypted, key);
    */
   static async decryptMessage(encryptedData, key) {
-    // 1. 恢复 IV 和密文
+    // 1. Restore IV and ciphertext
     const iv = new Uint8Array(encryptedData.iv);
     const ciphertext = new Uint8Array(encryptedData.ciphertext);
 
-    // 2. 解密
-    // 注意：如果密钥错误或数据被篡改，AES-GCM 会抛出异常
+    // 2. Decrypt
+    // Note: AES-GCM will throw an exception if key is wrong or data is tampered
     const decrypted = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: iv },
       key,
       ciphertext,
     );
 
-    // 3. 将字节解码为文本
+    // 3. Decode bytes to text
     return new TextDecoder().decode(decrypted);
   }
 
   /**
-   * 导出密钥为 Base64 字符串（用于存储）
+   * Export key as Base64 string (for storage)
    *
-   * @param {CryptoKey} key - 要导出的密钥
-   * @returns {Promise<string>} Base64编码的密钥
+   * @param {CryptoKey} key - Key to export
+   * @returns {Promise<string>} Base64 encoded key
    */
   static async exportKey(key) {
     const exported = await crypto.subtle.exportKey('raw', key);
@@ -155,10 +155,10 @@ export class CryptoUtils {
   }
 
   /**
-   * 从 Base64 字符串导入密钥
+   * Import key from Base64 string
    *
-   * @param {string} keyBase64 - Base64编码的密钥
-   * @returns {Promise<CryptoKey>} AES-GCM密钥
+   * @param {string} keyBase64 - Base64 encoded key
+   * @returns {Promise<CryptoKey>} AES-GCM key
    */
   static async importKey(keyBase64) {
     const keyData = Uint8Array.from(atob(keyBase64), (c) => c.charCodeAt(0));
@@ -172,7 +172,7 @@ export class CryptoUtils {
   }
 
   /**
-   * 生成 RSA 密钥对（用于密钥交换）
+   * Generate RSA key pair (for key exchange)
    *
    * @returns {Promise<CryptoKeyPair>} {publicKey, privateKey}
    */
@@ -190,11 +190,11 @@ export class CryptoUtils {
   }
 
   /**
-   * 使用 RSA 公钥加密对称密钥
+   * Encrypt symmetric key with RSA public key
    *
-   * @param {CryptoKey} symmetricKey - AES-GCM对称密钥
-   * @param {CryptoKey} publicKey - RSA公钥
-   * @returns {Promise<Array<number>>} 加密后的密钥（字节数组）
+   * @param {CryptoKey} symmetricKey - AES-GCM symmetric key
+   * @param {CryptoKey} publicKey - RSA public key
+   * @returns {Promise<Array<number>>} Encrypted key (byte array)
    */
   static async encryptKeyWithPublicKey(symmetricKey, publicKey) {
     const exported = await crypto.subtle.exportKey('raw', symmetricKey);
@@ -207,11 +207,11 @@ export class CryptoUtils {
   }
 
   /**
-   * 使用 RSA 私钥解密对称密钥
+   * Decrypt symmetric key with RSA private key
    *
-   * @param {Array<number>} encryptedKey - 加密的密钥（字节数组）
-   * @param {CryptoKey} privateKey - RSA私钥
-   * @returns {Promise<CryptoKey>} 解密后的AES-GCM密钥
+   * @param {Array<number>} encryptedKey - Encrypted key (byte array)
+   * @param {CryptoKey} privateKey - RSA private key
+   * @returns {Promise<CryptoKey>} Decrypted AES-GCM key
    */
   static async decryptKeyWithPrivateKey(encryptedKey, privateKey) {
     const keyData = new Uint8Array(encryptedKey);
@@ -231,11 +231,11 @@ export class CryptoUtils {
   }
 
   /**
-   * 加密文件数据
+   * Encrypt file data
    *
-   * @param {ArrayBuffer} fileData - 文件数据
-   * @param {CryptoKey} key - AES-GCM密钥
-   * @returns {Promise<Object>} 加密数据 {iv, ciphertext, version}
+   * @param {ArrayBuffer} fileData - File data
+   * @param {CryptoKey} key - AES-GCM key
+   * @returns {Promise<Object>} Encrypted data {iv, ciphertext, version}
    */
   static async encryptFile(fileData, key) {
     const iv = crypto.getRandomValues(new Uint8Array(CryptoUtils.IV_LENGTH));
@@ -254,11 +254,11 @@ export class CryptoUtils {
   }
 
   /**
-   * 解密文件数据
+   * Decrypt file data
    *
-   * @param {Object} encryptedData - 加密数据 {iv, ciphertext}
-   * @param {CryptoKey} key - AES-GCM密钥
-   * @returns {Promise<ArrayBuffer>} 解密后的文件数据
+   * @param {Object} encryptedData - Encrypted data {iv, ciphertext}
+   * @param {CryptoKey} key - AES-GCM key
+   * @returns {Promise<ArrayBuffer>} Decrypted file data
    */
   static async decryptFile(encryptedData, key) {
     const iv = new Uint8Array(encryptedData.iv);
@@ -272,91 +272,91 @@ export class CryptoUtils {
   }
 
   /**
-   * 生成验证数据（用于密码验证）
-   * 创建一个包含房间信息的加密载荷，用于验证用户输入的密码是否正确
+   * Generate verification data (for password verification)
+   * Create an encrypted payload containing room information to verify if user entered password is correct
    *
-   * @param {string} roomId - 房间ID
-   * @param {string} password - 房间密码
-   * @returns {Promise<string>} 加密的验证数据（JSON字符串）
+   * @param {string} roomId - Room ID
+   * @param {string} password - Room password
+   * @returns {Promise<string>} Encrypted verification data (JSON string)
    */
   static async generateVerificationData(roomId, password) {
-    // 1. 从密码派生密钥
+    // 1. Derive key from password
     const key = await CryptoUtils.deriveKeyFromPassword(password, roomId);
 
-    // 2. 构造验证载荷
+    // 2. Construct verification payload
     const verificationPayload = {
       type: 'room-verification',
       roomId: roomId,
       version: CryptoUtils.VERSION,
       timestamp: Date.now(),
-      salt: crypto.randomUUID(), // 随机盐值，防止预测攻击
+      salt: crypto.randomUUID(), // Random salt to prevent prediction attacks
     };
 
-    // 3. 加密验证载荷
+    // 3. Encrypt verification payload
     const encrypted = await CryptoUtils.encryptMessage(
       JSON.stringify(verificationPayload),
       key,
     );
 
-    // 4. 返回格式化的验证数据
+    // 4. Return formatted verification data
     return `ENCRYPTED:${JSON.stringify(encrypted)}`;
   }
 
   /**
-   * 验证房间密码
-   * 尝试解密验证数据，成功则密码正确
+   * Verify room password
+   * Try to decrypt verification data, success means password is correct
    *
-   * @param {string} password - 要验证的密码
-   * @param {string} roomId - 房间ID
-   * @param {string} verificationData - 加密的验证数据
+   * @param {string} password - Password to verify
+   * @param {string} roomId - Room ID
+   * @param {string} verificationData - Encrypted verification data
    * @returns {Promise<Object>} {success: boolean, error?: string}
    */
   static async verifyPassword(password, roomId, verificationData) {
     try {
-      // 1. 解析验证数据
+      // 1. Parse verification data
       if (!verificationData.startsWith('ENCRYPTED:')) {
         return { success: false, error: 'Invalid verification data format' };
       }
 
       const encrypted = JSON.parse(verificationData.substring(10));
 
-      // 2. 从密码派生密钥
+      // 2. Derive key from password
       const key = await CryptoUtils.deriveKeyFromPassword(password, roomId);
 
-      // 3. 尝试解密验证数据
+      // 3. Try to decrypt verification data
       const decrypted = await CryptoUtils.decryptMessage(encrypted, key);
 
-      // 4. 解析验证载荷
+      // 4. Parse verification payload
       const payload = JSON.parse(decrypted);
 
-      // 5. 验证载荷内容
+      // 5. Verify payload content
       if (payload.type === 'room-verification' && payload.roomId === roomId) {
         return { success: true };
       } else {
         return { success: false, error: 'Invalid verification payload' };
       }
     } catch (error) {
-      // 解密失败 = 密码错误
-      // AES-GCM 会在密钥错误时抛出 OperationError
+      // Decryption failed = wrong password
+      // AES-GCM will throw OperationError when key is wrong
       return { success: false, error: 'Incorrect password' };
     }
   }
 
   /**
-   * 格式化加密消息（用于发送到服务器）
+   * Format encrypted message (for sending to server)
    *
-   * @param {Object} encryptedData - 加密数据对象
-   * @returns {string} 格式化的加密消息字符串
+   * @param {Object} encryptedData - Encrypted data object
+   * @returns {string} Formatted encrypted message string
    */
   static formatEncryptedMessage(encryptedData) {
     return `ENCRYPTED:${JSON.stringify(encryptedData)}`;
   }
 
   /**
-   * 解析加密消息（从服务器接收）
+   * Parse encrypted message (received from server)
    *
-   * @param {string} encryptedMessage - 格式化的加密消息字符串
-   * @returns {Object|null} 加密数据对象，或null（如果格式错误）
+   * @param {string} encryptedMessage - Formatted encrypted message string
+   * @returns {Object|null} Encrypted data object, or null (if format is invalid)
    */
   static parseEncryptedMessage(encryptedMessage) {
     if (!encryptedMessage.startsWith('ENCRYPTED:')) {
@@ -372,21 +372,21 @@ export class CryptoUtils {
   }
 
   /**
-   * 检查消息是否已加密
+   * Check if message is encrypted
    *
-   * @param {string} message - 消息字符串
-   * @returns {boolean} true表示已加密
+   * @param {string} message - Message string
+   * @returns {boolean} true means encrypted
    */
   static isEncrypted(message) {
     return typeof message === 'string' && message.startsWith('ENCRYPTED:');
   }
 
   /**
-   * 生成随机密码
-   * 用于创建房间时自动生成密码
+   * Generate random password
+   * Used for auto-generating password when creating room
    *
-   * @param {number} length - 密码长度（默认16）
-   * @returns {string} 随机密码
+   * @param {number} length - Password length (default 16)
+   * @returns {string} Random password
    */
   static generateRandomPassword(length = 16) {
     const charset =
@@ -398,10 +398,10 @@ export class CryptoUtils {
   }
 
   /**
-   * 计算数据的 SHA-256 哈希（用于完整性验证）
+   * Calculate SHA-256 hash of data (for integrity verification)
    *
-   * @param {string|ArrayBuffer} data - 要哈希的数据
-   * @returns {Promise<string>} 十六进制哈希字符串
+   * @param {string|ArrayBuffer} data - Data to hash
+   * @returns {Promise<string>} Hexadecimal hash string
    */
   static async hash(data) {
     const encoder = new TextEncoder();
@@ -413,5 +413,5 @@ export class CryptoUtils {
   }
 }
 
-// 默认导出
+// Default export
 export default CryptoUtils;

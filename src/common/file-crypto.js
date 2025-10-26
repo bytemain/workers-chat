@@ -1,29 +1,28 @@
 /**
  * E2EE File Encryption Utilities
- * 提供文件流式加密/解密功能，支持大文件分块处理
- * 避免内存溢出，提供进度回调
+ * Provides streaming file encryption/decryption, supports large file chunked processing
+ * Avoids memory overflow, provides progress callbacks
  */
 
-import CryptoUtils from './crypto-utils.js';
 import { getCryptoPool } from '../ui/crypto-worker-pool.js';
 
 /**
- * 文件加密工具类
+ * File encryption utility class
  */
 export class FileCrypto {
-  // 文件分块大小（2MB per chunk）
+  // File chunk size (2MB per chunk)
   static CHUNK_SIZE = 2 * 1024 * 1024;
 
-  // 元数据分隔符
+  // Metadata separator
   static METADATA_SEPARATOR = 0x00;
 
   /**
-   * 加密文件（流式处理，支持大文件）
+   * Encrypt file (streaming processing, supports large files)
    *
-   * @param {File} file - 要加密的文件
-   * @param {CryptoKey} key - 加密密钥
-   * @param {function} onProgress - 进度回调 (progress: 0-100, stage: string)
-   * @returns {Promise<Blob>} 加密后的文件 Blob
+   * @param {File} file - File to encrypt
+   * @param {CryptoKey} key - Encryption key
+   * @param {function} onProgress - Progress callback (progress: 0-100, stage: string)
+   * @returns {Promise<Blob>} Encrypted file Blob
    *
    * @example
    * const encryptedBlob = await FileCrypto.encryptFile(file, key, (progress, stage) => {
@@ -38,24 +37,24 @@ export class FileCrypto {
       `🔐 Encrypting file: ${file.name} (${file.size} bytes, ${totalChunks} chunks)`,
     );
 
-    // 导出密钥为可传递格式
+    // Export key as transferable format
     const keyData = Array.from(
       new Uint8Array(await crypto.subtle.exportKey('raw', key)),
     );
 
-    // 获取 Worker 池
+    // Get Worker pool
     const cryptoPool = getCryptoPool();
 
-    // 分块加密
+    // Chunk encryption
     for (let i = 0; i < totalChunks; i++) {
       const start = i * FileCrypto.CHUNK_SIZE;
       const end = Math.min(start + FileCrypto.CHUNK_SIZE, file.size);
       const chunk = file.slice(start, end);
 
-      // 读取 chunk 数据
+      // Read chunk data
       const arrayBuffer = await chunk.arrayBuffer();
 
-      // 提交加密任务到 Worker
+      // Submit encryption task to Worker
       const encrypted = await cryptoPool.submitTask('encrypt-file-chunk', {
         chunk: Array.from(new Uint8Array(arrayBuffer)),
         keyData: keyData,
@@ -64,7 +63,7 @@ export class FileCrypto {
 
       encryptedChunks.push(encrypted);
 
-      // 更新进度
+      // Update progress
       const progress = ((i + 1) / totalChunks) * 100;
       if (onProgress) {
         onProgress(progress, 'encrypting');
@@ -73,7 +72,7 @@ export class FileCrypto {
 
     console.log(`✅ File encryption complete`);
 
-    // 创建元数据
+    // Create metadata
     const metadata = {
       originalName: file.name,
       originalType: file.type,
@@ -85,20 +84,20 @@ export class FileCrypto {
       encryptedAt: Date.now(),
     };
 
-    // 构建加密文件
+    // Build encrypted file
     return FileCrypto.buildEncryptedBlob(metadata, encryptedChunks);
   }
 
   /**
-   * 解密文件（流式处理）
+   * Decrypt file (streaming processing)
    *
-   * @param {Blob} encryptedBlob - 加密的文件 Blob
-   * @param {CryptoKey} key - 解密密钥
-   * @param {function} onProgress - 进度回调
-   * @returns {Promise<{blob: Blob, metadata: object}>} 解密后的文件和元数据
+   * @param {Blob} encryptedBlob - Encrypted file Blob
+   * @param {CryptoKey} key - Decryption key
+   * @param {function} onProgress - Progress callback
+   * @returns {Promise<{blob: Blob, metadata: object}>} Decrypted file and metadata
    */
   static async decryptFile(encryptedBlob, key, onProgress = null) {
-    // 1. 解析元数据和加密数据
+    // 1. Parse metadata and encrypted data
     const { metadata, chunks } =
       await FileCrypto.parseEncryptedBlob(encryptedBlob);
 
@@ -106,15 +105,15 @@ export class FileCrypto {
       `🔓 Decrypting file: ${metadata.originalName} (${chunks.length} chunks)`,
     );
 
-    // 2. 导出密钥为可传递格式
+    // 2. Export key as transferable format
     const keyData = Array.from(
       new Uint8Array(await crypto.subtle.exportKey('raw', key)),
     );
 
-    // 3. 获取 Worker 池
+    // 3. Get Worker pool
     const cryptoPool = getCryptoPool();
 
-    // 4. 分块解密
+    // 4. Chunk decryption
     const decryptedChunks = [];
     for (let i = 0; i < chunks.length; i++) {
       const decrypted = await cryptoPool.submitTask('decrypt-file-chunk', {
@@ -125,7 +124,7 @@ export class FileCrypto {
 
       decryptedChunks.push(new Uint8Array(decrypted));
 
-      // 更新进度
+      // Update progress
       const progress = ((i + 1) / chunks.length) * 100;
       if (onProgress) {
         onProgress(progress, 'decrypting');
@@ -134,7 +133,7 @@ export class FileCrypto {
 
     console.log(`✅ File decryption complete`);
 
-    // 5. 合并所有 chunk
+    // 5. Merge all chunks
     const totalSize = decryptedChunks.reduce(
       (sum, chunk) => sum + chunk.length,
       0,
@@ -147,7 +146,7 @@ export class FileCrypto {
       offset += chunk.length;
     }
 
-    // 6. 创建 Blob
+    // 6. Create Blob
     const blob = new Blob([combined], { type: metadata.originalType });
 
     return {
@@ -157,58 +156,58 @@ export class FileCrypto {
   }
 
   /**
-   * 构建加密文件 Blob
-   * 格式: [元数据JSON] [0x00分隔符] [加密chunk1] [加密chunk2] ...
+   * Build encrypted file Blob
+   * Format: [metadata JSON] [0x00 separator] [encrypted chunk1] [encrypted chunk2] ...
    *
-   * @param {object} metadata - 文件元数据
-   * @param {Array} encryptedChunks - 加密的分块数组
-   * @returns {Blob} 加密文件 Blob
+   * @param {object} metadata - File metadata
+   * @param {Array} encryptedChunks - Encrypted chunk array
+   * @returns {Blob} Encrypted file Blob
    */
   static buildEncryptedBlob(metadata, encryptedChunks) {
-    // 1. 序列化元数据
+    // 1. Serialize metadata
     const metadataJson = JSON.stringify(metadata);
     const metadataBytes = new TextEncoder().encode(metadataJson);
 
-    // 2. 计算总大小
-    let totalSize = metadataBytes.length + 1; // 元数据 + 分隔符
+    // 2. Calculate total size
+    let totalSize = metadataBytes.length + 1; // Metadata + separator
     for (const chunk of encryptedChunks) {
       totalSize += chunk.ciphertext.length;
     }
 
-    // 3. 构建完整数据
+    // 3. Build complete data
     const buffer = new Uint8Array(totalSize);
     let offset = 0;
 
-    // 写入元数据
+    // Write metadata
     buffer.set(metadataBytes, offset);
     offset += metadataBytes.length;
 
-    // 写入分隔符
+    // Write separator
     buffer[offset] = FileCrypto.METADATA_SEPARATOR;
     offset += 1;
 
-    // 写入加密数据
+    // Write encrypted data
     for (const chunk of encryptedChunks) {
       buffer.set(new Uint8Array(chunk.ciphertext), offset);
       offset += chunk.ciphertext.length;
     }
 
-    // 4. 创建 Blob（添加自定义 MIME 类型标记）
+    // 4. Create Blob (add custom MIME type marker)
     return new Blob([buffer], { type: 'application/x-encrypted' });
   }
 
   /**
-   * 解析加密文件 Blob
+   * Parse encrypted file Blob
    *
-   * @param {Blob} encryptedBlob - 加密文件 Blob
-   * @returns {Promise<{metadata: object, chunks: Array}>} 元数据和加密分块
+   * @param {Blob} encryptedBlob - Encrypted file Blob
+   * @returns {Promise<{metadata: object, chunks: Array}>} Metadata and encrypted chunks
    */
   static async parseEncryptedBlob(encryptedBlob) {
-    // 1. 读取所有数据
+    // 1. Read all data
     const arrayBuffer = await encryptedBlob.arrayBuffer();
     const data = new Uint8Array(arrayBuffer);
 
-    // 2. 查找分隔符
+    // 2. Find separator
     let separatorIndex = -1;
     for (let i = 0; i < data.length; i++) {
       if (data[i] === FileCrypto.METADATA_SEPARATOR) {
@@ -221,22 +220,22 @@ export class FileCrypto {
       throw new Error('Invalid encrypted file format: separator not found');
     }
 
-    // 3. 解析元数据
+    // 3. Parse metadata
     const metadataBytes = data.slice(0, separatorIndex);
     const metadataJson = new TextDecoder().decode(metadataBytes);
     const metadata = JSON.parse(metadataJson);
 
-    // 4. 提取加密数据
+    // 4. Extract encrypted data
     const encryptedData = data.slice(separatorIndex + 1);
 
-    // 5. 重建加密分块
-    // 注意：我们需要存储每个 chunk 的 IV 信息
-    // 这里简化处理，实际应该在元数据中记录每个 chunk 的 IV
+    // 5. Rebuild encrypted chunks
+    // Note: We need to store IV information for each chunk
+    // Simplified here, should actually record each chunk's IV in metadata
     const chunks = [];
     const chunkSize = metadata.chunkSize || FileCrypto.CHUNK_SIZE;
 
-    // TODO: 改进存储格式，在元数据中记录每个 chunk 的 IV
-    // 目前假设 IV 在文件加密时已经处理
+    // TODO: Improve storage format, record each chunk's IV in metadata
+    // Currently assuming IV was already handled during file encryption
 
     throw new Error(
       'parseEncryptedBlob: Not fully implemented - need to store IV per chunk',
@@ -244,12 +243,12 @@ export class FileCrypto {
   }
 
   /**
-   * 加密文件（改进版，包含完整的 chunk 元数据）
+   * Encrypt file (improved version, includes complete chunk metadata)
    *
-   * @param {File} file - 要加密的文件
-   * @param {CryptoKey} key - 加密密钥
-   * @param {function} onProgress - 进度回调
-   * @returns {Promise<Blob>} 加密后的文件 Blob
+   * @param {File} file - File to encrypt
+   * @param {CryptoKey} key - Encryption key
+   * @param {function} onProgress - Progress callback
+   * @returns {Promise<Blob>} Encrypted file Blob
    */
   static async encryptFileV2(file, key, onProgress = null) {
     const totalChunks = Math.ceil(file.size / FileCrypto.CHUNK_SIZE);
@@ -259,24 +258,24 @@ export class FileCrypto {
       `🔐 Encrypting file (v2): ${file.name} (${file.size} bytes, ${totalChunks} chunks)`,
     );
 
-    // 导出密钥为可传递格式
+    // Export key as transferable format
     const keyData = Array.from(
       new Uint8Array(await crypto.subtle.exportKey('raw', key)),
     );
 
-    // 获取 Worker 池
+    // Get Worker pool
     const cryptoPool = getCryptoPool();
 
-    // 分块加密
+    // Chunk encryption
     for (let i = 0; i < totalChunks; i++) {
       const start = i * FileCrypto.CHUNK_SIZE;
       const end = Math.min(start + FileCrypto.CHUNK_SIZE, file.size);
       const chunk = file.slice(start, end);
 
-      // 读取 chunk 数据
+      // Read chunk data
       const arrayBuffer = await chunk.arrayBuffer();
 
-      // 提交加密任务到 Worker
+      // Submit encryption task to Worker
       const encrypted = await cryptoPool.submitTask('encrypt-file-chunk', {
         chunk: Array.from(new Uint8Array(arrayBuffer)),
         keyData: keyData,
@@ -285,7 +284,7 @@ export class FileCrypto {
 
       encryptedChunks.push(encrypted);
 
-      // 更新进度
+      // Update progress
       const progress = ((i + 1) / totalChunks) * 100;
       if (onProgress) {
         onProgress(progress, 'encrypting');
@@ -294,7 +293,7 @@ export class FileCrypto {
 
     console.log(`✅ File encryption complete (v2)`);
 
-    // 创建完整元数据（包含每个 chunk 的 IV）
+    // Create complete metadata (includes IV for each chunk)
     const metadata = {
       originalName: file.name,
       originalType: file.type,
@@ -311,12 +310,12 @@ export class FileCrypto {
       })),
     };
 
-    // 构建加密文件
+    // Build encrypted file
     const parts = [
-      // 元数据部分
+      // Metadata part
       new TextEncoder().encode(JSON.stringify(metadata)),
       new Uint8Array([FileCrypto.METADATA_SEPARATOR]),
-      // 加密数据部分（只存储密文，IV 在元数据中）
+      // Encrypted data part (only store ciphertext, IV in metadata)
       ...encryptedChunks.map((c) => new Uint8Array(c.ciphertext)),
     ];
 
@@ -324,19 +323,19 @@ export class FileCrypto {
   }
 
   /**
-   * 解密文件（改进版）
+   * Decrypt file (improved version)
    *
-   * @param {Blob} encryptedBlob - 加密的文件 Blob
-   * @param {CryptoKey} key - 解密密钥
-   * @param {function} onProgress - 进度回调
+   * @param {Blob} encryptedBlob - Encrypted file Blob
+   * @param {CryptoKey} key - Decryption key
+   * @param {function} onProgress - Progress callback
    * @returns {Promise<{blob: Blob, metadata: object}>}
    */
   static async decryptFileV2(encryptedBlob, key, onProgress = null) {
-    // 1. 读取数据
+    // 1. Read data
     const arrayBuffer = await encryptedBlob.arrayBuffer();
     const data = new Uint8Array(arrayBuffer);
 
-    // 2. 查找分隔符
+    // 2. Find separator
     let separatorIndex = -1;
     for (let i = 0; i < data.length; i++) {
       if (data[i] === FileCrypto.METADATA_SEPARATOR) {
@@ -349,7 +348,7 @@ export class FileCrypto {
       throw new Error('Invalid encrypted file format');
     }
 
-    // 3. 解析元数据
+    // 3. Parse metadata
     const metadataBytes = data.slice(0, separatorIndex);
     const metadata = JSON.parse(new TextDecoder().decode(metadataBytes));
 
@@ -357,10 +356,10 @@ export class FileCrypto {
       `🔓 Decrypting file (v2): ${metadata.originalName} (${metadata.totalChunks} chunks)`,
     );
 
-    // 4. 提取密文数据
+    // 4. Extract ciphertext data
     const encryptedData = data.slice(separatorIndex + 1);
 
-    // 5. 重建加密分块
+    // 5. Rebuild encrypted chunks
     const chunks = [];
     let offset = 0;
     for (const chunkMeta of metadata.chunks) {
@@ -373,12 +372,12 @@ export class FileCrypto {
       offset += chunkMeta.size;
     }
 
-    // 6. 导出密钥
+    // 6. Export key
     const keyData = Array.from(
       new Uint8Array(await crypto.subtle.exportKey('raw', key)),
     );
 
-    // 7. 解密所有分块
+    // 7. Decrypt all chunks
     const cryptoPool = getCryptoPool();
     const decryptedChunks = [];
 
@@ -391,7 +390,7 @@ export class FileCrypto {
 
       decryptedChunks.push(new Uint8Array(decrypted));
 
-      // 更新进度
+      // Update progress
       const progress = ((i + 1) / chunks.length) * 100;
       if (onProgress) {
         onProgress(progress, 'decrypting');
@@ -400,7 +399,7 @@ export class FileCrypto {
 
     console.log(`✅ File decryption complete (v2)`);
 
-    // 8. 合并所有分块
+    // 8. Merge all chunks
     const totalSize = decryptedChunks.reduce(
       (sum, chunk) => sum + chunk.length,
       0,
@@ -413,7 +412,7 @@ export class FileCrypto {
       combineOffset += chunk.length;
     }
 
-    // 9. 创建 Blob
+    // 9. Create Blob
     const blob = new Blob([combined], { type: metadata.originalType });
 
     return {
@@ -428,28 +427,28 @@ export class FileCrypto {
   }
 
   /**
-   * 加密并上传文件到服务器
+   * Encrypt and upload file to server
    *
-   * @param {File} file - 要上传的文件
-   * @param {CryptoKey} key - 加密密钥
-   * @param {string} uploadUrl - 上传 URL
-   * @param {function} onProgress - 进度回调
-   * @returns {Promise<object>} 上传结果
+   * @param {File} file - File to upload
+   * @param {CryptoKey} key - Encryption key
+   * @param {string} uploadUrl - Upload URL
+   * @param {function} onProgress - Progress callback
+   * @returns {Promise<object>} Upload result
    */
   static async encryptAndUpload(file, key, uploadUrl, onProgress = null) {
-    // 1. 加密文件
+    // 1. Encrypt file
     const encryptedBlob = await FileCrypto.encryptFileV2(
       file,
       key,
       (progress, stage) => {
         if (onProgress) {
-          // 加密占 70% 进度
+          // Encryption takes 70% of progress
           onProgress(progress * 0.7, stage);
         }
       },
     );
 
-    // 2. 上传到服务器
+    // 2. Upload to server
     const formData = new FormData();
     formData.append('file', encryptedBlob, `${file.name}.enc`);
 
@@ -466,15 +465,15 @@ export class FileCrypto {
   }
 
   /**
-   * 下载并解密文件
+   * Download and decrypt file
    *
-   * @param {string} fileUrl - 文件 URL
-   * @param {CryptoKey} key - 解密密钥
-   * @param {function} onProgress - 进度回调
+   * @param {string} fileUrl - File URL
+   * @param {CryptoKey} key - Decryption key
+   * @param {function} onProgress - Progress callback
    * @returns {Promise<{blob: Blob, metadata: object}>}
    */
   static async downloadAndDecrypt(fileUrl, key, onProgress = null) {
-    // 1. 下载加密文件
+    // 1. Download encrypted file
     if (onProgress) {
       onProgress(10, 'downloading');
     }
@@ -486,13 +485,13 @@ export class FileCrypto {
       onProgress(30, 'downloaded');
     }
 
-    // 2. 解密文件
+    // 2. Decrypt file
     return await FileCrypto.decryptFileV2(
       encryptedBlob,
       key,
       (progress, stage) => {
         if (onProgress) {
-          // 解密占 30-100% 进度
+          // Decryption takes 30-100% of progress
           onProgress(30 + progress * 0.7, stage);
         }
       },
@@ -500,5 +499,5 @@ export class FileCrypto {
   }
 }
 
-// 默认导出
+// Default export
 export default FileCrypto;
