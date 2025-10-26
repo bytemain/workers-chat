@@ -2316,6 +2316,11 @@ function startChat() {
 
   // Start destruction countdown
   async function startDestruction() {
+    // Prevent duplicate requests
+    if (btnStartDestruction.disabled) {
+      return;
+    }
+
     const minutes = parseInt(destructionTimerSelect.value);
 
     const timeText = minutes === 0 ? 'immediately' : `in ${minutes} minutes`;
@@ -2328,6 +2333,11 @@ function startChat() {
     }
 
     try {
+      // Disable button during request
+      btnStartDestruction.disabled = true;
+      const originalText = btnStartDestruction.textContent;
+      btnStartDestruction.textContent = '⏳ Starting...';
+
       const response = await api.destroyRoom(roomname, minutes);
       if (!response.ok) {
         throw new Error('Failed to start destruction');
@@ -2362,17 +2372,32 @@ function startChat() {
     } catch (err) {
       console.error('Failed to start destruction:', err);
       alert('Failed to start room destruction');
+
+      // Restore button on error
+      btnStartDestruction.disabled = false;
+      btnStartDestruction.textContent = '🔥 Start Destruction';
     }
   }
 
   // Cancel destruction
   async function cancelDestruction() {
+    // Prevent duplicate requests
+    if (btnCancelDestruction.disabled) {
+      return;
+    }
+
     if (!confirm('Cancel room destruction?')) {
       return;
     }
 
+    const originalText = btnCancelDestruction.textContent;
     try {
+      // Disable button during request
+      btnCancelDestruction.disabled = true;
+      btnCancelDestruction.textContent = '⏳ Cancelling...';
+
       await api.cancelRoomDestruction(roomname);
+
       // Clear countdown
       destructionEndTime = null;
       if (destructionCountdownInterval) {
@@ -2385,30 +2410,39 @@ function startChat() {
       btnCancelDestruction.style.display = 'none';
       destructionTimerSelect.disabled = false;
 
+      // Re-enable start button
+      btnStartDestruction.disabled = false;
+
       addSystemMessage('* Room destruction cancelled');
     } catch (err) {
       console.error('Failed to cancel destruction:', err);
       alert('Failed to cancel room destruction');
+
+      // Restore button on error
+      btnCancelDestruction.disabled = false;
+      btnCancelDestruction.textContent = originalText;
     }
   }
 
   // Export all records
   async function exportRecords() {
+    // Prevent duplicate exports
+    if (btnExportRecords.disabled) {
+      return;
+    }
+
     try {
+      // Disable button and show loading state
+      btnExportRecords.disabled = true;
+      const originalText = btnExportRecords.textContent;
+      btnExportRecords.textContent = '⏳ Exporting...';
+
       addSystemMessage('* Exporting all records and files...');
 
-      const response = await api.exportData(roomname);
+      const blob = await api.exportData(roomname);
 
       // Extract filename from Content-Disposition header if available
-      const contentDisposition = response.headers.get('Content-Disposition');
       let filename = `chat-export-${roomname}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.zip`;
-
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-        if (filenameMatch && filenameMatch[1]) {
-          filename = filenameMatch[1];
-        }
-      }
 
       // Create a downloadable file
       const url = URL.createObjectURL(blob);
@@ -2421,9 +2455,17 @@ function startChat() {
       URL.revokeObjectURL(url);
 
       addSystemMessage('* Export completed successfully (ZIP with all files)');
+
+      // Restore button
+      btnExportRecords.textContent = originalText;
+      btnExportRecords.disabled = false;
     } catch (err) {
       console.error('Failed to export records:', err);
       addSystemMessage('* Failed to export records');
+
+      // Restore button even on error
+      btnExportRecords.textContent = '💾 Export All Records';
+      btnExportRecords.disabled = false;
     }
   }
 
