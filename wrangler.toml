@@ -31,7 +31,7 @@ tag = "v1"
 new_sqlite_classes = ["ChatRoom", "RateLimiter"]
 
 [assets]
-directory = "./public"
+directory = "./dist/ui"
 binding = "ASSETS"
 run_worker_first = [
   "/api/*",

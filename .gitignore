@@ -2,4 +2,4 @@ credentials.conf
 metadata.json
 node_modules
 .wrangler
-public/
+dist/
