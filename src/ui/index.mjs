@@ -160,8 +160,9 @@ class ChatInputComponent extends HTMLElement {
     if (!this.textarea) return;
 
     // Handle Enter key (submit on Enter, new line on Shift+Enter)
+    // Also check isComposing to avoid sending during IME composition (Chinese input)
     this.textarea.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
         this.submit();
         return;
@@ -2548,10 +2549,6 @@ function startChat() {
     // Handle resize events from the component
     chatInputComponent.addEventListener('resize', (event) => {
       const newHeight = event.detail.height;
-
-      // Adjust hashtag toggle button position
-      let hashtagBtn = document.querySelector('#hashtag-toggle');
-      hashtagBtn.style.bottom = newHeight + 'px';
 
       // Adjust chatlog, right-sidebar, hashtag panel, and thread panel bottom position
       chatlog.style.bottom = newHeight + 'px';
