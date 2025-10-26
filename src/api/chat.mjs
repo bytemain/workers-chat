@@ -1,4 +1,3 @@
-import HTML from "./chat.html";
 import { HashtagManager } from "./hashtag.mjs";
 import { Hono } from 'hono'
 import { getPath, splitPath } from 'hono/utils/url'
@@ -34,18 +33,11 @@ async function handleErrors(request, func) {
 
 function ignite(mount) {
   const app = new Hono();
-
   mount(app);
-
-  app.notFound((c) => {
-    return c.text('not found', 404)
-  });
-
   app.onError((err, c) => {
     console.error(`${err}`)
     return c.text('Error: ' + err.message, 500)
   });
-
   showRoutes(app, {
     verbose: true,
   });
@@ -133,10 +125,6 @@ const app = ignite((app) => {
     return api;
   }
 
-  app.get('/', () => {
-    return new Response(HTML, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
-  });
-
   app.route('/api', apiRoutes());
   app.get('/files/*', async (c) => {
     const { env, req } = c;
@@ -162,6 +150,10 @@ const app = ignite((app) => {
     headers.set("Cache-Control", "public, max-age=31536000");
 
     return new Response(object.body, { headers });
+  });
+  app.notFound((c) => {
+    console.log("Asset not found:", c.req.raw.url);
+    return c.env.ASSETS.fetch(c.req.raw);
   });
 });
 

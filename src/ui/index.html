@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta name="viewport"
+    content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, user-scalable=0" />
+  <style type="text/css">
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    #chatlog {
+      position: fixed;
+      top: 0;
+      bottom: 32px;
+      left: 0;
+      right: 200px;
+      overflow-y: auto;
+      padding: 8px;
+      overflow-wrap: break-word;
+      transition: right 0.3s ease, bottom 0.1s ease;
+    }
+
+    #chatlog.thread-open {
+      right: 600px;
+    }
+
+    /* Mobile-specific styles */
+    @media (max-width: 600px) {
+
+      /* Prevent body scroll when thread is open */
+      body.thread-open {
+        overflow: hidden;
+      }
+
+      /* Make touch targets larger on mobile */
+      .message-action-btn {
+        padding: 8px 12px;
+        font-size: 16px;
+      }
+
+      .thread-indicator {
+        padding: 6px 10px;
+        font-size: 0.9em;
+      }
+
+      /* Adjust message wrapper for mobile */
+      .message-wrapper {
+        padding: 8px 4px;
+      }
+
+      /* Improve readability on mobile */
+      chat-message {
+        font-size: 16px;
+        line-height: 1.4;
+      }
+
+      /* Better spacing for reply indicators */
+      #reply-indicator {
+        padding: 12px;
+        font-size: 14px;
+      }
+
+      /* Adjust thread panel header for mobile */
+      #thread-header {
+        padding: 16px;
+      }
+
+      #thread-header h3 {
+        font-size: 1.1em;
+      }
+
+      #thread-close {
+        width: 32px;
+        height: 32px;
+        font-size: 24px;
+      }
+
+      /* Better spacing in thread panel */
+      #thread-original-message {
+        padding: 16px;
+      }
+
+      #thread-replies {
+        padding: 12px;
+      }
+
+      #thread-input-container {
+        padding: 12px;
+      }
+
+      /* Ensure inputs are readable */
+      input,
+      textarea,
+      button {
+        font-size: max(16px, 1em) !important;
+      }
+
+      /* Adjust room info display in mobile dropdown */
+      #right-sidebar #room-info {
+        border-bottom: 2px solid #ddd;
+      }
+
+      /* Make sure content doesn't overlap with top bar */
+      #name-form,
+      #room-form {
+        padding-top: 48px;
+      }
+    }
+
+    chat-message .username {
+      font-weight: bold;
+    }
+
+    #spacer {
+      height: calc(100vh - 32px - 5em);
+    }
+
+    #right-sidebar {
+      position: fixed;
+      right: 0;
+      top: 0;
+      bottom: 32px;
+      width: 200px;
+      display: none;
+      /* Hidden by default, shown in startChat() */
+      flex-direction: column;
+      border-left: 1px solid #ddd;
+      background: white;
+      transition: bottom 0.1s ease;
+    }
+
+    #right-sidebar.visible {
+      display: flex;
+    }
+
+    #room-info {
+      flex-shrink: 0;
+      border-bottom: 1px solid #ddd;
+      background: #fafafa;
+      padding: 8px;
+      font-size: 0.9em;
+    }
+
+    #room-info h3 {
+      margin: 0 0 8px 0;
+      font-size: 1em;
+      color: #333;
+      position: relative;
+    }
+
+    #connection-status {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.8em;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-weight: normal;
+      white-space: nowrap;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    #connection-status.connected {
+      display: inline-block;
+      background: #d4edda;
+      color: #155724;
+      animation: none;
+    }
+
+    #connection-status.reconnecting {
+      display: inline-block;
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    #connection-status.error {
+      display: inline-block;
+      background: #f8d7da;
+      color: #721c24;
+      animation: none;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    #room-name-display {
+      font-weight: bold;
+      color: #1da1f2;
+      margin-bottom: 12px;
+      word-break: break-all;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 3px;
+      transition: background-color 0.2s;
+    }
+
+    #room-name-display:hover {
+      background-color: #f0f8ff;
+    }
+
+    #room-name-input {
+      width: 100%;
+      font-weight: bold;
+      color: #1da1f2;
+      padding: 4px;
+      border: 1px solid #1da1f2;
+      border-radius: 3px;
+      font-family: Arial, sans-serif;
+      font-size: max(16px, 0.9em);
+      margin-bottom: 12px;
+      display: none;
+    }
+
+    #room-name-input:focus {
+      outline: none;
+      border-color: #0d8dd9;
+    }
+
+    #room-description-label {
+      color: #666;
+      font-size: 0.85em;
+      margin-bottom: 4px;
+      cursor: pointer;
+      padding: 2px;
+      border-radius: 3px;
+      transition: background-color 0.2s;
+    }
+
+    #room-description-label:hover {
+      background-color: #f0f8ff;
+    }
+
+    #room-note {
+      width: 100%;
+      min-height: 60px;
+      padding: 6px;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      font-family: Arial, sans-serif;
+      font-size: max(16px, 0.9em);
+      resize: vertical;
+      background: white;
+      display: none;
+      margin-top: 4px;
+    }
+
+    #room-note:focus {
+      outline: none;
+      border-color: #1da1f2;
+    }
+
+    #room-note.visible {
+      display: block;
+    }
+
+    /* Room destruction styles */
+    #room-destruction-container {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #eee;
+    }
+
+    #room-destruction-container h4 {
+      margin: 0 0 8px 0;
+      font-size: 0.9em;
+      color: #666;
+    }
+
+    .destruction-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .destruction-timer-select {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .destruction-timer-select label {
+      font-size: 0.85em;
+      color: #666;
+    }
+
+    .destruction-timer-select select {
+      flex: 1;
+      padding: 4px;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      font-size: max(16px, 0.85em);
+    }
+
+    .btn-destroy {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85em;
+      transition: background 0.2s;
+    }
+
+    .btn-destroy:hover {
+      background: #c82333;
+    }
+
+    .btn-cancel-destroy {
+      background: #ffc107;
+      color: #333;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85em;
+      transition: background 0.2s;
+    }
+
+    .btn-cancel-destroy:hover {
+      background: #e0a800;
+    }
+
+    .btn-export {
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85em;
+      transition: background 0.2s;
+    }
+
+    .btn-export:hover {
+      background: #218838;
+    }
+
+    .destruction-countdown {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 8px;
+      display: none;
+    }
+
+    .destruction-countdown.active {
+      display: block;
+    }
+
+    .countdown-text {
+      font-size: 0.85em;
+      color: #856404;
+      margin: 0 0 4px 0;
+      font-weight: bold;
+    }
+
+    .countdown-time {
+      font-size: 1.2em;
+      color: #dc3545;
+      font-weight: bold;
+      font-family: monospace;
+    }
+
+    #roster-container {
+      padding: 8px;
+      flex-shrink: 0;
+      border-bottom: 1px solid #ddd;
+      background: white;
+    }
+
+    #roster-container h3 {
+      margin: 0 0 8px 0;
+      font-size: 1em;
+      color: #333;
+      font-weight: bold;
+    }
+
+    #hashtag-container {
+      padding: 8px;
+      flex: 1;
+      overflow-y: auto;
+      background: white;
+    }
+
+    #hashtag-container h3 {
+      margin: 0 0 8px 0;
+      font-size: 1em;
+      color: #333;
+      font-weight: bold;
+    }
+
+    #roster .user-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    #roster .logout-btn {
+      background: transparent;
+      color: #999;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      padding: 1px 6px;
+      cursor: pointer;
+      font-size: 11px;
+      margin-left: 8px;
+    }
+
+    #roster .logout-btn:hover {
+      background: #f5f5f5;
+      color: #666;
+      border-color: #ccc;
+    }
+
+    p {
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+
+    p:last-of-type {
+      margin: 0;
+    }
+
+    #roster {
+      flex: 1;
+      overflow-y: auto;
+      background: white;
+    }
+
+    ::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Mobile top bar */
+    #mobile-top-bar {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 48px;
+      background: linear-gradient(to bottom, #1da1f2, #1891d9);
+      color: white;
+      align-items: center;
+      padding: 0 16px;
+      z-index: 100;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #mobile-top-bar:active {
+      background: linear-gradient(to bottom, #1891d9, #0d8dd9);
+    }
+
+    #mobile-top-bar-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+    }
+
+    #mobile-top-bar-title {
+      font-weight: bold;
+      font-size: 16px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mobile-top-bar-icon {
+      font-size: 20px;
+      margin-right: 8px;
+    }
+
+    #mobile-top-bar-arrow {
+      font-size: 14px;
+      transition: transform 0.3s ease;
+      margin-left: 8px;
+    }
+
+    #mobile-top-bar-arrow.open {
+      transform: rotate(180deg);
+    }
+
+    #mobile-top-bar+#chatlog {
+      top: 48px;
+    }
+
+    @media(max-width:600px) {
+      #mobile-top-bar {
+        display: flex;
+      }
+
+      /* Hide top bar when name or room form exists in DOM */
+      body:has(#name-form) #mobile-top-bar,
+      body:has(#room-form) #mobile-top-bar {
+        display: none !important;
+      }
+
+      #chatlog {
+        top: 48px !important;
+      }
+
+      /* When forms exist, chatlog should not have top spacing */
+      body:has(#name-form) #chatlog,
+      body:has(#room-form) #chatlog {
+        top: 0 !important;
+      }
+
+      #hashtag-filter-banner {
+        top: 48px !important;
+        right: 0 !important;
+        z-index: 99;
+      }
+
+      /* When filter banner is visible on mobile, adjust chatlog */
+      body:has(#hashtag-filter-banner.visible) #chatlog {
+        top: 89px !important;
+        /* 48px (top bar) + 41px (filter banner) */
+      }
+
+      #right-sidebar {
+        position: fixed;
+        top: 48px;
+        right: 0;
+        left: 0;
+        width: 100%;
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+        z-index: 99;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        border-left: none;
+        border-bottom: 1px solid #ddd;
+        background: white;
+      }
+
+      #right-sidebar.mobile-visible {
+        max-height: 60vh;
+        overflow-y: auto;
+      }
+
+      /* Overlay when room info is open */
+      #mobile-room-info-overlay {
+        display: none;
+        position: fixed;
+        top: 48px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 98;
+      }
+
+      #mobile-room-info-overlay.visible {
+        display: block;
+      }
+
+      #chatlog {
+        right: 0;
+      }
+
+      /* Mobile thread panel - full screen overlay */
+      #thread-panel {
+        right: 0 !important;
+        left: 0;
+        top: 0;
+        width: 100% !important;
+        z-index: 200;
+      }
+
+      #thread-panel.visible {
+        display: flex !important;
+      }
+
+      /* Hide main chat when thread is open on mobile */
+      #chatlog.thread-open {
+        display: none;
+      }
+
+      #main-chat-input-container.thread-open {
+        display: none;
+      }
+
+      /* Hide top bar when thread is open */
+      body.thread-open #mobile-top-bar {
+        display: none;
+      }
+
+      /* Adjust chatlog when thread is open */
+      body.thread-open #chatlog {
+        top: 0;
+      }
+    }
+
+    #reply-indicator {
+      position: fixed;
+      left: 0;
+      bottom: 45px;
+      width: 100%;
+      background: #f0f7ff;
+      border-top: 1px solid #1da1f2;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.9em;
+      color: #666;
+      z-index: 100;
+    }
+
+    #reply-indicator .reply-indicator-text {
+      flex: 1;
+      font-style: italic;
+    }
+
+    #reply-indicator .reply-indicator-close {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.2em;
+      color: #999;
+      padding: 0 8px;
+    }
+
+    #reply-indicator .reply-indicator-close:hover {
+      color: #333;
+    }
+
+    #main-chat-input-container {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: white;
+      border-top: 1px solid #ddd;
+      transition: bottom 0.1s ease;
+    }
+
+    #name-form {
+      position: fixed;
+      z-index: 3;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #name-input {
+      font-size: 200%;
+      width: 100%;
+      max-width: 100%;
+      height: 2em;
+      margin: 0;
+      text-align: center;
+      border: 2px solid #1da1f2;
+      border-radius: 8px;
+      font-size: max(16px, 200%);
+      padding: 0 1em;
+      transition: border-color 0.3s, box-shadow 0.3s;
+      -webkit-appearance: none;
+      appearance: none;
+      box-sizing: border-box;
+    }
+
+    #name-input:focus {
+      outline: none;
+      border-color: #0d8dd9;
+      box-shadow: 0 0 0 3px rgba(29, 161, 242, 0.1);
+    }
+
+    #name-input::placeholder {
+      color: #999;
+      opacity: 1;
+    }
+
+    #name-form p {
+      margin-top: 2em;
+      width: 100%;
+      max-width: 600px;
+      text-align: center;
+      line-height: 1.6;
+      color: #666;
+    }
+
+    #room-form {
+      position: fixed;
+      z-index: 2;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: white;
+      font-size: 200%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #room-form > p {
+      margin: 1em 0;
+      font-size: 0.8em;
+      color: #666;
+    }
+
+    #room-name {
+      font-size: inherit;
+      border: 2px solid #1da1f2;
+      border-radius: 8px;
+      height: 2em;
+      width: 100%;
+      max-width: 100%;
+      padding: 0 1em;
+      font-size: max(16px, inherit);
+      text-align: center;
+      transition: border-color 0.3s, box-shadow 0.3s;
+      -webkit-appearance: none;
+      appearance: none;
+      box-sizing: border-box;
+    }
+
+    #room-name:focus {
+      outline: none;
+      border-color: #0d8dd9;
+      box-shadow: 0 0 0 3px rgba(29, 161, 242, 0.1);
+    }
+
+    #room-name::placeholder {
+      color: #999;
+      opacity: 1;
+    }
+
+    #room-form button {
+      font-size: inherit;
+      border: 1px solid #bbb;
+      background-color: #eee;
+      height: 2em;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.3s, transform 0.1s;
+      -webkit-appearance: none;
+      appearance: none;
+      touch-action: manipulation;
+      user-select: none;
+      box-sizing: border-box;
+    }
+
+    #go-public {
+      width: auto;
+      min-width: 100px;
+      flex-shrink: 0;
+    }
+
+    #go-private {
+      width: 100%;
+      max-width: 100%;
+    }
+
+    @media(max-width:660px) {
+
+      #name-input,
+      #room-form {
+        font-size: 150%;
+      }
+
+      #name-form p {
+        font-size: 0.6em;
+        padding: 0 20px;
+      }
+
+      #room-name {
+        width: 100%;
+      }
+ 
+      #go-public {
+        min-width: 100px;
+      }
+
+      #go-private {
+        width: 100%;
+      }
+
+      /* Better touch targets on mobile */
+      #name-input {
+        padding: 0.8em 1em;
+        height: auto;
+        min-height: 2.5em;
+      }
+
+      #room-name {
+        height: auto;
+        min-height: 2.5em;
+      }
+
+      #go-public {
+        padding: 0.8em 1.5em;
+        height: auto;
+        min-height: 2.5em;
+      }
+
+      #go-private {
+        padding: 1em 1.5em;
+        height: auto;
+        min-height: 2.8em;
+      }
+    }
+
+    @media(max-width:500px) {
+
+      #name-input,
+      #room-form {
+        font-size: 120%;
+      }
+
+      #name-form p {
+        font-size: 0.5em;
+        padding: 0 15px;
+      }
+
+      #room-name {
+        font-size: max(16px, 1em);
+      }
+
+      #room-form button {
+        font-size: max(16px, 0.9em);
+      }
+
+      /* Ensure comfortable spacing on small screens */
+      #name-form > div {
+        padding: 0 15px;
+      }
+
+      #room-form > div {
+        padding: 0 15px;
+      }
+
+      /* Adjust emoji sizes for smaller screens */
+      #name-form > div > div:first-child {
+        font-size: 2em !important;
+      }
+
+      #room-form > div > div:first-child {
+        font-size: 2em !important;
+      }
+    }
+
+    /* Very small screens optimization */
+    @media(max-width:360px) {
+      #name-input,
+      #room-form {
+        font-size: 100%;
+      }
+
+      #name-input {
+        height: auto;
+        min-height: 3em;
+      }
+
+      #room-name {
+        min-width: auto;
+      }
+
+      #go-public,
+      #go-private {
+        font-size: max(14px, 1em);
+        padding: 1em;
+      }
+    }
+
+    #room-history {
+      margin-top: 3em;
+      font-size: 0.5em;
+      width: 100%;
+      max-width: 600px;
+      padding: 0 20px;
+    }
+
+    #room-history h3 {
+      margin: 0 0 1em 0;
+      color: #666;
+      font-weight: normal;
+    }
+
+    #room-history-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5em;
+      justify-content: center;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .room-history-item {
+      background: #f0f0f0;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      padding: 0.8em 1.2em;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      min-height: 44px;
+      touch-action: manipulation;
+      user-select: none;
+    }
+
+    .room-history-item:hover {
+      background: #e0e0e0;
+      border-color: #1da1f2;
+      transform: translateY(-2px);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .room-history-item:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .room-history-item .room-name {
+      font-weight: bold;
+      color: #333;
+    }
+
+    .room-history-item .remove-btn {
+      background: transparent;
+      border: none;
+      color: #999;
+      cursor: pointer;
+      font-size: 1.2em;
+      padding: 0.2em 0.4em;
+      line-height: 1;
+      border-radius: 4px;
+      transition: all 0.2s;
+      min-width: 28px;
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .room-history-item .remove-btn:hover {
+      color: #dc3545;
+      background: #ffe0e0;
+    }
+
+    /* Mobile optimization for room history */
+    @media(max-width:660px) {
+      #room-history {
+        font-size: 0.6em;
+        margin-top: 2em;
+      }
+
+      .room-history-item {
+        padding: 1em 1.2em;
+        font-size: 1.1em;
+      }
+    }
+
+    /* Hashtag styles */
+    a.hashtag {
+      color: #1da1f2;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      padding: 0 2px;
+      border-radius: 2px;
+      transition: background-color 0.2s;
+    }
+
+    a.hashtag:hover {
+      background-color: #e8f5fd;
+      text-decoration: underline;
+    }
+
+    /* Hashtag container is part of right-sidebar for both desktop and mobile */
+    #hashtag-container {
+      padding: 8px;
+      flex: 1;
+      overflow-y: auto;
+      background: white;
+    }
+
+    #hashtag-container h3 {
+      margin: 0 0 8px 0;
+      font-size: 1em;
+      color: #333;
+      font-weight: bold;
+    }
+
+    #hashtag-toggle .hashtag-close {
+      display: none;
+    }
+
+    /* When hashtag panel is open, change the toggle button appearance */
+    body:has(#hashtag-panel.visible) #hashtag-toggle {
+      color: black;
+    }
+
+    body:has(#hashtag-panel.visible) #hashtag-toggle .hashtag-icon {
+      display: none;
+    }
+
+    body:has(#hashtag-panel.visible) #hashtag-toggle .hashtag-close {
+      display: block;
+    }
+
+    .hashtag-item {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 6px 8px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .hashtag-item:hover {
+      background: #f0f8ff;
+      border-color: #1da1f2;
+    }
+
+    .hashtag-item.active {
+      background: #e8f5fd;
+      border-color: #1da1f2;
+      font-weight: bold;
+    }
+
+    .hashtag-name {
+      color: #1da1f2;
+      font-weight: 500;
+    }
+
+    .hashtag-count {
+      color: #999;
+      font-size: 0.85em;
+    }
+
+    #hashtag-filter-banner {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 200px;
+      background: #fff3cd;
+      border-bottom: 1px solid #ffc107;
+      padding: 8px 16px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 99;
+    }
+
+    #hashtag-filter-banner.visible {
+      display: flex;
+    }
+
+    /* When filter banner is visible, adjust chatlog top position */
+    body:has(#hashtag-filter-banner.visible) #chatlog {
+      top: 41px;
+    }
+
+    .filter-clear-btn {
+      background: #ffc107;
+      color: #333;
+      border: none;
+      border-radius: 3px;
+      padding: 4px 12px;
+      cursor: pointer;
+      font-size: 0.9em;
+    }
+
+    .filter-clear-btn:hover {
+      background: #ffb300;
+    }
+
+    /* Thread Panel Styles */
+    #thread-panel {
+      position: fixed;
+      right: 200px;
+      top: 0;
+      bottom: 32px;
+      width: 400px;
+      background: white;
+      border-left: 1px solid #ddd;
+      display: none;
+      flex-direction: column;
+      z-index: 50;
+      transition: bottom 0.1s ease;
+    }
+
+    #thread-panel.visible {
+      display: flex;
+    }
+
+    #thread-header {
+      padding: 12px 16px;
+      border-bottom: 2px solid #ddd;
+      background: #fafafa;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    #thread-header h3 {
+      margin: 0;
+      font-size: 1em;
+      color: #333;
+    }
+
+    #thread-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #thread-close:hover {
+      color: #000;
+      background: #e0e0e0;
+      border-radius: 3px;
+    }
+
+    #thread-original-message {
+      padding: 12px 16px;
+      border-bottom: 1px solid #eee;
+      background: #f9f9f9;
+      flex-shrink: 0;
+    }
+
+    #thread-replies {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    #thread-input-container {
+      border-top: 1px solid #ddd;
+      padding: 8px;
+      flex-shrink: 0;
+    }
+
+    /* Message Actions */
+    .message-wrapper {
+      position: relative;
+      padding: 4px 0;
+      margin: 4px 0;
+      border-radius: 4px;
+    }
+
+    .message-wrapper:hover {
+      background: #f8f8f8;
+    }
+
+    .message-wrapper:hover .message-actions {
+      display: flex;
+    }
+
+    .message-actions {
+      position: absolute;
+      right: 8px;
+      top: 4px;
+      display: none;
+      gap: 4px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 2px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .message-action-btn {
+      background: none;
+      border: none;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 14px;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #666;
+    }
+
+    .message-action-btn:hover {
+      background: #f0f0f0;
+      color: #000;
+    }
+
+    .thread-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.85em;
+      color: #1da1f2;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-top: 4px;
+    }
+
+    .thread-indicator:hover {
+      background: #e8f5fd;
+      text-decoration: underline;
+    }
+
+    .reply-reference {
+      background: #f5f5f5;
+      border-left: 3px solid #1da1f2;
+      padding: 4px 10px;
+      margin: 4px 0 8px 0;
+      border-radius: 3px;
+      font-size: 0.85em;
+      color: #666;
+      cursor: pointer;
+      font-style: italic;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .reply-reference:hover {
+      background: #ebebeb;
+    }
+
+    .reply-reference .reply-icon {
+      color: #1da1f2;
+      font-style: normal;
+      flex-shrink: 0;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+    }
+
+    .reply-reference .reply-author {
+      font-weight: 600;
+      color: #1da1f2;
+      font-style: normal;
+      flex-shrink: 0;
+    }
+
+    .reply-reference .reply-separator {
+      font-style: normal;
+      flex-shrink: 0;
+    }
+
+    .reply-reference .reply-preview {
+      color: #555;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+  </style>
+
+</head>
+
+<body>
+  <form id="name-form" action="/fake-form-action">
+    <div style="width: 100%; max-width: 500px;">
+      <div style="text-align: center; margin-bottom: 1.5em;">
+        <div style="font-size: 3em; margin-bottom: 0.3em;" aria-hidden="true">👤</div>
+        <label for="name-input" style="display: block; font-size: 1.2em; margin-bottom: 0.5em; color: #333; font-weight: bold;">Enter Your Name</label>
+      </div>
+      <input id="name-input" 
+             type="text" 
+             placeholder="Your name" 
+             autocomplete="name" 
+             inputmode="text"
+             required
+             aria-label="Your name"
+             maxlength="50">
+    </div>
+    <p>This chat runs entirely on the edge, powered by<br>
+      <a href="https://blog.cloudflare.com/introducing-workers-durable-objects" target="_blank" rel="noopener noreferrer">Cloudflare Workers
+        Durable Objects</a>
+    </p>
+  </form>
+  <form id="room-form" action="/fake-form-action">
+    <div style="width: 100%; max-width: 500px;">
+      <div style="text-align: center; margin-bottom: 1em;">
+        <div style="font-size: 2.5em; margin-bottom: 0.3em;" aria-hidden="true">🚪</div>
+      </div>
+      <label for="room-name" style="display: block; font-size: 0.8em; margin-bottom: 0.5em; color: #333; font-weight: bold; text-align: center;">Enter a Public Room:</label>
+      <div style="display: flex; gap: 0.5em; flex-wrap: wrap; justify-content: center;">
+        <input id="room-name" 
+               type="text" 
+               placeholder="Room name" 
+               autocomplete="off" 
+               inputmode="text" 
+               style="flex: 1; min-width: 200px;"
+               aria-label="Room name"
+               maxlength="100">
+        <button id="go-public" type="submit" aria-label="Join room">Go &raquo;</button>
+      </div>
+      <p>OR</p>
+      <button id="go-private" type="button" aria-label="Create a new private room">🔒 Create a Private Room &raquo;</button>
+    </div>
+    <div id="room-history">
+      <h3>📜 Recent Rooms</h3>
+      <div id="room-history-list" role="list"></div>
+    </div>
+  </form>
+  <div id="thread-panel">
+    <div id="thread-header">
+      <h3>💬 Thread</h3>
+      <button id="thread-close" title="Close thread">✕</button>
+    </div>
+    <div id="thread-original-message"></div>
+    <div id="thread-replies"></div>
+    <div id="thread-input-container">
+      <chat-input-component id="thread-input" placeholder="Reply in thread..." rows="3" min-height="60px"
+        max-height="120px" show-file-upload="true"></chat-input-component>
+    </div>
+  </div>
+  <form id="chatroom" action="/fake-form-action">
+    <div id="chatlog">
+      <div id="spacer"></div>
+    </div>
+    <div id="right-sidebar">
+      <div id="room-info">
+        <h3>
+          <span>🏠 Room Info</span>
+          <span id="connection-status"></span>
+        </h3>
+        <div id="room-name-container">
+          <div id="room-name-display"></div>
+          <input type="text" id="room-name-input" />
+        </div>
+        <div id="room-description-container">
+          <div id="room-description-label">📝 Description (click to edit)</div>
+          <textarea id="room-note" placeholder="Add room description..."></textarea>
+        </div>
+        <div id="room-destruction-container">
+          <h4>🔥 Room Management</h4>
+          <div class="destruction-countdown" id="destruction-countdown">
+            <p class="countdown-text">⚠️ Room will be destroyed in:</p>
+            <div class="countdown-time" id="countdown-time">--:--</div>
+          </div>
+          <div class="destruction-controls" id="destruction-controls">
+            <div class="destruction-timer-select">
+              <label for="destruction-timer">Destroy after:</label>
+              <select id="destruction-timer">
+                <option value="0">Immediately</option>
+                <option value="5">5 minutes</option>
+                <option value="10">10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="30" selected>30 minutes</option>
+                <option value="60">1 hour</option>
+                <option value="120">2 hours</option>
+              </select>
+            </div>
+            <button class="btn-destroy" id="btn-start-destruction">🔥 Start Destruction</button>
+            <button class="btn-cancel-destroy" id="btn-cancel-destruction" style="display:none;">⏹️ Cancel
+              Destruction</button>
+            <button class="btn-export" id="btn-export-records">💾 Export All Records</button>
+          </div>
+        </div>
+      </div>
+      <div id="roster-container">
+        <h3>👥 Online Members</h3>
+        <div id="roster">
+        </div>
+      </div>
+      <div id="hashtag-container">
+        <h3>📌 Hashtags</h3>
+        <div id="hashtag-list"></div>
+      </div>
+    </div>
+    <div id="reply-indicator" style="display:none;">
+      <button type="button" class="reply-indicator-close">✕</button>
+      <span class="reply-indicator-text"></span>
+    </div>
+    <div id="main-chat-input-container"
+      style="position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #ddd;">
+      <chat-input-component id="chat-input" placeholder="Type a message..." rows="1" min-height="32px"
+        max-height="150px" show-file-upload="true" show-prefix="true"></chat-input-component>
+    </div>
+  </form>
+  <div id="mobile-top-bar">
+    <div id="mobile-top-bar-content">
+      <span id="mobile-top-bar-icon">🏠</span>
+      <span id="mobile-top-bar-title">Loading...</span>
+      <span id="mobile-top-bar-arrow">▼</span>
+    </div>
+  </div>
+  <div id="hashtag-filter-banner">
+    <span>Filtering by: <strong id="active-hashtag"></strong></span>
+    <button class="filter-clear-btn" onclick="clearHashtagFilter()">Clear Filter ✕</button>
+  </div>
+  <div id="mobile-room-info-overlay"></div>
+</body>
+<script type="module">
+    import { startNameChooser } from './index.mjs';
+    startNameChooser();
+</script>
+</html>

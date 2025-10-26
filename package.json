@@ -4,8 +4,16 @@
   "version": "1.0.0",
   "module": "./src/chat.mjs",
   "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "ui": "rna build src/ui/index.html --output public --clean --assetNames=\"assets/[name]-[hash]\" --chunkNames=\"[ext]/[name]-[hash]\"",
+    "ui:prod": "npm run ui -- --minify"
+  },
   "dependencies": {
-    "hono": "^4.10.2",
-    "@zip.js/zip.js": "^2.7.52"
+    "@zip.js/zip.js": "^2.7.52",
+    "hono": "^4.10.2"
+  },
+  "devDependencies": {
+    "@chialab/rna": "^0.19.0"
   }
 }
