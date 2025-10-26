@@ -12,6 +12,7 @@ function createReactiveState(initialState) {
             if (success && oldValue !== value) {
                 listeners.forEach(listener => listener(property, value, oldValue))
             }
+            return success;
         }
     })
 
@@ -646,6 +647,7 @@ function setupImageScrollHandler(img, scrollContainer, shouldScrollToBottom) {
         console.warn('Image failed to load:', img.src);
     });
 }
+window.setupImageScrollHandler = setupImageScrollHandler;
 
 // Connection status tracking
 let connectionStatusTimeout = null;
