@@ -2,7 +2,6 @@ import { HashtagManager } from './hashtag.mjs';
 import { Hono } from 'hono';
 import { getPath, splitPath } from 'hono/utils/url';
 import { showRoutes } from 'hono/dev';
-import { ZipWriter, BlobReader } from '@zip.js/zip.js';
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -650,15 +649,11 @@ export class ChatRoom {
           const exportData = {
             roomInfo: (await this.storage.get('room-info')) || {},
             messages: [],
-            files: [], // Track files with metadata
             hashtags: await this.hashtagManager.getAllHashtags(1000),
             exportedAt: new Date().toISOString(),
           };
 
-          // Collect files to export
-          const filesToExport = [];
-
-          // Get all messages
+          // Get all messages (server just returns raw messages, client will decrypt and extract files)
           const messages = await this.storage.list();
           for (const [key, value] of messages) {
             // Skip internal keys
@@ -672,36 +667,6 @@ export class ChatRoom {
 
             try {
               const msg = typeof value === 'string' ? JSON.parse(value) : value;
-
-              // Check if message contains a file
-              if (msg.message && msg.message.startsWith('FILE:')) {
-                const parts = msg.message.substring(5).split('|');
-                const fileUrl = parts[0];
-                const fileName = parts[1] || 'file';
-                const fileType = parts[2] || '';
-
-                // Extract file key from URL (format: /files/{key})
-                if (fileUrl.startsWith('/files/')) {
-                  const fileKey = fileUrl.substring(7);
-                  filesToExport.push({
-                    r2key: fileKey,
-                    filename: fileName,
-                    fileType: fileType,
-                    messageId: msg.messageId,
-                    timestamp: msg.timestamp,
-                  });
-
-                  // Add file info to export data
-                  exportData.files.push({
-                    filename: fileName,
-                    fileType: fileType,
-                    r2key: fileKey,
-                    uploadedBy: msg.name,
-                    timestamp: msg.timestamp,
-                  });
-                }
-              }
-
               exportData.messages.push(msg);
             } catch (e) {
               console.error('Failed to parse message:', e);
@@ -711,63 +676,12 @@ export class ChatRoom {
           // Sort messages by timestamp
           exportData.messages.sort((a, b) => a.timestamp - b.timestamp);
 
-          // Create ZIP archive
-          let { readable, writable } = new IdentityTransformStream();
-          const archive = new ZipWriter(writable);
-
-          let promises = [];
-
-          // Add the JSON metadata file
-          const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], {
-            type: 'application/json',
-          });
-          promises.push(archive.add('export.json', new BlobReader(jsonBlob)));
-
-          // Add all files from R2
-          for (const fileInfo of filesToExport) {
-            try {
-              const fileContent = await this.env.CHAT_FILES.get(fileInfo.r2key);
-              if (fileContent) {
-                // Create a safe filename (preserve original filename)
-                const safeFilename = `files/${fileInfo.filename}`;
-                promises.push(archive.add(safeFilename, fileContent.body));
-              } else {
-                console.warn(`File not found in R2: ${fileInfo.r2key}`);
-              }
-            } catch (err) {
-              console.error(`Failed to fetch file ${fileInfo.r2key}:`, err);
-            }
-          }
-
-          // Close the archive
-          promises.push(archive.close());
-
-          // Wait for all operations to complete
-          Promise.all(promises).catch((err) => {
-            console.error('Error creating ZIP:', err);
-          });
-
-          // Generate archive filename
-          const roomNamePart = exportData.roomInfo.name || 'room';
-          const timestamp = new Date()
-            .toISOString()
-            .slice(0, 19)
-            .replace(/[:.]/g, '-');
-          const archiveFilename = `chat-export-${roomNamePart}-${timestamp}.zip`;
-
-          return new Response(readable, {
-            headers: {
-              'Content-Type': 'application/zip',
-              'Content-Disposition': `attachment; filename="${archiveFilename}"`,
-              'Access-Control-Allow-Origin': '*',
-            },
-          });
+          // Return JSON for client-side processing
+          // Client will decrypt messages and extract file information
+          return c.json(exportData);
         } catch (err) {
           console.error('Export error:', err);
-          return new Response(JSON.stringify({ error: err.message }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return c.json({ error: err.message }, 500);
         }
       });
     });

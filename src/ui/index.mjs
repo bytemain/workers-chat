@@ -3,6 +3,7 @@ import CryptoUtils from '../common/crypto-utils.js';
 import { keyManager } from '../common/key-manager.js';
 import FileCrypto from '../common/file-crypto.js';
 import { getCryptoPool } from './crypto-worker-pool.js';
+import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
 
 const cryptoPool = getCryptoPool();
 
@@ -1231,7 +1232,7 @@ class ChatAPI {
     if (!response.ok) {
       throw new Error('Failed to export data');
     }
-    return await response.blob();
+    return await response.json();
   }
 
   // destruction/start
@@ -2435,17 +2436,174 @@ function startChat() {
       // Disable button and show loading state
       btnExportRecords.disabled = true;
       const originalText = btnExportRecords.textContent;
-      btnExportRecords.textContent = '⏳ Exporting...';
+      btnExportRecords.textContent = '⏳ Loading data...';
 
-      addSystemMessage('* Exporting all records and files...');
+      addSystemMessage('* Fetching export data from server...');
 
-      const blob = await api.exportData(roomname);
+      // Get export data from server (encrypted messages and file URLs)
+      const exportData = await api.exportData(roomname);
 
-      // Extract filename from Content-Disposition header if available
-      let filename = `chat-export-${roomname}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.zip`;
+      btnExportRecords.textContent = '⏳ Decrypting messages...';
+      addSystemMessage(
+        `* Decrypting ${exportData.messages.length} messages...`,
+      );
 
-      // Create a downloadable file
-      const url = URL.createObjectURL(blob);
+      // Decrypt all messages and extract file information
+      const decryptedMessages = [];
+      const filesMap = new Map(); // Track files by URL to avoid duplicates
+
+      for (let i = 0; i < exportData.messages.length; i++) {
+        const msg = exportData.messages[i];
+        let decryptedMessage = msg.message;
+
+        if (CryptoUtils.isEncrypted(msg.message)) {
+          if (isRoomEncrypted && currentRoomKey) {
+            try {
+              // Parse encrypted message
+              const encryptedData = CryptoUtils.parseEncryptedMessage(
+                msg.message,
+              );
+              if (encryptedData) {
+                // Export key for worker
+                const keyData = Array.from(
+                  new Uint8Array(
+                    await crypto.subtle.exportKey('raw', currentRoomKey),
+                  ),
+                );
+
+                // Decrypt via worker pool
+                decryptedMessage = await cryptoPool.submitTask('decrypt', {
+                  encrypted: encryptedData,
+                  keyData: keyData,
+                });
+              } else {
+                decryptedMessage = '[Decryption failed - invalid format]';
+              }
+            } catch (error) {
+              console.error('Failed to decrypt message:', error);
+              decryptedMessage = '[Decryption failed]';
+            }
+          } else {
+            decryptedMessage = '[Encrypted - no key]';
+          }
+        }
+
+        // Add decrypted message
+        decryptedMessages.push({ ...msg, message: decryptedMessage });
+
+        // Extract file information from decrypted message
+        if (decryptedMessage.startsWith('FILE:')) {
+          const parts = decryptedMessage.substring(5).split('|');
+          const fileUrl = parts[0];
+          const fileName = parts[1] || 'file';
+          const fileType = parts[2] || '';
+          const isEncrypted = parts[3] === 'encrypted';
+
+          // Extract file key from URL (format: /files/{key})
+          if (fileUrl.startsWith('/files/') && !filesMap.has(fileUrl)) {
+            const fileKey = fileUrl.substring(7);
+
+            filesMap.set(fileUrl, {
+              url: fileUrl,
+              filename: fileName,
+              fileType: fileType,
+              encrypted: isEncrypted,
+              r2key: fileKey,
+              uploadedBy: msg.name,
+              timestamp: msg.timestamp,
+              messageId: msg.messageId,
+            });
+          }
+        }
+
+        // Update progress
+        if (i % 10 === 0 || i === exportData.messages.length - 1) {
+          btnExportRecords.textContent = `⏳ Decrypting... ${i + 1}/${exportData.messages.length}`;
+        }
+      }
+
+      // Convert filesMap to array
+      const files = Array.from(filesMap.values());
+
+      // Create ZIP
+      btnExportRecords.textContent = '⏳ Creating archive...';
+      addSystemMessage('* Creating ZIP archive...');
+
+      const zipWriter = new ZipWriter(new BlobWriter('application/zip'));
+
+      // Add decrypted messages as JSON
+      const exportJson = {
+        ...exportData,
+        messages: decryptedMessages,
+        files: files, // Add extracted file list
+        decryptedAt: new Date().toISOString(),
+      };
+
+      await zipWriter.add(
+        'export.json',
+        new TextReader(JSON.stringify(exportJson, null, 2)),
+      );
+
+      // Download and decrypt files
+      if (files && files.length > 0) {
+        btnExportRecords.textContent = `⏳ Downloading files... 0/${files.length}`;
+        addSystemMessage(
+          `* Downloading and decrypting ${files.length} files...`,
+        );
+
+        for (let i = 0; i < files.length; i++) {
+          const fileInfo = files[i];
+
+          try {
+            if (fileInfo.encrypted && isRoomEncrypted && currentRoomKey) {
+              // Decrypt file using FileCrypto.downloadAndDecrypt
+              const result = await FileCrypto.downloadAndDecrypt(
+                fileInfo.url,
+                currentRoomKey,
+                (progress, stage) => {
+                  btnExportRecords.textContent = `⏳ File ${i + 1}/${files.length}: ${stage} ${Math.round(progress)}%`;
+                },
+              );
+
+              // Add decrypted file to ZIP
+              await zipWriter.add(
+                `files/${fileInfo.filename}`,
+                result.blob.stream(),
+              );
+            } else if (!fileInfo.encrypted) {
+              // Download non-encrypted file
+              const response = await fetch(fileInfo.url);
+              if (response.ok) {
+                const blob = await response.blob();
+                await zipWriter.add(
+                  `files/${fileInfo.filename}`,
+                  blob.stream(),
+                );
+              }
+            } else {
+              console.warn(
+                `Skipping encrypted file without key: ${fileInfo.filename}`,
+              );
+            }
+          } catch (error) {
+            console.error(
+              `Failed to process file ${fileInfo.filename}:`,
+              error,
+            );
+          }
+
+          btnExportRecords.textContent = `⏳ Downloading files... ${i + 1}/${files.length}`;
+        }
+      }
+
+      // Close ZIP and download
+      btnExportRecords.textContent = '⏳ Finalizing...';
+      const zipBlob = await zipWriter.close();
+
+      const filename = `chat-export-${roomname}-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.zip`;
+
+      // Trigger download
+      const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
@@ -2454,14 +2612,14 @@ function startChat() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      addSystemMessage('* Export completed successfully (ZIP with all files)');
+      addSystemMessage('* Export completed successfully!');
 
       // Restore button
       btnExportRecords.textContent = originalText;
       btnExportRecords.disabled = false;
     } catch (err) {
       console.error('Failed to export records:', err);
-      addSystemMessage('* Failed to export records');
+      addSystemMessage('* Failed to export records: ' + err.message);
 
       // Restore button even on error
       btnExportRecords.textContent = '💾 Export All Records';
