@@ -1308,6 +1308,25 @@
         flex: 1;
         min-width: 0;
       }
+
+      /* E2EE Privacy Options */
+      .privacy-option {
+        transition: all 0.2s ease;
+      }
+
+      .privacy-option:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .privacy-option input[type='radio']:checked {
+        accent-color: #0066cc;
+      }
+
+      .privacy-option:has(input[type='radio']:checked) {
+        border-color: #0066cc !important;
+        box-shadow: 0 0 0 1px #0066cc;
+      }
     </style>
   </head>
 
@@ -1403,6 +1422,162 @@
         >
           🔒 Create a Private Room &raquo;
         </button>
+
+        <!-- E2EE Encryption Options -->
+        <div
+          id="encryption-options"
+          style="
+            margin-top: 1.5em;
+            padding: 1em;
+            background: #f0f8ff;
+            border-radius: 8px;
+            border: 1px solid #b3d9ff;
+          "
+        >
+          <div style="text-align: center; margin-bottom: 1em">
+            <div style="font-size: 1.5em; margin-bottom: 0.3em">🔐</div>
+            <strong style="color: #0066cc"
+              >All rooms are end-to-end encrypted</strong
+            >
+          </div>
+
+          <div style="margin-bottom: 0.8em">
+            <label
+              style="
+                display: flex;
+                align-items: center;
+                padding: 0.8em;
+                cursor: pointer;
+                border-radius: 4px;
+                background: white;
+                border: 2px solid #0066cc;
+              "
+              class="privacy-option"
+            >
+              <input
+                type="radio"
+                name="privacy-level"
+                value="basic"
+                checked
+                style="
+                  margin-right: 0.8em;
+                  width: 18px;
+                  height: 18px;
+                  cursor: pointer;
+                "
+              />
+              <div>
+                <div style="font-weight: bold; color: #333">
+                  🔒 Use Room Name as Key
+                </div>
+                <div style="font-size: 0.85em; color: #666; margin-top: 0.2em">
+                  Anyone with the room name can join
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div style="margin-bottom: 0.8em">
+            <label
+              style="
+                display: flex;
+                align-items: center;
+                padding: 0.8em;
+                cursor: pointer;
+                border-radius: 4px;
+                background: white;
+                border: 2px solid #ddd;
+              "
+              class="privacy-option"
+            >
+              <input
+                type="radio"
+                name="privacy-level"
+                value="enhanced"
+                style="
+                  margin-right: 0.8em;
+                  width: 18px;
+                  height: 18px;
+                  cursor: pointer;
+                "
+              />
+              <div>
+                <div style="font-weight: bold; color: #333">
+                  🔐 Set Custom Key
+                </div>
+                <div style="font-size: 0.85em; color: #666; margin-top: 0.2em">
+                  More secure - share key separately
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div
+            id="custom-password-container"
+            style="
+              display: none;
+              margin-top: 1em;
+              padding: 1em;
+              background: white;
+              border-radius: 4px;
+              border: 1px solid #ddd;
+            "
+          >
+            <label
+              for="encryption-password"
+              style="
+                display: block;
+                font-size: 0.9em;
+                margin-bottom: 0.5em;
+                color: #333;
+                font-weight: bold;
+              "
+            >
+              Encryption Key:
+            </label>
+            <div style="position: relative">
+              <input
+                id="encryption-password"
+                type="text"
+                placeholder="Enter encryption key"
+                autocomplete="off"
+                style="
+                  width: 100%;
+                  padding: 0.6em;
+                  padding-right: 80px;
+                  border: 1px solid #ddd;
+                  border-radius: 4px;
+                  font-size: 0.95em;
+                  font-family: monospace;
+                "
+                maxlength="128"
+              />
+              <button
+                id="copy-key-btn"
+                type="button"
+                style="
+                  position: absolute;
+                  right: 5px;
+                  top: 50%;
+                  transform: translateY(-50%);
+                  padding: 0.4em 0.8em;
+                  background: #0066cc;
+                  color: white;
+                  border: none;
+                  border-radius: 3px;
+                  cursor: pointer;
+                  font-size: 0.85em;
+                "
+              >
+                Copy
+              </button>
+            </div>
+            <div style="font-size: 0.8em; color: #666; margin-top: 0.5em">
+              💡 <strong>Important:</strong> Share this key with room members to
+              grant access
+            </div>
+          </div>
+        </div>
       </div>
       <div id="room-history">
         <h3>📜 Recent Rooms</h3>

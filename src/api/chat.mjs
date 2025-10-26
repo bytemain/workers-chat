@@ -26,6 +26,11 @@ async function handleErrors(request, func) {
   }
 }
 
+/**
+ *
+ * @param {(app: Hono) => void} mount
+ * @returns
+ */
 function ignite(mount) {
   const app = new Hono();
   mount(app);
@@ -416,7 +421,7 @@ export class ChatRoom {
       });
 
       app.put('/info', async (c) => {
-        const data = c.json();
+        const data = await c.req.json();
         let info = (await this.storage.get('room-info')) || {};
 
         // Track what changed
@@ -434,6 +439,31 @@ export class ChatRoom {
           changed = true;
         }
 
+        // Update encryption status if provided (E2EE support)
+        if (data.encrypted !== undefined && data.encrypted !== info.encrypted) {
+          info.encrypted = data.encrypted;
+          changed = true;
+        }
+
+        // Update verification data if provided (E2EE support)
+        // Store the encrypted verification data (server doesn't know the content)
+        if (
+          data.verificationData !== undefined &&
+          data.verificationData !== info.verificationData
+        ) {
+          info.verificationData = data.verificationData;
+          changed = true;
+        }
+
+        // Update privacy level if provided (E2EE support)
+        if (
+          data.privacyLevel !== undefined &&
+          data.privacyLevel !== info.privacyLevel
+        ) {
+          info.privacyLevel = data.privacyLevel; // 'basic', 'enhanced', or 'public'
+          changed = true;
+        }
+
         await this.storage.put('room-info', info);
 
         // Broadcast the update to all connected clients
@@ -443,6 +473,9 @@ export class ChatRoom {
             roomInfoUpdate: {
               name: info.name,
               note: info.note,
+              encrypted: info.encrypted,
+              privacyLevel: info.privacyLevel,
+              // Don't broadcast verificationData - clients will fetch it when needed
             },
           });
         }

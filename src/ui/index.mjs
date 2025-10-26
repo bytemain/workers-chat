@@ -1,4 +1,28 @@
 import { regex } from '../common/hashtag.mjs';
+import CryptoUtils from '../common/crypto-utils.js';
+import { KeyManager } from '../common/key-manager.js';
+import FileCrypto from '../common/file-crypto.js';
+import { getCryptoPool } from './crypto-worker-pool.js';
+
+// Initialize key manager (global instance)
+const keyManager = new KeyManager();
+let isKeyManagerReady = false;
+let cryptoPool = null;
+
+// Initialize crypto systems on page load
+(async () => {
+  try {
+    await keyManager.init();
+    isKeyManagerReady = true;
+    console.log('✅ E2EE KeyManager initialized');
+
+    // Initialize crypto worker pool
+    cryptoPool = getCryptoPool();
+    console.log('✅ Crypto Worker Pool initialized');
+  } catch (error) {
+    console.error('❌ Failed to initialize crypto systems:', error);
+  }
+})();
 
 function createReactiveState(initialState) {
   const listeners = new Set();
@@ -531,24 +555,140 @@ class ChatMessage extends HTMLElement {
     const fileUrl = parts[0];
     const fileName = parts[1] || 'file';
     const fileType = parts[2] || '';
+    const isEncrypted = parts[3] === 'encrypted';
 
     // If it's an image, display it inline with lazy loading
     if (fileType.startsWith('image/')) {
-      // Use the lazy-img custom element for lazy loading
-      const lazyImg = document.createElement('lazy-img');
-      lazyImg.setAttribute('data-src', fileUrl);
-      lazyImg.setAttribute('alt', fileName);
-      lazyImg.setAttribute('max-width', '300px');
-      lazyImg.setAttribute('max-height', '300px');
+      if (isEncrypted) {
+        if (isRoomEncrypted && currentRoomKey) {
+          // Encrypted image with valid key - auto decrypt and display
+          const container = document.createElement('div');
+          container.className = 'encrypted-image-container';
+          container.style.cssText =
+            'position: relative; display: inline-block;';
 
-      this.appendChild(lazyImg);
+          const placeholder = document.createElement('div');
+          placeholder.style.cssText = `
+            width: 300px;
+            height: 200px;
+            background: #f0f0f0;
+            border: 2px dashed #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+          `;
+          placeholder.innerHTML = `
+            <div style="font-size: 48px;">🔓</div>
+            <div style="margin-top: 8px; color: #666;">Decrypting...</div>
+          `;
+
+          container.appendChild(placeholder);
+          this.appendChild(container);
+
+          // Auto decrypt immediately
+          (async () => {
+            try {
+              console.log('🔓 Auto-decrypting image file...');
+
+              const result = await FileCrypto.downloadAndDecrypt(
+                fileUrl,
+                currentRoomKey,
+                (progress, stage) => {
+                  placeholder.innerHTML = `<div>🔓 ${stage}: ${Math.round(progress)}%</div>`;
+                },
+              );
+
+              const objectUrl = URL.createObjectURL(result.blob);
+              const img = document.createElement('img');
+              img.src = objectUrl;
+              img.alt = fileName;
+              img.style.maxWidth = '300px';
+              img.style.maxHeight = '300px';
+              img.style.cursor = 'pointer';
+              img.onclick = () => window.open(objectUrl, '_blank');
+
+              container.replaceChild(img, placeholder);
+              console.log('✅ Image auto-decrypted and displayed');
+            } catch (error) {
+              console.error('❌ Failed to decrypt image:', error);
+              placeholder.innerHTML = `<div style="color: red;">❌ Decryption failed</div>`;
+            }
+          })();
+        } else {
+          // Encrypted image but no key - show locked placeholder
+          const placeholder = document.createElement('div');
+          placeholder.style.cssText = `
+            width: 300px;
+            height: 200px;
+            background: #f5f5f5;
+            border: 2px dashed #999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+          `;
+          placeholder.innerHTML = `
+            <div style="font-size: 48px;">🔒</div>
+            <div style="margin-top: 8px; color: #999;">Encrypted Image</div>
+            <div style="margin-top: 4px; font-size: 12px; color: #999;">No decryption key available</div>
+          `;
+          this.appendChild(placeholder);
+        }
+      } else {
+        // Non-encrypted image - use lazy loading as before
+        const lazyImg = document.createElement('lazy-img');
+        lazyImg.setAttribute('data-src', fileUrl);
+        lazyImg.setAttribute('alt', fileName);
+        lazyImg.setAttribute('max-width', '300px');
+        lazyImg.setAttribute('max-height', '300px');
+        this.appendChild(lazyImg);
+      }
     } else {
-      // For other files, just show a download link
+      // For other files, show a download link
       const link = document.createElement('a');
-      link.href = fileUrl;
-      link.download = fileName;
-      link.target = '_blank';
       link.textContent = '📎 ' + fileName;
+      link.style.cursor = 'pointer';
+
+      if (isEncrypted && isRoomEncrypted && currentRoomKey) {
+        // Encrypted file - decrypt on click
+        link.onclick = async (e) => {
+          e.preventDefault();
+          const originalText = link.textContent;
+          try {
+            link.textContent = '⏳ Decrypting...';
+            console.log('🔓 Decrypting file...');
+
+            const result = await FileCrypto.downloadAndDecrypt(
+              fileUrl,
+              currentRoomKey,
+              (progress, stage) => {
+                link.textContent = `⏳ ${stage}: ${Math.round(progress)}%`;
+              },
+            );
+
+            // Create download
+            const objectUrl = URL.createObjectURL(result.blob);
+            const a = document.createElement('a');
+            a.href = objectUrl;
+            a.download = result.metadata.fileName || fileName;
+            a.click();
+            URL.revokeObjectURL(objectUrl);
+
+            link.textContent = originalText;
+            console.log('✅ File decrypted and downloaded');
+          } catch (error) {
+            console.error('❌ Failed to decrypt file:', error);
+            link.textContent = originalText + ' (decryption failed)';
+          }
+        };
+      } else {
+        // Non-encrypted file - normal download
+        link.href = fileUrl;
+        link.download = fileName;
+        link.target = '_blank';
+      }
+
       this.appendChild(link);
     }
   }
@@ -670,6 +810,10 @@ let roomname;
 let currentHashtagFilter = null; // Current active hashtag filter
 let allHashtags = []; // Cache of all hashtags
 
+// E2EE state variables
+let currentRoomKey = null; // Current room encryption key
+let isRoomEncrypted = false; // Whether current room is encrypted
+
 // Helper function to setup image load handlers for maintaining scroll position
 function setupImageScrollHandler(img, scrollContainer, shouldScrollToBottom) {
   img.addEventListener('load', () => {
@@ -736,22 +880,375 @@ let threadsCache = new Map(); // messageId -> array of reply messages
 // Reply state for main chat input
 let currentReplyTo = null; // {messageId, username, preview, rootMessageId}
 
-// Generate UUID v4 using crypto.randomUUID or fallback
-function generateUUID() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  // Fallback for older browsers
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
 // Generate message ID from timestamp and username for legacy messages
 function generateLegacyMessageId(timestamp, username) {
   return `${timestamp}-${username}`;
+}
+
+// ===== E2EE Helper Functions =====
+
+/**
+ * Get room info including encryption status
+ * @param {string} roomId - Room ID or name
+ * @returns {Promise<Object>} Room information
+ */
+async function getRoomInfo(roomId) {
+  try {
+    const response = await fetch(`/api/room/${roomId}/info`);
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error('Failed to fetch room info:', error);
+  }
+  return {};
+}
+
+/**
+ * Update room info (including encryption metadata)
+ * @param {string} roomId - Room ID or name
+ * @param {Object} data - Data to update
+ * @returns {Promise<boolean>} Success status
+ */
+async function updateRoomInfo(roomId, data) {
+  try {
+    const response = await fetch(`/api/room/${roomId}/info`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Failed to update room info:', error);
+    return false;
+  }
+}
+
+/**
+ * Verify room password by attempting to decrypt verification data
+ * @param {string} roomId - Room ID
+ * @param {string} password - Password to verify
+ * @param {string} verificationData - Encrypted verification data
+ * @returns {Promise<Object>} {success: boolean, key?: CryptoKey, error?: string}
+ */
+async function verifyRoomPassword(roomId, password, verificationData) {
+  try {
+    // Parse encrypted data
+    if (!verificationData || !verificationData.startsWith('ENCRYPTED:')) {
+      return { success: false, error: 'Invalid verification data format' };
+    }
+
+    const encrypted = JSON.parse(verificationData.substring(10));
+
+    // Derive key from password
+    console.log('🔑 Deriving key from password...');
+    const key = await CryptoUtils.deriveKeyFromPassword(password, roomId);
+
+    // Try to decrypt
+    console.log('🔓 Attempting to decrypt verification data...');
+    const decrypted = await CryptoUtils.decryptMessage(encrypted, key);
+
+    // Parse and verify payload
+    const payload = JSON.parse(decrypted);
+
+    if (payload.type === 'room-verification' && payload.roomId === roomId) {
+      console.log('✅ Password verified successfully');
+      // Save password to key manager
+      await keyManager.saveRoomPassword(roomId, password);
+      return { success: true, key };
+    } else {
+      return { success: false, error: 'Invalid verification payload' };
+    }
+  } catch (error) {
+    console.error('❌ Password verification failed:', error);
+    return { success: false, error: 'Incorrect password' };
+  }
+}
+
+/**
+ * Show password input dialog
+ * @param {Object} roomData - Room information
+ * @returns {Promise<string|null>} Entered password or null if cancelled
+ */
+function showPasswordDialog(roomData) {
+  return new Promise((resolve) => {
+    const dialog = document.createElement('div');
+    dialog.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    `;
+
+    const privacyLevel = roomData.privacyLevel || 'unknown';
+    const roomName = roomData.name || 'this room';
+
+    let title = '🔐 Encryption Key Required';
+    let hint = 'Enter the encryption key to join this room.';
+
+    if (privacyLevel === 'basic') {
+      title = '🔐 Protected Room';
+      hint = `This room uses basic protection. Try entering the room name: <strong>${roomName}</strong>`;
+    } else if (privacyLevel === 'enhanced') {
+      title = '🔐 Highly Protected Room';
+      hint =
+        'This room uses enhanced privacy. Ask the room creator for the encryption key.';
+    }
+
+    dialog.innerHTML = `
+      <div style="
+        background: white;
+        border-radius: 8px;
+        padding: 24px;
+        max-width: 400px;
+        width: 90%;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      ">
+        <h3 style="margin: 0 0 16px 0;">${title}</h3>
+        <p style="margin: 0 0 8px 0;"><strong>Room:</strong> ${roomName}</p>
+        <p style="margin: 0 0 16px 0; color: #666;">${hint}</p>
+        <input
+          type="text"
+          id="room-password-input"
+          placeholder="Enter encryption key"
+          style="
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: monospace;
+            box-sizing: border-box;
+          "
+        />
+        <div id="password-error" style="color: red; margin-top: 8px; display: none;"></div>
+        <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
+          <button id="password-cancel-btn" style="
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+          ">Cancel</button>
+          <button id="password-submit-btn" style="
+            padding: 8px 16px;
+            border: none;
+            background: #0066cc;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+          ">Join Room</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    const input = dialog.querySelector('#room-password-input');
+    const errorDiv = dialog.querySelector('#password-error');
+    const submitBtn = dialog.querySelector('#password-submit-btn');
+    const cancelBtn = dialog.querySelector('#password-cancel-btn');
+
+    // Auto-fill room name for basic privacy
+    if (privacyLevel === 'basic') {
+      input.value = roomName;
+      input.select();
+    }
+
+    input.focus();
+
+    const cleanup = () => {
+      document.body.removeChild(dialog);
+    };
+
+    submitBtn.onclick = () => {
+      const password = input.value;
+      if (password) {
+        cleanup();
+        resolve(password);
+      } else {
+        errorDiv.textContent = 'Please enter an encryption key';
+        errorDiv.style.display = 'block';
+      }
+    };
+
+    cancelBtn.onclick = () => {
+      cleanup();
+      resolve(null);
+    };
+
+    input.onkeypress = (e) => {
+      if (e.key === 'Enter') {
+        submitBtn.onclick();
+      }
+    };
+  });
+}
+
+/**
+ * Initialize room encryption (called when joining a room)
+ * @param {string} roomId - Room ID or name
+ * @returns {Promise<boolean>} Whether initialization succeeded
+ */
+async function initializeRoomEncryption(roomId) {
+  if (!isKeyManagerReady) {
+    console.warn('⚠️ KeyManager not ready yet, waiting...');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return await initializeRoomEncryption(roomId);
+  }
+
+  // Get room info
+  const info = await getRoomInfo(roomId);
+
+  if (!info.encrypted) {
+    console.log('ℹ️ Room is not encrypted');
+    isRoomEncrypted = false;
+    currentRoomKey = null;
+    return true;
+  }
+
+  console.log('🔐 Room is encrypted, checking for saved key...');
+  isRoomEncrypted = true;
+
+  // Check if we already have a password saved
+  let key = await keyManager.getRoomKey(roomId);
+
+  if (key) {
+    console.log('✅ Using saved key');
+    currentRoomKey = key;
+    return true;
+  }
+
+  // Try auto-join with room name for basic privacy
+  if (info.privacyLevel === 'basic' && info.verificationData) {
+    console.log(
+      '🔍 Attempting auto-join with room name (using roomId as key)...',
+    );
+    // Use roomId (the actual room identifier from URL) as the password, not the display name
+    const result = await verifyRoomPassword(
+      roomId,
+      roomId,
+      info.verificationData,
+    );
+    if (result.success) {
+      console.log('✅ Auto-joined with room name');
+      currentRoomKey = result.key;
+      return true;
+    } else {
+      console.warn(
+        '⚠️ Auto-join failed, room may have been created with different key',
+      );
+    }
+  }
+
+  // Need to prompt for password
+  console.log('🔑 Encryption key required, showing dialog...');
+
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  while (attempts < maxAttempts) {
+    const password = await showPasswordDialog(info);
+
+    if (!password) {
+      // User cancelled - allow them to enter but they won't be able to decrypt
+      console.log(
+        '⚠️ User cancelled key entry, entering room without decryption key',
+      );
+      addSystemMessage(
+        '* You entered the room without an encryption key. Messages will appear encrypted.',
+      );
+      currentRoomKey = null;
+      return true;
+    }
+
+    // Verify password
+    if (info.verificationData) {
+      const result = await verifyRoomPassword(
+        roomId,
+        password,
+        info.verificationData,
+      );
+      if (result.success) {
+        console.log('✅ Encryption key verified');
+        currentRoomKey = result.key;
+        return true;
+      } else {
+        attempts++;
+        if (attempts < maxAttempts) {
+          alert(`Incorrect key. ${maxAttempts - attempts} attempts remaining.`);
+        } else {
+          // After 3 failed attempts, let them enter but without decryption key
+          console.log(
+            '⚠️ Max attempts reached, entering room without decryption key',
+          );
+          alert(
+            'Incorrect key. You can still enter the room, but messages will appear encrypted.',
+          );
+          currentRoomKey = null;
+          return true;
+        }
+      }
+    } else {
+      // No verification data, just save the password
+      console.warn('⚠️ No verification data, using key without verification');
+      await keyManager.saveRoomPassword(roomId, password);
+      currentRoomKey = await keyManager.getRoomKey(roomId);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Setup room encryption when creating a room
+ * @param {string} roomId - Room ID or name
+ * @param {string} password - Encryption password
+ * @param {string} privacyLevel - 'basic' or 'enhanced'
+ * @returns {Promise<void>}
+ */
+async function setupRoomEncryption(roomId, password, privacyLevel) {
+  try {
+    console.log(`🔐 Setting up ${privacyLevel} encryption for room...`);
+
+    // Generate verification data
+    const verificationData = await CryptoUtils.generateVerificationData(
+      roomId,
+      password,
+    );
+
+    // Update room info with encryption settings
+    const success = await updateRoomInfo(roomId, {
+      encrypted: true,
+      verificationData: verificationData,
+      privacyLevel: privacyLevel,
+    });
+
+    if (success) {
+      // Save password to key manager
+      await keyManager.saveRoomPassword(roomId, password);
+
+      // Get the derived key
+      currentRoomKey = await keyManager.getRoomKey(roomId);
+      isRoomEncrypted = true;
+
+      console.log('✅ Room encryption setup complete');
+    } else {
+      console.error('❌ Failed to update room info with encryption settings');
+    }
+  } catch (error) {
+    console.error('❌ Failed to setup room encryption:', error);
+    alert('Failed to setup encryption: ' + error.message);
+  }
 }
 
 let hostname = window.location.host;
@@ -850,12 +1347,39 @@ class UserMessageAPI {
    * @param {string} message - The message text to send
    * @param {object} replyTo - Optional reply information {messageId, username, preview}
    */
-  sendMessage(message, replyTo = null) {
+  async sendMessage(message, replyTo = null) {
     if (!currentWebSocket || !message || message.length === 0) {
       return false;
     }
 
-    const payload = { message: message };
+    let messageToSend = message;
+
+    // Encrypt message if room is encrypted
+    if (isRoomEncrypted && currentRoomKey) {
+      try {
+        console.log('🔒 Encrypting message via worker pool...');
+
+        // Export key for worker
+        const keyData = Array.from(
+          new Uint8Array(await crypto.subtle.exportKey('raw', currentRoomKey)),
+        );
+
+        // Encrypt via worker pool
+        const encrypted = await cryptoPool.submitTask('encrypt', {
+          plaintext: message,
+          keyData: keyData,
+        });
+
+        messageToSend = CryptoUtils.formatEncryptedMessage(encrypted);
+        console.log('✅ Message encrypted');
+      } catch (error) {
+        console.error('❌ Failed to encrypt message:', error);
+        alert('Failed to encrypt message. Please check your connection.');
+        return false;
+      }
+    }
+
+    const payload = { message: messageToSend };
 
     // Include replyTo information if provided
     if (replyTo) {
@@ -874,18 +1398,6 @@ class UserMessageAPI {
     isAtBottom = true;
 
     return true;
-  }
-
-  /**
-   * Send a file message
-   * @param {string} fileUrl - The uploaded file URL
-   * @param {string} fileName - The file name
-   * @param {string} fileType - The file MIME type
-   * @param {object} replyTo - Optional reply information {messageId, username, preview}
-   */
-  sendFileMessage(fileUrl, fileName, fileType, replyTo = null) {
-    const fileMessage = `FILE:${fileUrl}|${fileName}|${fileType}`;
-    return this.sendMessage(fileMessage, replyTo);
   }
 }
 
@@ -1460,6 +1972,51 @@ function startRoomChooser() {
   // Display room history
   displayRoomHistory();
 
+  // E2EE: Handle privacy level selection
+  const privacyRadios = document.querySelectorAll(
+    'input[name="privacy-level"]',
+  );
+  const customPasswordContainer = document.querySelector(
+    '#custom-password-container',
+  );
+  const encryptionPasswordInput = document.querySelector(
+    '#encryption-password',
+  );
+  const copyKeyBtn = document.querySelector('#copy-key-btn');
+
+  // Copy encryption key to clipboard
+  if (copyKeyBtn) {
+    copyKeyBtn.addEventListener('click', async () => {
+      const key = encryptionPasswordInput.value;
+      if (key) {
+        try {
+          await navigator.clipboard.writeText(key);
+          const originalText = copyKeyBtn.textContent;
+          copyKeyBtn.textContent = '✓ Copied';
+          copyKeyBtn.style.background = '#28a745';
+          setTimeout(() => {
+            copyKeyBtn.textContent = originalText;
+            copyKeyBtn.style.background = '#0066cc';
+          }, 2000);
+        } catch (err) {
+          console.error('Failed to copy key:', err);
+          alert('Failed to copy key to clipboard');
+        }
+      }
+    });
+  }
+
+  privacyRadios.forEach((radio) => {
+    radio.addEventListener('change', (event) => {
+      if (event.target.value === 'enhanced') {
+        customPasswordContainer.style.display = 'block';
+        encryptionPasswordInput.focus();
+      } else {
+        customPasswordContainer.style.display = 'none';
+      }
+    });
+  });
+
   roomForm.addEventListener('submit', (event) => {
     event.preventDefault();
     roomname = roomNameInput.value;
@@ -1474,9 +2031,26 @@ function startRoomChooser() {
     }
   });
 
-  goPublicButton.addEventListener('click', (event) => {
+  goPublicButton.addEventListener('click', async (event) => {
     roomname = roomNameInput.value;
     if (roomname.length > 0) {
+      // All rooms are now encrypted - check privacy level
+      const selectedPrivacy = document.querySelector(
+        'input[name="privacy-level"]:checked',
+      ).value;
+
+      const password =
+        selectedPrivacy === 'enhanced'
+          ? encryptionPasswordInput.value
+          : roomname; // Use room name as key for basic privacy
+
+      if (selectedPrivacy === 'enhanced' && !password) {
+        alert('Please enter a custom encryption key');
+        encryptionPasswordInput.focus();
+        return;
+      }
+
+      await setupRoomEncryption(roomname, password, selectedPrivacy);
       startChat();
     }
   });
@@ -1488,6 +2062,27 @@ function startRoomChooser() {
 
     try {
       roomname = await api.createPrivateRoom();
+
+      // All private rooms are encrypted - check privacy level
+      const selectedPrivacy = document.querySelector(
+        'input[name="privacy-level"]:checked',
+      ).value;
+
+      const password =
+        selectedPrivacy === 'enhanced'
+          ? encryptionPasswordInput.value
+          : roomname; // Use room ID as key for basic privacy
+
+      if (selectedPrivacy === 'enhanced' && !password) {
+        alert('Please enter a custom encryption key');
+        roomNameInput.disabled = false;
+        goPublicButton.disabled = false;
+        event.currentTarget.disabled = false;
+        encryptionPasswordInput.focus();
+        return;
+      }
+
+      await setupRoomEncryption(roomname, password, selectedPrivacy);
       startChat();
     } catch (err) {
       alert('something went wrong');
@@ -1599,6 +2194,19 @@ function handleDestructionUpdate(data) {
       clearInterval(destructionCountdownInterval);
       destructionCountdownInterval = null;
     }
+
+    // Clear encryption key from IndexedDB
+    if (roomname && keyManager) {
+      keyManager
+        .deleteRoomPassword(roomname)
+        .then(() => {
+          console.log('🗑️ Cleared encryption key for destroyed room');
+        })
+        .catch((err) => {
+          console.error('❌ Failed to clear encryption key:', err);
+        });
+    }
+
     addSystemMessage('* This room has been destroyed. Redirecting...');
     setTimeout(() => {
       window.location.href = '/';
@@ -2233,20 +2841,53 @@ function startChat() {
   // Upload file function
   async function uploadFile(file, fileName = null, replyTo = null) {
     try {
+      let fileToUpload = file;
+      let uploadFileName = fileName || file.name;
+
+      // Encrypt file if room is encrypted
+      if (isRoomEncrypted && currentRoomKey) {
+        try {
+          console.log('🔒 Encrypting file...');
+          addSystemMessage(`* Encrypting file: ${uploadFileName}...`);
+
+          const encryptedBlob = await FileCrypto.encryptFileV2(
+            file,
+            currentRoomKey,
+            (progress, stage) => {
+              console.log(`File encryption ${stage}: ${progress}%`);
+            },
+          );
+
+          console.log('✅ File encrypted');
+          fileToUpload = new File([encryptedBlob], uploadFileName + '.enc', {
+            type: 'application/x-encrypted-v2',
+          });
+          addSystemMessage(`* File encrypted, uploading...`);
+        } catch (error) {
+          console.error('❌ Failed to encrypt file:', error);
+          addSystemMessage('* Failed to encrypt file: ' + error.message);
+          return false;
+        }
+      }
+
       // Create form data
       const formData = new FormData();
-      formData.append('file', file, fileName || file.name);
+      formData.append('file', fileToUpload, fileToUpload.name);
 
       // Upload file
       const result = await api.uploadFile(roomname, formData);
 
       // Send file message using userApi
-      userApi.sendFileMessage(
-        result.fileUrl,
-        result.fileName,
-        result.fileType,
-        replyTo,
-      );
+      // Include marker if file was encrypted
+      let fileMessage;
+      if (isRoomEncrypted) {
+        // Mark as encrypted file with original name
+        fileMessage = `FILE:${result.fileUrl}|${uploadFileName}|${file.type}|encrypted`;
+      } else {
+        fileMessage = `FILE:${result.fileUrl}|${result.fileName}|${result.fileType}`;
+      }
+
+      await userApi.sendMessage(fileMessage, replyTo);
 
       return true;
     } catch (err) {
@@ -2301,14 +2942,27 @@ function join() {
     }
   };
 
-  ws.addEventListener('open', (event) => {
+  ws.addEventListener('open', async (event) => {
+    // Initialize encryption first
+    console.log('🔐 Initializing room encryption...');
+    const encryptionReady = await initializeRoomEncryption(roomname);
+
+    if (!encryptionReady) {
+      console.error('❌ Failed to initialize encryption, closing connection');
+      ws.close(1000, 'User cancelled encryption setup');
+      addSystemMessage(
+        '* Failed to join room: Encryption initialization failed',
+      );
+      return;
+    }
+
     currentWebSocket = ws;
 
     // Send user info message.
     ws.send(JSON.stringify({ name: username }));
   });
 
-  ws.addEventListener('message', (event) => {
+  ws.addEventListener('message', async (event) => {
     let data = JSON.parse(event.data);
 
     if (data.error) {
@@ -2370,35 +3024,51 @@ function join() {
       // Handle room destruction updates
       handleDestructionUpdate(data.destructionUpdate);
     } else if (data.joined) {
-      let userItem = document.createElement('div');
-      userItem.className = 'user-item';
-
-      let userName = document.createElement('span');
-      userName.innerText =
-        data.joined + (data.joined === username ? ' (me)' : '');
-      userItem.appendChild(userName);
-
-      // Add logout button only for current user
-      if (data.joined === username) {
-        let logoutBtn = document.createElement('button');
-        logoutBtn.className = 'logout-btn';
-        logoutBtn.innerText = '×';
-        logoutBtn.title = 'Logout and change username';
-        logoutBtn.onclick = (e) => {
-          e.stopPropagation();
-          // Clear saved username
-          localStorage.removeItem('chatUsername');
-          // Close WebSocket
-          if (currentWebSocket) {
-            currentWebSocket.close();
-          }
-          // Reload page without hash to start fresh
-          window.location.href = window.location.href.split('#')[0];
-        };
-        userItem.appendChild(logoutBtn);
+      // Check if user is already in the roster (prevent duplicates)
+      let alreadyInRoster = false;
+      for (let child of roster.childNodes) {
+        const existingUserName = child.querySelector
+          ? child.querySelector('span')?.innerText
+          : child.innerText;
+        const normalizedExisting = existingUserName?.replace(' (me)', '');
+        if (normalizedExisting === data.joined) {
+          alreadyInRoster = true;
+          break;
+        }
       }
 
-      roster.appendChild(userItem);
+      // Only add if not already in roster
+      if (!alreadyInRoster) {
+        let userItem = document.createElement('div');
+        userItem.className = 'user-item';
+
+        let userName = document.createElement('span');
+        userName.innerText =
+          data.joined + (data.joined === username ? ' (me)' : '');
+        userItem.appendChild(userName);
+
+        // Add logout button only for current user
+        if (data.joined === username) {
+          let logoutBtn = document.createElement('button');
+          logoutBtn.className = 'logout-btn';
+          logoutBtn.innerText = '×';
+          logoutBtn.title = 'Logout and change username';
+          logoutBtn.onclick = (e) => {
+            e.stopPropagation();
+            // Clear saved username
+            localStorage.removeItem('chatUsername');
+            // Close WebSocket
+            if (currentWebSocket) {
+              currentWebSocket.close();
+            }
+            // Reload page without hash to start fresh
+            window.location.href = window.location.href.split('#')[0];
+          };
+          userItem.appendChild(logoutBtn);
+        }
+
+        roster.appendChild(userItem);
+      }
     } else if (data.quit) {
       for (let child of roster.childNodes) {
         const userName = child.querySelector
@@ -2453,7 +3123,47 @@ function join() {
     } else {
       // A regular chat message.
       if (data.timestamp > lastSeenTimestamp) {
-        addChatMessage(data.name, data.message, data.timestamp, {
+        // Decrypt message if encrypted
+        let messageText = data.message;
+        if (CryptoUtils.isEncrypted(data.message)) {
+          if (isRoomEncrypted && currentRoomKey) {
+            try {
+              console.log('🔓 Decrypting message via worker pool...');
+              const encryptedData = CryptoUtils.parseEncryptedMessage(
+                data.message,
+              );
+              if (encryptedData) {
+                // Export key for worker
+                const keyData = Array.from(
+                  new Uint8Array(
+                    await crypto.subtle.exportKey('raw', currentRoomKey),
+                  ),
+                );
+
+                // Decrypt via worker pool
+                messageText = await cryptoPool.submitTask('decrypt', {
+                  encrypted: encryptedData,
+                  keyData: keyData,
+                });
+
+                console.log('✅ Message decrypted');
+              } else {
+                console.error('❌ Failed to parse encrypted message');
+                messageText = '[Encrypted message - failed to parse]';
+              }
+            } catch (error) {
+              console.error('❌ Failed to decrypt message:', error);
+              messageText = '[Encrypted message - decryption failed]';
+            }
+          } else {
+            console.warn(
+              '⚠️ Received encrypted message but no room key available',
+            );
+            messageText = '[Encrypted message]';
+          }
+        }
+
+        addChatMessage(data.name, messageText, data.timestamp, {
           messageId: data.messageId,
           replyTo: data.replyTo,
           threadInfo: data.threadInfo,
