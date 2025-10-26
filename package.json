@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "ui": "rna build src/ui/index.html --output public --clean --assetNames=\"assets/[name]-[hash]\" --chunkNames=\"[ext]/[name]-[hash]\"",
+    "ui": "rna build -C rna.config.mjs",
     "ui:prod": "npm run ui -- --minify"
   },
   "dependencies": {
