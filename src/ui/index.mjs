@@ -1,6 +1,8 @@
+import { regex } from '../common/hashtag.mjs';
+
 function createReactiveState(initialState) {
     const listeners = new Set();
-    
+
     const proxy = new Proxy(initialState, {
         get(target, property, receiver) {
             return Reflect.get(target, property, receiver)
@@ -528,8 +530,9 @@ class ChatMessage extends HTMLElement {
     renderTextMessage(text) {
         // Combined regex pattern - matches URLs and hashtags
         // URLs: http://, https://, and www. URLs
-        // Hashtags: #word (2-32 chars, alphanumeric, underscore, hyphen, Chinese)
-        const combinedRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(#[a-zA-Z0-9_\-\u4e00-\u9fa5]{2,32})/g;
+        // Hashtags: imported from common/hashtag.mjs
+        const hashtagPattern = regex.source; // Get the pattern without the /g flag
+        const combinedRegex = new RegExp(`(https?:\\/\\/[^\\s]+)|(www\\.[^\\s]+)|(${hashtagPattern})`, 'g');
 
         let lastIndex = 0;
         let match;
@@ -1272,8 +1275,7 @@ function renderHashtagList() {
 
 function updateHashtagsOnNewMessage(message) {
     // Extract hashtags from message
-    const hashtagRegex = /#([a-zA-Z0-9_\-\u4e00-\u9fa5]{2,32})/g;
-    const matches = [...message.matchAll(hashtagRegex)];
+    const matches = [...message.matchAll(regex)];
 
     if (matches.length > 0) {
         // Reload hashtags after a short delay to get updated counts

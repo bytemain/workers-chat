@@ -1,3 +1,4 @@
+import { regex } from '../common/hashtag.mjs';
 // ===============================
 // Hashtag Management Module
 // ===============================
@@ -24,7 +25,6 @@ export function extractHashtags(text) {
   // - Hyphens (-)
   // - Chinese characters (Unicode range \u4e00-\u9fa5)
   // Minimum length: 2 characters after #
-  const regex = /#([a-zA-Z0-9_\-\u4e00-\u9fa5]{2,32})/g;
   const matches = [...text.matchAll(regex)];
 
   // Extract unique hashtags, convert to lowercase for consistency
