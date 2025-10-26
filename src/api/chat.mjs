@@ -1,7 +1,7 @@
-import { HashtagManager } from "./hashtag.mjs";
-import { Hono } from 'hono'
-import { getPath, splitPath } from 'hono/utils/url'
-import { showRoutes } from 'hono/dev'
+import { HashtagManager } from './hashtag.mjs';
+import { Hono } from 'hono';
+import { getPath, splitPath } from 'hono/utils/url';
+import { showRoutes } from 'hono/dev';
 import { ZipWriter, BlobReader } from '@zip.js/zip.js';
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
@@ -11,14 +11,14 @@ async function handleErrors(request, func) {
   try {
     return await func();
   } catch (err) {
-    if (request.headers.get("Upgrade") == "websocket") {
+    if (request.headers.get('Upgrade') == 'websocket') {
       // Annoyingly, if we return an HTTP error in response to a WebSocket request, Chrome devtools
       // won't show us the response body! So... let's send a WebSocket response with an error
       // frame instead.
       let pair = new WebSocketPair();
       pair[1].accept();
       pair[1].send(JSON.stringify({ error: err.stack }));
-      pair[1].close(1011, "Uncaught exception during session setup");
+      pair[1].close(1011, 'Uncaught exception during session setup');
       return new Response(null, { status: 101, webSocket: pair[0] });
     } else {
       return new Response(err.stack, { status: 500 });
@@ -30,8 +30,8 @@ function ignite(mount) {
   const app = new Hono();
   mount(app);
   app.onError((err, c) => {
-    console.error(`${err}`)
-    return c.text('Error: ' + err.message, 500)
+    console.error(`${err}`);
+    return c.text('Error: ' + err.message, 500);
   });
   showRoutes(app, {
     verbose: true,
@@ -58,29 +58,31 @@ const app = ignite((app) => {
       // could coincidentally create the same ID at the same time, because unique IDs are,
       // well, unique!
       let id = c.env.rooms.newUniqueId();
-      return new Response(id.toString(), { headers: { "Access-Control-Allow-Origin": "*" } });
+      return new Response(id.toString(), {
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
     });
 
     api.all('/room/*', async (c, next) => {
-      const path = getPath(c.req)
-      console.log("Processing path:", path);
+      const path = getPath(c.req);
+      console.log('Processing path:', path);
       const segments = splitPath(path);
-      console.log("Segments:", segments);
+      console.log('Segments:', segments);
       const name = segments[2];
       if (!name) {
-        return new Response("You must specify a room name", { status: 401 });
+        return new Response('You must specify a room name', { status: 401 });
       }
       c.set('name', name);
       c.set('path', segments.slice(3).join('/'));
-      await next()
-    })
+      await next();
+    });
 
     api.all('/room/*', async (c) => {
       // OK, the request is for `/api/room/<name>/...{path}`. It's time to route to the Durable Object
       // for the specific room.
-      const name = c.get('name')
-      const path = c.get('path')
-      console.log("Routing to room:", name, path);
+      const name = c.get('name');
+      const path = c.get('path');
+      console.log('Routing to room:', name, path);
       const { env } = c;
       const request = c.req.raw;
       // Each Durable Object has a 256-bit unique ID. IDs can be derived from string names, or
@@ -96,7 +98,7 @@ const app = ignite((app) => {
         // derives an ID from a string.
         id = env.rooms.idFromName(name);
       } else {
-        return new Response("Name too long", { status: 404 });
+        return new Response('Name too long', { status: 404 });
       }
 
       // Get the Durable Object stub for this room! The stub is a client object that can be used
@@ -107,8 +109,8 @@ const app = ignite((app) => {
       // an object will be available somewhere to receive our requests.
       let roomObject = env.rooms.get(id);
       const newUrl = new URL(request.url);
-      newUrl.pathname = "/" + path;
-      console.log("Forwarding to DO with path:", newUrl.toString());
+      newUrl.pathname = '/' + path;
+      console.log('Forwarding to DO with path:', newUrl.toString());
 
       // Send the request to the object. The `fetch()` method of a Durable Object stub has the
       // same signature as the global `fetch()` function, but the request is always sent to the
@@ -127,27 +129,27 @@ const app = ignite((app) => {
     const path = url.pathname.slice(7).split('/'); // Remove '/files/' prefix
 
     if (!path[0]) {
-      return new Response("Not found", { status: 404 });
+      return new Response('Not found', { status: 404 });
     }
 
     // Get the file from R2
-    const fileKey = path.join("/");
+    const fileKey = path.join('/');
     const object = await env.CHAT_FILES.get(fileKey);
 
     if (object === null) {
-      return new Response("File not found", { status: 404 });
+      return new Response('File not found', { status: 404 });
     }
 
     // Return the file with appropriate headers
     const headers = new Headers();
     object.writeHttpMetadata(headers);
-    headers.set("etag", object.httpEtag);
-    headers.set("Cache-Control", "public, max-age=31536000");
+    headers.set('etag', object.httpEtag);
+    headers.set('Cache-Control', 'public, max-age=31536000');
 
     return new Response(object.body, { headers });
   });
   app.notFound((c) => {
-    console.log("Asset not found:", c.req.raw.url);
+    console.log('Asset not found:', c.req.raw.url);
     return c.env.ASSETS.fetch(c.req.raw);
   });
 });
@@ -157,8 +159,8 @@ export default {
     return await handleErrors(request, async () => {
       return app.fetch(request, env, ctx);
     });
-  }
-}
+  },
+};
 
 // =======================================================================================
 // The ChatRoom Durable Object Class
@@ -168,7 +170,7 @@ export default {
 // to all others.
 export class ChatRoom {
   constructor(state, env) {
-    this.state = state
+    this.state = state;
 
     // `state.storage` provides access to our durable storage. It provides a simple KV
     // get()/put() interface.
@@ -198,7 +200,8 @@ export class ChatRoom {
       let limiterId = this.env.limiters.idFromString(meta.limiterId);
       let limiter = new RateLimiterClient(
         () => this.env.limiters.get(limiterId),
-        err => webSocket.close(1011, err.stack));
+        (err) => webSocket.close(1011, err.stack),
+      );
 
       // We don't send any messages to the client until it has sent us the initial user info
       // message. Until then, we will queue messages in `session.blockedMessages`.
@@ -242,13 +245,15 @@ export class ChatRoom {
               this.broadcast({
                 destructionUpdate: {
                   destructionStarted: true,
-                  destructionTime: this.destructionTime
-                }
+                  destructionTime: this.destructionTime,
+                },
               });
             }
           }, 5000);
 
-          console.log(`Restored destruction timer: ${Math.floor(remaining / 1000)}s remaining`);
+          console.log(
+            `Restored destruction timer: ${Math.floor(remaining / 1000)}s remaining`,
+          );
         }
       }
     } catch (err) {
@@ -257,18 +262,18 @@ export class ChatRoom {
   }
 
   createApp() {
-    return ignite(app => {
+    return ignite((app) => {
       app.all('/websocket', async (c) => {
         const { req } = c;
         const request = req.raw;
         // The request is to `/api/room/<name>/websocket`. A client is trying to establish a new
         // WebSocket session.
-        if (request.headers.get("Upgrade") != "websocket") {
-          return new Response("expected websocket", { status: 400 });
+        if (request.headers.get('Upgrade') != 'websocket') {
+          return new Response('expected websocket', { status: 400 });
         }
 
         // Get the client's IP address for use with the rate limiter.
-        let ip = request.headers.get("CF-Connecting-IP");
+        let ip = request.headers.get('CF-Connecting-IP');
 
         // To accept the WebSocket request, we create a WebSocketPair (which is like a socketpair,
         // i.e. two WebSockets that talk to each other), we return one end of the pair in the
@@ -289,37 +294,45 @@ export class ChatRoom {
         const { req } = c;
         const request = req.raw;
         // Get the client's IP address for rate limiting
-        let ip = request.headers.get("CF-Connecting-IP");
+        let ip = request.headers.get('CF-Connecting-IP');
 
         // Check rate limit
         let limiterId = this.env.limiters.idFromName(ip);
         let limiter = this.env.limiters.get(limiterId);
-        let response = await limiter.fetch("https://dummy-url", { method: "POST" });
+        let response = await limiter.fetch('https://dummy-url', {
+          method: 'POST',
+        });
         let cooldown = +(await response.text());
         if (cooldown > 0) {
-          return new Response(JSON.stringify({ error: "Rate limited. Please try again later." }), {
-            status: 429,
-            headers: { "Content-Type": "application/json" }
-          });
+          return new Response(
+            JSON.stringify({ error: 'Rate limited. Please try again later.' }),
+            {
+              status: 429,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
         }
 
         // Parse multipart form data
         const formData = await request.formData();
-        const file = formData.get("file");
+        const file = formData.get('file');
 
         if (!file || !(file instanceof File)) {
-          return new Response(JSON.stringify({ error: "No file provided" }), {
+          return new Response(JSON.stringify({ error: 'No file provided' }), {
             status: 400,
-            headers: { "Content-Type": "application/json" }
+            headers: { 'Content-Type': 'application/json' },
           });
         }
 
         // Validate file size (10MB max)
         if (file.size > 10 * 1024 * 1024) {
-          return new Response(JSON.stringify({ error: "File too large. Maximum size is 10MB." }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" }
-          });
+          return new Response(
+            JSON.stringify({ error: 'File too large. Maximum size is 10MB.' }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
         }
 
         // Generate unique file key
@@ -330,75 +343,81 @@ export class ChatRoom {
         // Upload to R2
         await this.env.CHAT_FILES.put(fileKey, file.stream(), {
           httpMetadata: {
-            contentType: file.type || "application/octet-stream"
-          }
+            contentType: file.type || 'application/octet-stream',
+          },
         });
 
         // Return the file URL
         const fileUrl = `/files/${fileKey}`;
-        return new Response(JSON.stringify({
-          success: true,
-          fileUrl: fileUrl,
-          fileName: file.name,
-          fileType: file.type,
-          fileSize: file.size
-        }), {
-          headers: { "Content-Type": "application/json" }
-        });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            fileUrl: fileUrl,
+            fileName: file.name,
+            fileType: file.type,
+            fileSize: file.size,
+          }),
+          {
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
       });
 
       app.get('/hashtags', async (c) => {
         const tags = await this.hashtagManager.getAllHashtags(100);
         return new Response(JSON.stringify({ hashtags: tags }), {
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
         });
       });
 
       app.get('/hashtag', async (c) => {
-        const tag = c.req.query("tag");
+        const tag = c.req.query('tag');
         if (!tag) {
-          return new Response(JSON.stringify({ error: "Missing 'tag' parameter" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" }
-          });
+          return new Response(
+            JSON.stringify({ error: "Missing 'tag' parameter" }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
         }
 
         const messages = await this.hashtagManager.getMessagesForTag(tag, 100);
         return new Response(JSON.stringify({ tag, messages }), {
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
         });
       });
 
       app.get('/hashtag/search', async (c) => {
-        const query = c.req.query("q") || "";
+        const query = c.req.query('q') || '';
         const tags = await this.hashtagManager.searchHashtags(query, 20);
         return new Response(JSON.stringify({ query, results: tags }), {
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
         });
       });
 
       app.get('/info', async (c) => {
-        const info = await this.storage.get("room-info") || {};
+        const info = (await this.storage.get('room-info')) || {};
         return new Response(JSON.stringify(info), {
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
         });
       });
 
       app.put('/info', async (c) => {
         const data = c.json();
-        let info = await this.storage.get("room-info") || {};
+        let info = (await this.storage.get('room-info')) || {};
 
         // Track what changed
         let changed = false;
@@ -415,7 +434,7 @@ export class ChatRoom {
           changed = true;
         }
 
-        await this.storage.put("room-info", info);
+        await this.storage.put('room-info', info);
 
         // Broadcast the update to all connected clients
         if (changed) {
@@ -423,16 +442,16 @@ export class ChatRoom {
           this.broadcast({
             roomInfoUpdate: {
               name: info.name,
-              note: info.note
-            }
+              note: info.note,
+            },
           });
         }
 
         return new Response(JSON.stringify({ success: true }), {
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
         });
       });
 
@@ -440,7 +459,7 @@ export class ChatRoom {
         const messageId = c.req.param('messageId');
 
         if (!messageId) {
-          return new Response("Method not allowed", { status: 405 });
+          return new Response('Method not allowed', { status: 405 });
         }
         try {
           // Check if nested parameter is set
@@ -451,14 +470,14 @@ export class ChatRoom {
             const allReplies = await this.getAllThreadReplies(messageId);
             return new Response(JSON.stringify({ replies: allReplies }), {
               headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-              }
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+              },
             });
           } else {
             // Return only direct replies (original behavior)
             const threadKey = `thread:${messageId}`;
-            const threadReplies = await this.storage.get(threadKey) || [];
+            const threadReplies = (await this.storage.get(threadKey)) || [];
 
             // Load the actual reply messages
             const replies = [];
@@ -466,7 +485,8 @@ export class ChatRoom {
               try {
                 const msgData = await this.storage.get(reply.key);
                 if (msgData) {
-                  const msg = typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
+                  const msg =
+                    typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
                   replies.push(msg);
                 }
               } catch (e) {
@@ -476,15 +496,15 @@ export class ChatRoom {
 
             return new Response(JSON.stringify({ replies }), {
               headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-              }
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+              },
             });
           }
         } catch (err) {
           return new Response(JSON.stringify({ error: err.message }), {
             status: 500,
-            headers: { "Content-Type": "application/json" }
+            headers: { 'Content-Type': 'application/json' },
           });
         }
       });
@@ -493,14 +513,15 @@ export class ChatRoom {
       app.post('/destruction/start', async (c) => {
         try {
           const data = await c.req.json();
-          const minutes = data.minutes !== undefined ? parseInt(data.minutes) : 30;
+          const minutes =
+            data.minutes !== undefined ? parseInt(data.minutes) : 30;
           console.log(`Starting destruction timer for ${minutes} minutes`);
           if (minutes === 0) {
             // Immediate destruction - broadcast first, then execute
             this.broadcast({
               destructionUpdate: {
-                roomDestroyed: true
-              }
+                roomDestroyed: true,
+              },
             });
 
             // Give clients a moment to receive the message before destroying
@@ -508,16 +529,19 @@ export class ChatRoom {
               await this.executeDestruction();
             }, 1000);
 
-            return new Response(JSON.stringify({
-              success: true,
-              immediate: true
-            }), {
-              headers: { "Content-Type": "application/json" }
-            });
+            return new Response(
+              JSON.stringify({
+                success: true,
+                immediate: true,
+              }),
+              {
+                headers: { 'Content-Type': 'application/json' },
+              },
+            );
           }
 
           // Set destruction time
-          this.destructionTime = Date.now() + (minutes * 60 * 1000);
+          this.destructionTime = Date.now() + minutes * 60 * 1000;
           await this.storage.put('destruction-time', this.destructionTime);
 
           // Clear any existing timer
@@ -526,9 +550,12 @@ export class ChatRoom {
           }
 
           // Set new timer
-          this.destructionTimer = setTimeout(() => {
-            this.executeDestruction();
-          }, minutes * 60 * 1000);
+          this.destructionTimer = setTimeout(
+            () => {
+              this.executeDestruction();
+            },
+            minutes * 60 * 1000,
+          );
 
           // Clear any existing broadcast interval
           if (this.destructionBroadcastInterval) {
@@ -541,8 +568,8 @@ export class ChatRoom {
               this.broadcast({
                 destructionUpdate: {
                   destructionStarted: true,
-                  destructionTime: this.destructionTime
-                }
+                  destructionTime: this.destructionTime,
+                },
               });
             }
           }, 5000);
@@ -551,20 +578,23 @@ export class ChatRoom {
           this.broadcast({
             destructionUpdate: {
               destructionStarted: true,
-              destructionTime: this.destructionTime
-            }
+              destructionTime: this.destructionTime,
+            },
           });
 
-          return new Response(JSON.stringify({
-            success: true,
-            destructionTime: this.destructionTime
-          }), {
-            headers: { "Content-Type": "application/json" }
-          });
+          return new Response(
+            JSON.stringify({
+              success: true,
+              destructionTime: this.destructionTime,
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
         } catch (err) {
           return new Response(JSON.stringify({ error: err.message }), {
             status: 500,
-            headers: { "Content-Type": "application/json" }
+            headers: { 'Content-Type': 'application/json' },
           });
         }
       });
@@ -591,17 +621,17 @@ export class ChatRoom {
           // Broadcast to all clients
           this.broadcast({
             destructionUpdate: {
-              destructionCancelled: true
-            }
+              destructionCancelled: true,
+            },
           });
 
           return new Response(JSON.stringify({ success: true }), {
-            headers: { "Content-Type": "application/json" }
+            headers: { 'Content-Type': 'application/json' },
           });
         } catch (err) {
           return new Response(JSON.stringify({ error: err.message }), {
             status: 500,
-            headers: { "Content-Type": "application/json" }
+            headers: { 'Content-Type': 'application/json' },
           });
         }
       });
@@ -610,11 +640,11 @@ export class ChatRoom {
       app.get('/export', async (c) => {
         try {
           const exportData = {
-            roomInfo: await this.storage.get("room-info") || {},
+            roomInfo: (await this.storage.get('room-info')) || {},
             messages: [],
             files: [], // Track files with metadata
             hashtags: await this.hashtagManager.getAllHashtags(1000),
-            exportedAt: new Date().toISOString()
+            exportedAt: new Date().toISOString(),
           };
 
           // Collect files to export
@@ -624,7 +654,11 @@ export class ChatRoom {
           const messages = await this.storage.list();
           for (const [key, value] of messages) {
             // Skip internal keys
-            if (key.startsWith('thread:') || key === 'room-info' || key === 'destruction-time') {
+            if (
+              key.startsWith('thread:') ||
+              key === 'room-info' ||
+              key === 'destruction-time'
+            ) {
               continue;
             }
 
@@ -646,7 +680,7 @@ export class ChatRoom {
                     filename: fileName,
                     fileType: fileType,
                     messageId: msg.messageId,
-                    timestamp: msg.timestamp
+                    timestamp: msg.timestamp,
                   });
 
                   // Add file info to export data
@@ -655,7 +689,7 @@ export class ChatRoom {
                     fileType: fileType,
                     r2key: fileKey,
                     uploadedBy: msg.name,
-                    timestamp: msg.timestamp
+                    timestamp: msg.timestamp,
                   });
                 }
               }
@@ -676,7 +710,9 @@ export class ChatRoom {
           let promises = [];
 
           // Add the JSON metadata file
-          const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+          const jsonBlob = new Blob([JSON.stringify(exportData, null, 2)], {
+            type: 'application/json',
+          });
           promises.push(archive.add('export.json', new BlobReader(jsonBlob)));
 
           // Add all files from R2
@@ -705,25 +741,27 @@ export class ChatRoom {
 
           // Generate archive filename
           const roomNamePart = exportData.roomInfo.name || 'room';
-          const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+          const timestamp = new Date()
+            .toISOString()
+            .slice(0, 19)
+            .replace(/[:.]/g, '-');
           const archiveFilename = `chat-export-${roomNamePart}-${timestamp}.zip`;
 
           return new Response(readable, {
             headers: {
               'Content-Type': 'application/zip',
               'Content-Disposition': `attachment; filename="${archiveFilename}"`,
-              'Access-Control-Allow-Origin': '*'
-            }
+              'Access-Control-Allow-Origin': '*',
+            },
           });
         } catch (err) {
           console.error('Export error:', err);
           return new Response(JSON.stringify({ error: err.message }), {
             status: 500,
-            headers: { "Content-Type": "application/json" }
+            headers: { 'Content-Type': 'application/json' },
           });
         }
       });
-
     });
   }
 
@@ -734,7 +772,7 @@ export class ChatRoom {
   async fetch(request) {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
-      console.log("ChatRoom handling request for:", url.pathname);
+      console.log('ChatRoom handling request for:', url.pathname);
       return this.app.fetch(request);
     });
   }
@@ -749,18 +787,24 @@ export class ChatRoom {
     let limiterId = this.env.limiters.idFromName(ip);
     let limiter = new RateLimiterClient(
       () => this.env.limiters.get(limiterId),
-      err => webSocket.close(1011, err.stack));
+      (err) => webSocket.close(1011, err.stack),
+    );
 
     // Create our session and add it to the sessions map.
     let session = { limiterId, limiter, blockedMessages: [] };
     // attach limiterId to the webSocket so it survives hibernation
-    webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), limiterId: limiterId.toString() });
+    webSocket.serializeAttachment({
+      ...webSocket.deserializeAttachment(),
+      limiterId: limiterId.toString(),
+    });
     this.sessions.set(webSocket, session);
 
     // Queue "join" messages for all online users, to populate the client's roster.
     for (let otherSession of this.sessions.values()) {
       if (otherSession.name) {
-        session.blockedMessages.push(JSON.stringify({ joined: otherSession.name }));
+        session.blockedMessages.push(
+          JSON.stringify({ joined: otherSession.name }),
+        );
       }
     }
 
@@ -769,7 +813,7 @@ export class ChatRoom {
     let storage = await this.storage.list({ reverse: true, limit: 100 });
     let backlog = [...storage.values()];
     backlog.reverse();
-    backlog.forEach(value => {
+    backlog.forEach((value) => {
       // Ensure old messages have messageId for compatibility
       try {
         const msg = typeof value === 'string' ? JSON.parse(value) : value;
@@ -794,15 +838,17 @@ export class ChatRoom {
         // close(), which might throw, in which case we'll try to send an error, which will also
         // throw, and whatever, at least we won't accept the message. (This probably can't
         // actually happen. This is defensive coding.)
-        webSocket.close(1011, "WebSocket broken.");
+        webSocket.close(1011, 'WebSocket broken.');
         return;
       }
 
       // Check if the user is over their rate limit and reject the message if so.
       if (!session.limiter.checkLimit()) {
-        webSocket.send(JSON.stringify({
-          error: "Your IP is being rate-limited, please try again later."
-        }));
+        webSocket.send(
+          JSON.stringify({
+            error: 'Your IP is being rate-limited, please try again later.',
+          }),
+        );
         return;
       }
 
@@ -812,13 +858,13 @@ export class ChatRoom {
       if (!session.name) {
         // The first message the client sends is the user info message with their name. Save it
         // into their session object.
-        const requestedName = "" + (data.name || "anonymous");
+        const requestedName = '' + (data.name || 'anonymous');
 
         // Don't let people use ridiculously long names. (This is also enforced on the client,
         // so if they get here they are not using the intended client.)
         if (requestedName.length > 32) {
-          webSocket.send(JSON.stringify({ error: "Name too long." }));
-          webSocket.close(1009, "Name too long.");
+          webSocket.send(JSON.stringify({ error: 'Name too long.' }));
+          webSocket.close(1009, 'Name too long.');
           return;
         }
 
@@ -835,24 +881,27 @@ export class ChatRoom {
         if (existingSession) {
           try {
             // Close the old connection
-            existingSession.ws.close(1000, "Reconnected from another session");
+            existingSession.ws.close(1000, 'Reconnected from another session');
             this.sessions.delete(existingSession.ws);
             // Broadcast that the user left
             this.broadcast({ quit: requestedName });
           } catch (err) {
             // If closing fails, the connection is probably already dead, which is fine
-            console.log("Failed to close existing session:", err);
+            console.log('Failed to close existing session:', err);
           }
         }
 
         session.name = requestedName;
         // attach name to the webSocket so it survives hibernation
-        webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), name: session.name });
+        webSocket.serializeAttachment({
+          ...webSocket.deserializeAttachment(),
+          name: session.name,
+        });
 
         // Deliver all the messages we queued up since the user connected.
-        session.blockedMessages.forEach(queued => {
+        session.blockedMessages.forEach((queued) => {
           // Apply JSON if we weren't given a string to start with.
-          if (typeof queued !== "string") {
+          if (typeof queued !== 'string') {
             queued = JSON.stringify(queued);
           }
 
@@ -868,12 +917,14 @@ export class ChatRoom {
 
         // If there's an ongoing destruction countdown, inform the new client
         if (this.destructionTime) {
-          webSocket.send(JSON.stringify({
-            destructionUpdate: {
-              destructionStarted: true,
-              destructionTime: this.destructionTime
-            }
-          }));
+          webSocket.send(
+            JSON.stringify({
+              destructionUpdate: {
+                destructionStarted: true,
+                destructionTime: this.destructionTime,
+              },
+            }),
+          );
         }
 
         return;
@@ -882,20 +933,20 @@ export class ChatRoom {
       // Construct sanitized message for storage and broadcast.
       data = {
         name: session.name,
-        message: "" + data.message,
-        messageId: data.messageId || crypto.randomUUID(),  // Generate UUID if not provided
-        replyTo: data.replyTo || null  // Include reply information if present
+        message: '' + data.message,
+        messageId: data.messageId || crypto.randomUUID(), // Generate UUID if not provided
+        replyTo: data.replyTo || null, // Include reply information if present
       };
 
       // Check if this is a file message
-      if (data.message.startsWith("FILE:")) {
+      if (data.message.startsWith('FILE:')) {
         // File messages have format: "FILE:{fileUrl}|{fileName}|{fileType}"
         // No additional validation needed as the file was already uploaded
       } else {
         // Block people from sending overly long messages. This is also enforced on the client,
         // so to trigger this the user must be bypassing the client code.
         if (data.message.length > 6000) {
-          webSocket.send(JSON.stringify({ error: "Message too long." }));
+          webSocket.send(JSON.stringify({ error: 'Message too long.' }));
           return;
         }
       }
@@ -940,11 +991,11 @@ export class ChatRoom {
   }
 
   async webSocketClose(webSocket, code, reason, wasClean) {
-    this.closeOrErrorHandler(webSocket)
+    this.closeOrErrorHandler(webSocket);
   }
 
   async webSocketError(webSocket, error) {
-    this.closeOrErrorHandler(webSocket)
+    this.closeOrErrorHandler(webSocket);
   }
 
   // Update thread index when a reply is posted
@@ -952,12 +1003,12 @@ export class ChatRoom {
     try {
       // Get or create thread index
       const threadKey = `thread:${parentMessageId}`;
-      let threadReplies = await this.storage.get(threadKey) || [];
+      let threadReplies = (await this.storage.get(threadKey)) || [];
 
       // Add this reply to the thread
       threadReplies.push({
         key: replyKey,
-        timestamp: replyData.timestamp
+        timestamp: replyData.timestamp,
       });
 
       // Save updated thread index
@@ -975,7 +1026,7 @@ export class ChatRoom {
           if (msg.messageId === parentMessageId) {
             msg.threadInfo = {
               replyCount: threadReplies.length,
-              lastReplyTime: replyData.timestamp
+              lastReplyTime: replyData.timestamp,
             };
             await this.storage.put(key, JSON.stringify(msg));
 
@@ -983,8 +1034,8 @@ export class ChatRoom {
             this.broadcast({
               threadUpdate: {
                 messageId: parentMessageId,
-                threadInfo: msg.threadInfo
-              }
+                threadInfo: msg.threadInfo,
+              },
             });
             break;
           }
@@ -1012,14 +1063,15 @@ export class ChatRoom {
 
       // Get direct replies to this message
       const threadKey = `thread:${messageId}`;
-      const threadReplies = await this.storage.get(threadKey) || [];
+      const threadReplies = (await this.storage.get(threadKey)) || [];
 
       // Load each reply message
       for (const replyRef of threadReplies) {
         try {
           const msgData = await this.storage.get(replyRef.key);
           if (msgData) {
-            const msg = typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
+            const msg =
+              typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
             allReplies.push(msg);
 
             // Recursively get replies to this reply
@@ -1042,7 +1094,7 @@ export class ChatRoom {
   // broadcast() broadcasts a message to all clients.
   broadcast(message) {
     // Apply JSON if we weren't given a string to start with.
-    if (typeof message !== "string") {
+    if (typeof message !== 'string') {
       message = JSON.stringify(message);
     }
 
@@ -1066,7 +1118,7 @@ export class ChatRoom {
       }
     });
 
-    quitters.forEach(quitter => {
+    quitters.forEach((quitter) => {
       if (quitter.name) {
         this.broadcast({ quit: quitter.name });
       }
@@ -1081,14 +1133,14 @@ export class ChatRoom {
       // Notify all clients that the room is being destroyed
       this.broadcast({
         destructionUpdate: {
-          roomDestroyed: true
-        }
+          roomDestroyed: true,
+        },
       });
 
       // Close all WebSocket connections
       for (const [webSocket, session] of this.sessions.entries()) {
         try {
-          webSocket.close(1000, "Room has been destroyed");
+          webSocket.close(1000, 'Room has been destroyed');
         } catch (err) {
           console.error('Failed to close WebSocket:', err);
         }
@@ -1102,7 +1154,11 @@ export class ChatRoom {
       for (const [key, value] of messages) {
         try {
           // Skip internal keys
-          if (key.startsWith('thread:') || key === 'room-info' || key === 'destruction-time') {
+          if (
+            key.startsWith('thread:') ||
+            key === 'room-info' ||
+            key === 'destruction-time'
+          ) {
             continue;
           }
 
@@ -1178,7 +1234,7 @@ export class RateLimiter {
 
       this.nextAllowedTime = Math.max(now, this.nextAllowedTime);
 
-      if (request.method == "POST") {
+      if (request.method == 'POST') {
         // POST request means the user performed an action.
         // We allow one action per 0.1 seconds (10 messages per second)
         this.nextAllowedTime += 0.1;
@@ -1190,7 +1246,7 @@ export class RateLimiter {
       // in a quick burst before they start being limited.
       let cooldown = Math.max(0, this.nextAllowedTime - now - 300);
       return new Response(cooldown);
-    })
+    });
   }
 }
 
@@ -1233,7 +1289,9 @@ class RateLimiterClient {
         // Currently, fetch() needs a valid URL even though it's not actually going to the
         // internet. We may loosen this in the future to accept an arbitrary string. But for now,
         // we have to provide a dummy URL that will be ignored at the other end anyway.
-        response = await this.limiter.fetch("https://dummy-url", { method: "POST" });
+        response = await this.limiter.fetch('https://dummy-url', {
+          method: 'POST',
+        });
       } catch (err) {
         // `fetch()` threw an exception. This is probably because the limiter has been
         // disconnected. Stubs implement E-order semantics, meaning that calls to the same stub
@@ -1245,12 +1303,14 @@ class RateLimiterClient {
         // Anyway, get a new limiter and try again. If it fails again, something else is probably
         // wrong.
         this.limiter = this.getLimiterStub();
-        response = await this.limiter.fetch("https://dummy-url", { method: "POST" });
+        response = await this.limiter.fetch('https://dummy-url', {
+          method: 'POST',
+        });
       }
 
       // The response indicates how long we want to pause before accepting more requests.
       let cooldown = +(await response.text());
-      await new Promise(resolve => setTimeout(resolve, cooldown * 1000));
+      await new Promise((resolve) => setTimeout(resolve, cooldown * 1000));
 
       // Done waiting.
       this.inCooldown = false;

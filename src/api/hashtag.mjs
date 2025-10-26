@@ -28,7 +28,7 @@ export function extractHashtags(text) {
   const matches = [...text.matchAll(regex)];
 
   // Extract unique hashtags, convert to lowercase for consistency
-  const tags = matches.map(m => m[1].toLowerCase());
+  const tags = matches.map((m) => m[1].toLowerCase());
   return [...new Set(tags)]; // Remove duplicates
 }
 
@@ -182,7 +182,7 @@ export class HashtagManager {
       return {
         tag,
         count: meta.count || 0,
-        lastUsed: meta.lastUsed || tagList[tag]
+        lastUsed: meta.lastUsed || tagList[tag],
       };
     });
 
@@ -220,7 +220,8 @@ export class HashtagManager {
     for (const key of messageKeys) {
       const message = await this.storage.get(key);
       if (message) {
-        const data = typeof message === 'string' ? JSON.parse(message) : message;
+        const data =
+          typeof message === 'string' ? JSON.parse(message) : message;
         messages.push(data);
       }
     }
@@ -242,8 +243,8 @@ export class HashtagManager {
     }
 
     const normalizedPrefix = prefix.toLowerCase();
-    const matches = allTags.filter(item =>
-      item.tag.toLowerCase().startsWith(normalizedPrefix)
+    const matches = allTags.filter((item) =>
+      item.tag.toLowerCase().startsWith(normalizedPrefix),
     );
 
     return matches.slice(0, limit);
@@ -270,7 +271,7 @@ export class HashtagManager {
       tag,
       count: meta.count || 0,
       firstUsed: meta.firstUsed || null,
-      lastUsed: meta.lastUsed || null
+      lastUsed: meta.lastUsed || null,
     };
   }
 }

@@ -24,7 +24,7 @@ self.onmessage = async (event) => {
         result = await deriveKeyFromPassword(
           data.password,
           data.roomId,
-          data.iterations || 100000
+          data.iterations || 100000,
         );
         break;
 
@@ -32,7 +32,7 @@ self.onmessage = async (event) => {
         result = await encryptFileChunk(
           data.chunk,
           data.keyData,
-          data.chunkIndex
+          data.chunkIndex,
         );
         break;
 
@@ -40,7 +40,7 @@ self.onmessage = async (event) => {
         result = await decryptFileChunk(
           data.encryptedChunk,
           data.keyData,
-          data.chunkIndex
+          data.chunkIndex,
         );
         break;
 
@@ -60,15 +60,14 @@ self.onmessage = async (event) => {
     self.postMessage({
       taskId,
       success: true,
-      result
+      result,
     });
-
   } catch (error) {
     // 返回错误
     self.postMessage({
       taskId,
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -87,7 +86,7 @@ async function deriveKeyFromPassword(password, roomId, iterations) {
     passwordBuffer,
     'PBKDF2',
     false,
-    ['deriveBits', 'deriveKey']
+    ['deriveBits', 'deriveKey'],
   );
 
   const salt = encoder.encode(roomId);
@@ -97,12 +96,12 @@ async function deriveKeyFromPassword(password, roomId, iterations) {
       name: 'PBKDF2',
       salt: salt,
       iterations: iterations,
-      hash: 'SHA-256'
+      hash: 'SHA-256',
     },
     baseKey,
     { name: 'AES-GCM', length: 256 },
     true,
-    ['encrypt', 'decrypt']
+    ['encrypt', 'decrypt'],
   );
 
   // 导出为可传递的格式
@@ -121,13 +120,13 @@ async function encryptMessage(plaintext, keyData) {
   const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
-    encodedText
+    encodedText,
   );
 
   return {
     iv: Array.from(iv),
     ciphertext: Array.from(new Uint8Array(ciphertext)),
-    version: '1.0'
+    version: '1.0',
   };
 }
 
@@ -142,7 +141,7 @@ async function decryptMessage(encryptedData, keyData) {
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv },
     key,
-    ciphertext
+    ciphertext,
   );
 
   return new TextDecoder().decode(decrypted);
@@ -182,13 +181,13 @@ async function encryptFileChunk(chunkData, keyData, chunkIndex) {
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: ivWithIndex },
     key,
-    new Uint8Array(chunkData)
+    new Uint8Array(chunkData),
   );
 
   return {
     iv: Array.from(ivWithIndex),
     ciphertext: Array.from(new Uint8Array(encrypted)),
-    chunkIndex
+    chunkIndex,
   };
 }
 
@@ -203,7 +202,7 @@ async function decryptFileChunk(encryptedChunk, keyData, chunkIndex) {
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv },
     key,
-    ciphertext
+    ciphertext,
   );
 
   return Array.from(new Uint8Array(decrypted));
@@ -219,7 +218,7 @@ async function importKey(keyData) {
     keyArray,
     { name: 'AES-GCM' },
     true,
-    ['encrypt', 'decrypt']
+    ['encrypt', 'decrypt'],
   );
 }
 
@@ -228,11 +227,12 @@ async function importKey(keyData) {
  */
 async function hashData(data) {
   const encoder = new TextEncoder();
-  const dataBuffer = typeof data === 'string' ? encoder.encode(data) : new Uint8Array(data);
+  const dataBuffer =
+    typeof data === 'string' ? encoder.encode(data) : new Uint8Array(data);
 
   const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 console.log('✅ Crypto Worker initialized');

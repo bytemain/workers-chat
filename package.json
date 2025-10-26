@@ -7,13 +7,15 @@
   "scripts": {
     "dev": "wrangler dev",
     "ui": "rna build -C rna.config.mjs",
-    "ui:prod": "npm run ui -- --minify"
+    "ui:prod": "npm run ui -- --minify",
+    "format": "prettier --write ./src"
   },
   "dependencies": {
     "@zip.js/zip.js": "^2.7.52",
     "hono": "^4.10.2"
   },
   "devDependencies": {
-    "@chialab/rna": "^0.19.0"
+    "@chialab/rna": "^0.19.0",
+    "prettier": "^3.6.2"
   }
 }
