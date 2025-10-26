@@ -70,7 +70,7 @@ const app = ignite((app) => {
       // world -- i.e., there is no way that someone in the UK and someone in New Zealand
       // could coincidentally create the same ID at the same time, because unique IDs are,
       // well, unique!
-      let id = env.rooms.newUniqueId();
+      let id = c.env.rooms.newUniqueId();
       return new Response(id.toString(), { headers: { "Access-Control-Allow-Origin": "*" } });
     });
 
