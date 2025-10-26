@@ -3755,7 +3755,7 @@ export class CryptoWorkerPool {
     
     // 创建 Worker 池
     for (let i = 0; i < workerCount; i++) {
-      const worker = new Worker('crypto-worker.js');
+      const worker = new Worker('crypto.worker.js');
       this.workers.push(worker);
       this.activeTasksPerWorker.set(worker, 0);
       
