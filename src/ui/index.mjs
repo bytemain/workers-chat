@@ -455,6 +455,36 @@ class ChatMessage extends HTMLElement {
     // Clear existing content
     this.innerHTML = '';
 
+    // Add time if present
+    if (timestamp) {
+      const date = new Date(Number(timestamp));
+      const hh = String(date.getHours()).padStart(2, '0');
+      const mm = String(date.getMinutes()).padStart(2, '0');
+      const ss = String(date.getSeconds()).padStart(2, '0');
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'msg-time';
+      timeSpan.textContent = `[${hh}:${mm}:${ss}] `;
+      timeSpan.style.color = '#888';
+      timeSpan.style.fontSize = '0.95em';
+      this.appendChild(timeSpan);
+    }
+
+    // Add username if present
+    if (username) {
+      const usernameSpan = document.createElement('span');
+      usernameSpan.className = 'username';
+      usernameSpan.textContent = username + ': ';
+      this.appendChild(usernameSpan);
+    }
+
+    // Handle file messages (check inside the element)
+    if (message.startsWith('FILE:')) {
+      this.renderFileMessage(message);
+    } else {
+      // Handle regular text messages with link detection
+      this.renderTextMessage(message);
+    }
+
     // Add reply reference if this is a reply and not in thread view
     if (replyTo && !isInThread) {
       try {
@@ -486,36 +516,8 @@ class ChatMessage extends HTMLElement {
       } catch (e) {
         console.error('Failed to parse replyTo:', e);
       }
-    }
-
-    // Add time if present
-    if (timestamp) {
-      const date = new Date(Number(timestamp));
-      const hh = String(date.getHours()).padStart(2, '0');
-      const mm = String(date.getMinutes()).padStart(2, '0');
-      const ss = String(date.getSeconds()).padStart(2, '0');
-      const timeSpan = document.createElement('span');
-      timeSpan.className = 'msg-time';
-      timeSpan.textContent = `[${hh}:${mm}:${ss}] `;
-      timeSpan.style.color = '#888';
-      timeSpan.style.fontSize = '0.95em';
-      this.appendChild(timeSpan);
-    }
-
-    // Add username if present
-    if (username) {
-      const usernameSpan = document.createElement('span');
-      usernameSpan.className = 'username';
-      usernameSpan.textContent = username + ': ';
-      this.appendChild(usernameSpan);
-    }
-
-    // Handle file messages (check inside the element)
-    if (message.startsWith('FILE:')) {
-      this.renderFileMessage(message);
     } else {
-      // Handle regular text messages with link detection
-      this.renderTextMessage(message);
+      this.appendChild(document.createElement('br'));
     }
 
     // Add thread indicator if there are replies
@@ -529,7 +531,6 @@ class ChatMessage extends HTMLElement {
           window.openThread(messageId);
         }
       };
-      this.appendChild(document.createElement('br'));
       this.appendChild(threadIndicator);
     }
   }
