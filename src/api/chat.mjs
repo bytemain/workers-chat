@@ -152,9 +152,29 @@ const app = ignite((app) => {
 
     return new Response(object.body, { headers });
   });
-  app.notFound((c) => {
+  app.notFound(async (c) => {
     console.log('Asset not found:', c.req.raw.url);
-    return c.env.ASSETS.fetch(c.req.raw);
+    const response = await c.env.ASSETS.fetch(c.req.raw);
+    
+    // Clone the response so we can modify headers
+    const newResponse = new Response(response.body, response);
+    
+    // Get the Content-Type header
+    const contentType = newResponse.headers.get('Content-Type');
+    if (contentType) {
+      // Replace charset with UTF-8 or add it if not present
+      let newContentType = contentType;
+      if (contentType.includes('charset=')) {
+        // Replace existing charset with UTF-8
+        newContentType = contentType.replace(/charset=[^;,\s]*/i, 'charset=UTF-8');
+      } else if (contentType.includes('text/') || contentType.includes('application/json') || contentType.includes('application/javascript')) {
+        // Add charset=UTF-8 for text-based content types
+        newContentType = contentType + ';charset=UTF-8';
+      }
+      newResponse.headers.set('Content-Type', newContentType);
+    }
+    
+    return newResponse;
   });
 });
 
