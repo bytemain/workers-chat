@@ -943,7 +943,7 @@ function generateLegacyMessageId(timestamp, username) {
  * @param {Object} roomData - Room information (only uses name)
  * @returns {Promise<string|null>} Entered key or null if cancelled
  */
-function showPasswordDialog(roomData) {
+function showPasswordDialog(roomData, currentPassword = null) {
   // Prevent multiple dialogs from opening
   if (encryptionState.dialogOpen) {
     console.log('⚠️ Password dialog already open, ignoring request');
@@ -968,6 +968,29 @@ function showPasswordDialog(roomData) {
     `;
 
     const roomName = roomData.name || 'this room';
+    
+    // Show current key section if exists
+    const currentKeySection = currentPassword ? `
+      <div style="
+        margin: 0 0 16px 0;
+        padding: 12px;
+        background: #f5f5f5;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+      ">
+        <p style="margin: 0 0 4px 0; font-size: 12px; color: #666; font-weight: 600;">Current Key:</p>
+        <div style="
+          font-family: monospace;
+          font-size: 13px;
+          color: #333;
+          word-break: break-all;
+          background: white;
+          padding: 8px;
+          border-radius: 3px;
+          border: 1px solid #e0e0e0;
+        ">${currentPassword}</div>
+      </div>
+    ` : '';
 
     dialog.innerHTML = `
       <div style="
@@ -979,7 +1002,7 @@ function showPasswordDialog(roomData) {
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       ">
         <h3 style="margin: 0 0 16px 0;">🔐 Encryption Key</h3>
-        <p style="margin: 0 0 8px 0;"><strong>Room:</strong> ${roomName}</p>
+        ${currentKeySection}
         <p style="margin: 0 0 16px 0; color: #666;">
           Enter your encryption key. If you don't have one yet, create one now. 
           Share the same key with others to communicate.<br>
@@ -1977,45 +2000,65 @@ function displayRoomHistory() {
   });
 }
 
-export function startNameChooser() {
-  // Bind event listeners first
-  nameForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    username = nameInput.value.trim();
-    if (username.length > 0) {
-      // Save username to localStorage
-      localStorage.setItem('chatUsername', username);
-      startRoomChooser();
-    }
-  });
+// Generate a random username
+function generateRandomUsername() {
+  const adjectives = [
+    'Happy', 'Clever', 'Swift', 'Brave', 'Calm', 'Eager', 'Gentle', 'Jolly', 
+    'Kind', 'Lively', 'Noble', 'Proud', 'Quick', 'Wise', 'Bold', 'Bright',
+    'Cool', 'Daring', 'Epic', 'Fancy', 'Fuzzy', 'Great', 'Hero', 'Mega',
+    'Mighty', 'Mystic', 'Sharp', 'Silent', 'Silver', 'Smart', 'Smooth', 'Solid',
+    'Speedy', 'Stellar', 'Strong', 'Super', 'Sunny', 'Tidy', 'Vivid', 'Wild',
+    'Zen', 'Agile', 'Cosmic', 'Cyber', 'Divine', 'Electric', 'Fiery', 'Frosty',
+    'Glowing', 'Golden', 'Humble', 'Nimble', 'Radiant', 'Royal', 'Savage', 'Serene',
+    'Shiny', 'Spicy', 'Stormy', 'Thunder', 'Turbo', 'Ultra', 'Velvet', 'Wicked'
+  ];
+  
+  const nouns = [
+    'Panda', 'Tiger', 'Eagle', 'Dolphin', 'Fox', 'Wolf', 'Bear', 'Hawk',
+    'Lion', 'Owl', 'Deer', 'Falcon', 'Raven', 'Swan', 'Phoenix', 'Dragon',
+    'Leopard', 'Panther', 'Cobra', 'Shark', 'Whale', 'Otter', 'Penguin', 'Koala',
+    'Jaguar', 'Lynx', 'Rhino', 'Bison', 'Moose', 'Badger', 'Weasel', 'Ferret',
+    'Gecko', 'Chameleon', 'Scorpion', 'Mantis', 'Beetle', 'Spider', 'Hornet', 'Wasp',
+    'Sparrow', 'Robin', 'Blue Jay', 'Cardinal', 'Finch', 'Starling', 'Crow', 'Magpie',
+    'Stag', 'Buck', 'Ram', 'Bull', 'Stallion', 'Mare', 'Colt', 'Fawn',
+    'Viper', 'Python', 'Anaconda', 'Mamba', 'Boa', 'Adder', 'Krait', 'Taipan'
+  ];
+  
+  const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  const number = Math.floor(Math.random() * 100);
+  
+  return `${adjective}${noun}${number}`;
+}
 
+export function startNameChooser() {
+  // Check if username is saved in localStorage
+  let savedUsername = localStorage.getItem('chatUsername');
+  
+  // If no saved username, generate a random one (but don't save yet)
+  if (!savedUsername) {
+    savedUsername = generateRandomUsername();
+    // Don't save here - wait until user enters a room
+  }
+  
+  // Set username and display it
+  username = savedUsername;
+  nameInput.value = savedUsername;
+  
+  // Bind username input event listener for editing in room form
   nameInput.addEventListener('input', (event) => {
     if (event.currentTarget.value.length > 32) {
       event.currentTarget.value = event.currentTarget.value.slice(0, 32);
     }
+    // Update username in real-time (but don't save yet)
+    username = event.currentTarget.value.trim();
   });
 
-  // Check if username is saved in localStorage
-  const savedUsername = localStorage.getItem('chatUsername');
-  if (savedUsername) {
-    // Pre-fill the username
-    nameInput.value = savedUsername;
-
-    // Only auto-submit if we have a room hash in URL
-    if (document.location.hash.length > 1) {
-      setTimeout(() => {
-        nameForm.dispatchEvent(new Event('submit'));
-      }, 0);
-      return;
-    }
-  }
-
-  nameInput.focus();
+  // Go directly to room chooser
+  startRoomChooser();
 }
 
 function startRoomChooser() {
-  nameForm.remove();
-
   if (document.location.hash.length > 1) {
     roomname = document.location.hash.slice(1);
     startChat();
@@ -2027,6 +2070,17 @@ function startRoomChooser() {
 
   roomForm.addEventListener('submit', (event) => {
     event.preventDefault();
+    
+    // Validate username before proceeding
+    username = nameInput.value.trim();
+    if (username.length === 0) {
+      nameInput.focus();
+      alert('Please enter your name');
+      return;
+    }
+    localStorage.setItem('chatUsername', username);
+    
+    // Validate room name
     roomname = roomNameInput.value;
     if (roomname.length > 0) {
       startChat();
@@ -2040,6 +2094,15 @@ function startRoomChooser() {
   });
 
   goPublicButton.addEventListener('click', async (event) => {
+    // Validate username before proceeding
+    username = nameInput.value.trim();
+    if (username.length === 0) {
+      nameInput.focus();
+      alert('Please enter your name');
+      return;
+    }
+    localStorage.setItem('chatUsername', username);
+    
     roomname = roomNameInput.value;
     if (roomname.length > 0) {
       // E2EE: Each user sets their own encryption key locally
@@ -2054,6 +2117,15 @@ function startRoomChooser() {
   });
 
   goPrivateButton.addEventListener('click', async (event) => {
+    // Validate username before proceeding
+    username = nameInput.value.trim();
+    if (username.length === 0) {
+      nameInput.focus();
+      alert('Please enter your name');
+      return;
+    }
+    localStorage.setItem('chatUsername', username);
+    
     roomNameInput.disabled = true;
     goPublicButton.disabled = true;
     event.currentTarget.disabled = true;
@@ -2392,8 +2464,16 @@ function startChat() {
     btnChangeEncryptionKey.addEventListener('click', async (e) => {
       e.preventDefault();
 
-      // Show dialog to enter new key
-      const result = await showPasswordDialog({ name: roomname });
+      // Get current password to display
+      let currentPassword = null;
+      try {
+        currentPassword = await keyManager.getRoomPassword(roomname);
+      } catch (error) {
+        console.log('No current password found');
+      }
+
+      // Show dialog to enter new key with current key displayed
+      const result = await showPasswordDialog({ name: roomname }, currentPassword);
 
       if (result === null) {
         // User cancelled (clicked cancel or ESC)

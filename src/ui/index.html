@@ -601,8 +601,7 @@
           display: flex;
         }
 
-        /* Hide top bar when name or room form exists in DOM */
-        body:has(#name-form) #mobile-top-bar,
+        /* Hide top bar when room form exists in DOM */
         body:has(#room-form) #mobile-top-bar {
           display: none !important;
         }
@@ -612,7 +611,6 @@
         }
 
         /* When forms exist, chatlog should not have top spacing */
-        body:has(#name-form) #chatlog,
         body:has(#room-form) #chatlog {
           top: 0 !important;
         }
@@ -747,7 +745,7 @@
         transition: bottom 0.1s ease;
       }
 
-      #name-form {
+      #room-form {
         position: fixed;
         z-index: 3;
         top: 0;
@@ -755,6 +753,7 @@
         left: 0;
         right: 0;
         background-color: white;
+        font-size: 200%;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -764,82 +763,40 @@
         -webkit-overflow-scrolling: touch;
       }
 
-      #name-input {
-        font-size: 200%;
+      /* Username input in room form */
+      #room-form #name-input {
         width: 100%;
-        max-width: 100%;
-        height: 2em;
-        margin: 0;
-        text-align: center;
-        border: 2px solid #1da1f2;
-        border-radius: 8px;
-        font-size: max(16px, 200%);
-        padding: 0 1em;
-        transition:
-          border-color 0.3s,
-          box-shadow 0.3s;
-        -webkit-appearance: none;
-        appearance: none;
-        box-sizing: border-box;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        transition: border-color 0.2s;
+        font-size: max(16px, 0.7em);
       }
 
-      #name-input:focus {
+      #room-form #name-input:focus {
         outline: none;
-        border-color: #0d8dd9;
-        box-shadow: 0 0 0 3px rgba(29, 161, 242, 0.1);
+        border-color: #1da1f2;
+        box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.1);
       }
 
-      #name-input::placeholder {
+      #room-form #name-input::placeholder {
         color: #999;
         opacity: 1;
       }
 
-      #name-form p {
-        margin-top: 2em;
-        width: 100%;
-        max-width: 600px;
-        text-align: center;
-        line-height: 1.6;
-        color: #666;
-      }
-
-      #room-form {
-        position: fixed;
-        z-index: 2;
-        top: 0;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background-color: white;
-        font-size: 200%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-      }
-
       #room-form > p {
         margin: 1em 0;
-        font-size: 0.8em;
+        font-size: 0.7em;
         color: #666;
       }
 
       #room-name {
-        font-size: inherit;
-        border: 2px solid #1da1f2;
-        border-radius: 8px;
-        height: 2em;
         width: 100%;
-        max-width: 100%;
-        padding: 0 1em;
-        font-size: max(16px, inherit);
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 0.6em 1em;
+        font-size: 0.7em;
         text-align: center;
-        transition:
-          border-color 0.3s,
-          box-shadow 0.3s;
+        transition: border-color 0.2s;
         -webkit-appearance: none;
         appearance: none;
         box-sizing: border-box;
@@ -847,8 +804,8 @@
 
       #room-name:focus {
         outline: none;
-        border-color: #0d8dd9;
-        box-shadow: 0 0 0 3px rgba(29, 161, 242, 0.1);
+        border-color: #1da1f2;
+        box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.1);
       }
 
       #room-name::placeholder {
@@ -857,20 +814,26 @@
       }
 
       #room-form button {
-        font-size: inherit;
-        border: 1px solid #bbb;
-        background-color: #eee;
-        height: 2em;
-        border-radius: 8px;
+        border: 1px solid #ddd;
+        background-color: #f5f5f5;
+        padding: 0.6em 1em;
+        border-radius: 6px;
         cursor: pointer;
-        transition:
-          background-color 0.3s,
-          transform 0.1s;
+        font-size: 0.7em;
+        transition: background-color 0.2s;
         -webkit-appearance: none;
         appearance: none;
         touch-action: manipulation;
         user-select: none;
         box-sizing: border-box;
+      }
+
+      #room-form button:hover {
+        background-color: #e8e8e8;
+      }
+
+      #room-form button:active {
+        background-color: #d8d8d8;
       }
 
       #go-public {
@@ -885,14 +848,8 @@
       }
 
       @media (max-width: 660px) {
-        #name-input,
         #room-form {
           font-size: 150%;
-        }
-
-        #name-form p {
-          font-size: 0.6em;
-          padding: 0 20px;
         }
 
         #room-name {
@@ -908,63 +865,29 @@
         }
 
         /* Better touch targets on mobile */
-        #name-input {
-          padding: 0.8em 1em;
-          height: auto;
-          min-height: 2.5em;
-        }
-
+        #room-form #name-input,
         #room-name {
-          height: auto;
+          padding: 0.8em 1em;
           min-height: 2.5em;
         }
 
-        #go-public {
-          padding: 0.8em 1.5em;
-          height: auto;
+        #room-form button {
+          padding: 0.8em 1em;
           min-height: 2.5em;
-        }
-
-        #go-private {
-          padding: 1em 1.5em;
-          height: auto;
-          min-height: 2.8em;
         }
       }
 
       @media (max-width: 500px) {
-        #name-input,
         #room-form {
           font-size: 120%;
         }
 
-        #name-form p {
-          font-size: 0.5em;
-          padding: 0 15px;
-        }
-
-        #room-name {
-          font-size: max(16px, 1em);
-        }
-
-        #room-form button {
-          font-size: max(16px, 0.9em);
-        }
-
         /* Ensure comfortable spacing on small screens */
-        #name-form > div {
-          padding: 0 15px;
-        }
-
         #room-form > div {
           padding: 0 15px;
         }
 
         /* Adjust emoji sizes for smaller screens */
-        #name-form > div > div:first-child {
-          font-size: 2em !important;
-        }
-
         #room-form > div > div:first-child {
           font-size: 2em !important;
         }
@@ -972,24 +895,17 @@
 
       /* Very small screens optimization */
       @media (max-width: 360px) {
-        #name-input,
         #room-form {
           font-size: 100%;
         }
 
-        #name-input {
-          height: auto;
+        #room-form #name-input,
+        #room-name {
           min-height: 3em;
         }
 
         #room-name {
           min-width: auto;
-        }
-
-        #go-public,
-        #go-private {
-          font-size: max(14px, 1em);
-          padding: 1em;
         }
       }
 
@@ -1393,66 +1309,51 @@
   </head>
 
   <body>
-    <form id="name-form" action="/fake-form-action">
+    <form id="room-form" action="/fake-form-action">
       <div style="width: 100%; max-width: 500px">
-        <div style="text-align: center; margin-bottom: 1.5em">
-          <div style="font-size: 3em; margin-bottom: 0.3em" aria-hidden="true">
-            👤
-          </div>
+        <div style="margin-bottom: 1.5em">
           <label
             for="name-input"
             style="
               display: block;
-              font-size: 1.2em;
-              margin-bottom: 0.5em;
-              color: #333;
-              font-weight: bold;
+              font-size: 0.7em;
+              margin-bottom: 0.3em;
+              color: #666;
+              text-align: center;
             "
             >Enter Your Name</label
           >
+          <input
+            id="name-input"
+            type="text"
+            placeholder="Your name"
+            autocomplete="name"
+            inputmode="text"
+            required
+            aria-label="Your name"
+            maxlength="50"
+            style="
+              width: 100%;
+              padding: 0.6em 1em;
+              border: 1px solid #ddd;
+              border-radius: 6px;
+              font-size: 0.7em;
+              text-align: center;
+              transition: border-color 0.2s;
+            "
+          />
         </div>
-        <input
-          id="name-input"
-          type="text"
-          placeholder="Your name"
-          autocomplete="name"
-          inputmode="text"
-          required
-          aria-label="Your name"
-          maxlength="50"
-        />
-      </div>
-      <p>
-        This chat runs entirely on the edge, powered by<br />
-        <a
-          href="https://blog.cloudflare.com/introducing-workers-durable-objects"
-          target="_blank"
-          rel="noopener noreferrer"
-          >Cloudflare Workers Durable Objects</a
-        >
-      </p>
-    </form>
-    <form id="room-form" action="/fake-form-action">
-      <div style="width: 100%; max-width: 500px">
-        <div style="text-align: center; margin-bottom: 1em">
-          <div
-            style="font-size: 2.5em; margin-bottom: 0.3em"
-            aria-hidden="true"
-          >
-            🚪
-          </div>
-        </div>
+
         <label
           for="room-name"
           style="
             display: block;
-            font-size: 0.8em;
-            margin-bottom: 0.5em;
-            color: #333;
-            font-weight: bold;
+            font-size: 0.7em;
+            margin-bottom: 0.3em;
+            color: #666;
             text-align: center;
           "
-          >Enter a Public Room:</label
+          >Enter a Public Room</label
         >
         <div
           style="
@@ -1476,7 +1377,7 @@
             Go &raquo;
           </button>
         </div>
-        <p>OR</p>
+        <p style="font-size: 0.7em; color: #999; text-align: center; margin: 0.3em 0;">OR</p>
         <button
           id="go-private"
           type="button"
@@ -1485,7 +1386,7 @@
           🔒 Create a Private Room &raquo;
         </button>
       </div>
-      <div id="room-history">
+      <div id="room-history" style="display: none;">
         <h3>📜 Recent Rooms</h3>
         <div id="room-history-list" role="list"></div>
       </div>
