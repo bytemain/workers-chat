@@ -451,6 +451,7 @@ class ChatMessage extends HTMLElement {
     const replyTo = this.getAttribute('reply-to');
     const threadCount = this.getAttribute('thread-count') || '0';
     const isInThread = this.getAttribute('is-in-thread') === 'true';
+    const hashtagsAttr = this.getAttribute('hashtags');
 
     // Clear existing content
     this.innerHTML = '';
@@ -518,6 +519,57 @@ class ChatMessage extends HTMLElement {
       }
     } else {
       this.appendChild(document.createElement('br'));
+    }
+
+    // Add hashtags at the bottom if provided by server
+    if (hashtagsAttr) {
+      try {
+        const hashtags = JSON.parse(hashtagsAttr);
+        if (hashtags && hashtags.length > 0) {
+          const tagContainer = document.createElement('div');
+          tagContainer.className = 'message-tags';
+          tagContainer.style.marginTop = '6px';
+          tagContainer.style.display = 'flex';
+          tagContainer.style.flexWrap = 'wrap';
+          tagContainer.style.gap = '4px';
+
+          hashtags.forEach(tag => {
+            const tagBadge = document.createElement('span');
+            tagBadge.className = 'tag-badge';
+            tagBadge.style.background = '#e8f5fd';
+            tagBadge.style.color = '#1da1f2';
+            tagBadge.style.padding = '2px 8px';
+            tagBadge.style.borderRadius = '12px';
+            tagBadge.style.fontSize = '0.85em';
+            tagBadge.style.cursor = 'pointer';
+            tagBadge.style.border = '1px solid #1da1f2';
+            tagBadge.style.transition = 'all 0.2s';
+            tagBadge.textContent = '#' + tag;
+            
+            tagBadge.onclick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              window.filterByHashtag(tag);
+            };
+            
+            tagBadge.onmouseenter = () => {
+              tagBadge.style.background = '#1da1f2';
+              tagBadge.style.color = 'white';
+            };
+            
+            tagBadge.onmouseleave = () => {
+              tagBadge.style.background = '#e8f5fd';
+              tagBadge.style.color = '#1da1f2';
+            };
+
+            tagContainer.appendChild(tagBadge);
+          });
+
+          this.appendChild(tagContainer);
+        }
+      } catch (e) {
+        console.error('Failed to parse hashtags:', e);
+      }
     }
 
     // Add thread indicator if there are replies
@@ -692,59 +744,37 @@ class ChatMessage extends HTMLElement {
       });
     };
 
-    // Combined regex pattern - matches URLs and hashtags
-    // URLs: http://, https://, and www. URLs
-    // Hashtags: imported from common/hashtag.mjs
-    const hashtagPattern = regex.source; // Get the pattern without the /g flag
-    const combinedRegex = new RegExp(
-      `(https?:\\/\\/[^\\s]+)|(www\\.[^\\s]+)|(${hashtagPattern})`,
-      'g',
-    );
-
+    // URL regex pattern only
+    const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)/g;
     let lastIndex = 0;
     let match;
 
-    // Find all URLs and hashtags in the text
-    while ((match = combinedRegex.exec(text)) !== null) {
+    // Find all URLs in the text
+    while ((match = urlRegex.exec(text)) !== null) {
       // Add text before the match
       if (match.index > lastIndex) {
         addTextWithNewlines(text.substring(lastIndex, match.index));
       }
 
-      if (match[3]) {
-        // It's a hashtag
-        const hashtag = match[3];
-        const link = document.createElement('a');
-        link.className = 'hashtag';
-        link.href = '#';
-        link.textContent = hashtag;
-        link.dataset.tag = hashtag.substring(1); // Remove the # prefix
-        link.onclick = (e) => {
-          e.preventDefault();
-          window.filterByHashtag(link.dataset.tag);
-        };
-        this.appendChild(link);
+      // It's a URL
+      const link = document.createElement('a');
+      let url = match[0];
+
+      // Add https:// if it's a www. link
+      if (url.startsWith('www.')) {
+        link.href = 'https://' + url;
       } else {
-        // It's a URL
-        const link = document.createElement('a');
-        let url = match[0];
-
-        // Add https:// if it's a www. link
-        if (url.startsWith('www.')) {
-          link.href = 'https://' + url;
-        } else {
-          link.href = url;
-        }
-
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = url;
-        link.style.color = '#0066cc';
-        link.style.textDecoration = 'underline';
-        this.appendChild(link);
+        link.href = url;
       }
 
-      lastIndex = combinedRegex.lastIndex;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = url;
+      link.style.color = '#0066cc';
+      link.style.textDecoration = 'underline';
+      this.appendChild(link);
+
+      lastIndex = urlRegex.lastIndex;
     }
 
     // Add remaining text after last match (or all text if no matches found)
@@ -1611,6 +1641,11 @@ function createMessageElement(
     );
   }
 
+  // Add hashtags if provided by server
+  if (data.hashtags && data.hashtags.length > 0) {
+    chatMessage.setAttribute('hashtags', JSON.stringify(data.hashtags));
+  }
+
   p.appendChild(chatMessage);
   wrapper.appendChild(p);
 
@@ -1641,6 +1676,38 @@ function createMessageElement(
       setReplyTo(data.messageId, data.name, preview, data.messageId);
     };
     actions.appendChild(replyBtn);
+  }
+
+  // Add Delete button if user owns this message
+  if (data.name === username) {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'message-action-btn';
+    deleteBtn.innerHTML = '🗑️ Delete';
+    deleteBtn.style.color = '#dc3545';
+    deleteBtn.title = 'Delete this message';
+    deleteBtn.onclick = async (e) => {
+      e.stopPropagation();
+      if (confirm('Delete this message? This action cannot be undone.')) {
+        try {
+          const response = await fetch(`/api/room/${roomname}/message/${data.messageId}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username }),
+          });
+          
+          if (!response.ok) {
+            const error = await response.json();
+            alert(error.error || 'Failed to delete message');
+          }
+        } catch (err) {
+          console.error('Error deleting message:', err);
+          alert('Failed to delete message');
+        }
+      }
+    };
+    actions.appendChild(deleteBtn);
   }
 
   wrapper.appendChild(actions);
@@ -1768,20 +1835,28 @@ function renderHashtagList() {
       div.classList.add('active');
     }
 
+    const contentWrapper = document.createElement('div');
+    contentWrapper.style.display = 'flex';
+    contentWrapper.style.alignItems = 'center';
+    contentWrapper.style.gap = '8px';
+    contentWrapper.style.flex = '1';
+    contentWrapper.style.cursor = 'pointer';
+
     const nameSpan = document.createElement('span');
     nameSpan.className = 'hashtag-name';
     nameSpan.textContent = '#' + item.tag;
-    div.appendChild(nameSpan);
+    contentWrapper.appendChild(nameSpan);
 
     const countSpan = document.createElement('span');
     countSpan.className = 'hashtag-count';
     countSpan.textContent = item.count || 0;
-    div.appendChild(countSpan);
+    contentWrapper.appendChild(countSpan);
 
-    div.onclick = () => {
+    contentWrapper.onclick = () => {
       window.filterByHashtag(item.tag);
     };
 
+    div.appendChild(contentWrapper);
     hashtagList.appendChild(div);
   });
 }
@@ -3125,6 +3200,30 @@ function join() {
     } else if (data.destructionUpdate) {
       // Handle room destruction updates
       handleDestructionUpdate(data.destructionUpdate);
+    } else if (data.messageDeleted) {
+      // Handle message deletion broadcast
+      const deletedMessageId = data.messageDeleted;
+      
+      // Remove from main chat
+      const mainChatMsg = chatlog.querySelector(`[data-message-id="${deletedMessageId}"]`);
+      if (mainChatMsg) {
+        mainChatMsg.remove();
+      }
+      
+      // Remove from thread panel if open
+      const threadMsg = threadReplies.querySelector(`[data-message-id="${deletedMessageId}"]`);
+      if (threadMsg) {
+        threadMsg.remove();
+      }
+      
+      // Remove from cache
+      messagesCache.delete(deletedMessageId);
+      
+      // Update hashtag list if provided
+      if (data.hashtagsUpdated) {
+        allHashtags = data.hashtagsUpdated;
+        displayHashtags();
+      }
     } else if (data.joined) {
       // Check if user is already in the roster (prevent duplicates)
       let alreadyInRoster = false;
@@ -3274,6 +3373,7 @@ function join() {
           messageId: data.messageId,
           replyTo: data.replyTo,
           threadInfo: data.threadInfo,
+          hashtags: data.hashtags || [],
         });
         lastSeenTimestamp = data.timestamp;
 
@@ -3344,6 +3444,7 @@ function addChatMessage(name, text, ts, msgData = {}) {
     messageId: messageId,
     replyTo: msgData.replyTo || null,
     threadInfo: msgData.threadInfo || null,
+    hashtags: msgData.hashtags || [],
   };
 
   // Cache the message

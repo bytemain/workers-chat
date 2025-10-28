@@ -274,4 +274,102 @@ export class HashtagManager {
       lastUsed: meta.lastUsed || null,
     };
   }
+
+  /**
+   * Delete a hashtag and all its indexes
+   * @param {string} tag - The hashtag to delete (without #)
+   * @returns {Promise<boolean>} - True if deleted, false if not found
+   */
+  async deleteHashtag(tag) {
+    const normalizedTag = tag.toLowerCase();
+    const indexKey = getHashtagIndexKey(normalizedTag);
+    const metaKey = getHashtagMetaKey(normalizedTag);
+
+    // Check if hashtag exists
+    const index = await this.storage.get(indexKey);
+    if (!index) {
+      return false;
+    }
+
+    // Delete the index and metadata
+    await this.storage.delete(indexKey);
+    await this.storage.delete(metaKey);
+
+    // Remove from global hashtag list
+    let allTags = await this.storage.get(HASHTAG_LIST_KEY);
+    if (allTags) {
+      const tagList = typeof allTags === 'string' ? JSON.parse(allTags) : allTags;
+      delete tagList[normalizedTag];
+      await this.storage.put(HASHTAG_LIST_KEY, JSON.stringify(tagList));
+    }
+
+    return true;
+  }
+
+  /**
+   * Remove a message from a hashtag's index
+   * @param {string} tag - The hashtag (without #)
+   * @param {string} messageKey - The storage key of the message to remove
+   */
+  async removeMessageFromTag(tag, messageKey) {
+    const normalizedTag = tag.toLowerCase();
+    const indexKey = getHashtagIndexKey(normalizedTag);
+    const metaKey = getHashtagMetaKey(normalizedTag);
+
+    console.log(`[HashtagManager] Removing message ${messageKey} from tag #${normalizedTag}`);
+
+    // Get existing index
+    let index = await this.storage.get(indexKey);
+    if (!index) {
+      console.log(`[HashtagManager] Tag #${normalizedTag} has no index, nothing to remove`);
+      return; // Tag doesn't exist, nothing to remove
+    }
+
+    if (typeof index === 'string') {
+      index = JSON.parse(index);
+    }
+
+    console.log(`[HashtagManager] Current index for #${normalizedTag}:`, index);
+
+    // Remove the message key from index
+    const originalLength = index.length;
+    index = index.filter(key => key !== messageKey);
+
+    console.log(`[HashtagManager] After filtering: ${index.length} messages (was ${originalLength})`);
+
+    if (index.length === originalLength) {
+      console.log(`[HashtagManager] Message ${messageKey} was not in tag #${normalizedTag}`);
+      return; // Message wasn't in this tag's index
+    }
+
+    if (index.length === 0) {
+      // No more messages for this tag, delete everything
+      console.log(`[HashtagManager] Deleting tag #${normalizedTag} - no messages left`);
+      await this.storage.delete(indexKey);
+      await this.storage.delete(metaKey);
+
+      // Remove from global hashtag list
+      let allTags = await this.storage.get(HASHTAG_LIST_KEY);
+      if (allTags) {
+        const tagList = typeof allTags === 'string' ? JSON.parse(allTags) : allTags;
+        delete tagList[normalizedTag];
+        await this.storage.put(HASHTAG_LIST_KEY, JSON.stringify(tagList));
+        console.log(`[HashtagManager] Removed #${normalizedTag} from global list`);
+      }
+    } else {
+      // Update the index with remaining messages
+      console.log(`[HashtagManager] Updating index for #${normalizedTag} with ${index.length} messages`);
+      await this.storage.put(indexKey, JSON.stringify(index));
+
+      // Update metadata count
+      let meta = await this.storage.get(metaKey);
+      if (meta) {
+        if (typeof meta === 'string') {
+          meta = JSON.parse(meta);
+        }
+        meta.count = index.length;
+        await this.storage.put(metaKey, JSON.stringify(meta));
+      }
+    }
+  }
 }

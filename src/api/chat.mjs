@@ -1,4 +1,4 @@
-import { HashtagManager } from './hashtag.mjs';
+import { HashtagManager, extractHashtags } from './hashtag.mjs';
 import { Hono } from 'hono';
 import { getPath, splitPath } from 'hono/utils/url';
 import { showRoutes } from 'hono/dev';
@@ -429,6 +429,97 @@ export class ChatRoom {
         });
       });
 
+      app.delete('/message/:messageId', async (c) => {
+        const messageId = c.req.param('messageId');
+        const { username } = await c.req.json();
+        
+        if (!messageId) {
+          return new Response(
+            JSON.stringify({ error: "Missing 'messageId' parameter" }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+
+        // Find the message by searching storage
+        const messages = await this.storage.list();
+        let messageKey = null;
+        let messageData = null;
+        
+        for (const [key, value] of messages) {
+          if (key.startsWith('thread:') || key === 'room-info' || key === 'destruction-time') {
+            continue;
+          }
+          
+          try {
+            const msg = typeof value === 'string' ? JSON.parse(value) : value;
+            if (msg.messageId === messageId) {
+              messageKey = key;
+              messageData = msg;
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (!messageData) {
+          return new Response(
+            JSON.stringify({ error: 'Message not found' }),
+            {
+              status: 404,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        
+        // Verify the user owns this message
+        if (messageData.name !== username) {
+          return new Response(
+            JSON.stringify({ error: 'You can only delete your own messages' }),
+            {
+              status: 403,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        
+        // Extract hashtags from the message to clean up indexes
+        const hashtags = extractHashtags(messageData.message);
+        console.log(`[DELETE] Deleting message ${messageId} (key: ${messageKey})`);
+        console.log(`[DELETE] Message has hashtags:`, hashtags);
+        
+        // Delete the message
+        await this.storage.delete(messageKey);
+        
+        // Remove this message from all hashtag indexes
+        for (const tag of hashtags) {
+          console.log(`[DELETE] Cleaning up hashtag #${tag}`);
+          await this.hashtagManager.removeMessageFromTag(tag, messageKey);
+        }
+        
+        // Get updated hashtag list after cleanup
+        const updatedHashtags = await this.hashtagManager.getAllHashtags(100);
+        
+        // Broadcast message deletion and hashtag update to all clients
+        this.broadcast({
+          messageDeleted: messageId,
+          hashtagsUpdated: updatedHashtags,
+        });
+
+        return new Response(
+          JSON.stringify({ success: true, messageId }),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          },
+        );
+      });
+
       app.get('/info', async (c) => {
         const info = (await this.storage.get('room-info')) || {};
         return new Response(JSON.stringify(info), {
@@ -756,12 +847,24 @@ export class ChatRoom {
     let backlog = [...storage.values()];
     backlog.reverse();
     backlog.forEach((value) => {
-      // Ensure old messages have messageId for compatibility
+      // Ensure old messages have messageId and hashtags for compatibility
       try {
         const msg = typeof value === 'string' ? JSON.parse(value) : value;
+        let modified = false;
+        
         if (!msg.messageId && msg.timestamp && msg.name) {
           // Generate legacy messageId for old messages
           msg.messageId = `${msg.timestamp}-${msg.name}`;
+          modified = true;
+        }
+        
+        // Extract hashtags if not present
+        if (!msg.hashtags && msg.message) {
+          msg.hashtags = extractHashtags(msg.message);
+          modified = true;
+        }
+        
+        if (modified) {
           value = JSON.stringify(msg);
         }
       } catch (e) {
@@ -898,6 +1001,13 @@ export class ChatRoom {
       // them sequential timestamps, so at least the ordering is maintained.
       data.timestamp = Math.max(Date.now(), this.lastTimestamp + 1);
       this.lastTimestamp = data.timestamp;
+
+      // Extract and attach hashtags from the message (server-side parsing)
+      const hashtags = extractHashtags(data.message);
+      console.log('Extracted hashtags:', hashtags);
+      if (hashtags.length > 0) {
+        data.hashtags = hashtags; // Array of hashtags without # prefix
+      }
 
       // Broadcast the message to all other WebSockets.
       let dataStr = JSON.stringify(data);
