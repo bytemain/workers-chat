@@ -836,6 +836,8 @@ let allHashtags = []; // Cache of all hashtags
 // E2EE state variables
 let currentRoomKey = null; // Current room encryption key
 let isRoomEncrypted = false; // Whether current room is encrypted
+let encryptionInitialized = false; // Whether encryption has been initialized for this session
+let passwordDialogOpen = false; // Prevent multiple password dialogs
 
 // Helper function to setup image load handlers for maintaining scroll position
 function setupImageScrollHandler(img, scrollContainer, shouldScrollToBottom) {
@@ -923,6 +925,14 @@ function generateLegacyMessageId(timestamp, username) {
  * @returns {Promise<string|null>} Entered key or null if cancelled
  */
 function showPasswordDialog(roomData) {
+  // Prevent multiple dialogs from opening
+  if (passwordDialogOpen) {
+    console.log('⚠️ Password dialog already open, ignoring request');
+    return Promise.resolve(null);
+  }
+
+  passwordDialogOpen = true;
+
   return new Promise((resolve) => {
     const dialog = document.createElement('div');
     dialog.style.cssText = `
@@ -1003,6 +1013,7 @@ function showPasswordDialog(roomData) {
     const cleanup = () => {
       document.body.removeChild(dialog);
       document.removeEventListener('keydown', handleEscape);
+      passwordDialogOpen = false; // Reset flag when dialog closes
     };
 
     const handleEscape = (e) => {
@@ -1041,6 +1052,12 @@ function showPasswordDialog(roomData) {
  * @returns {Promise<boolean>} Whether initialization succeeded
  */
 async function initializeRoomEncryption(roomId) {
+  // If already initialized in this session, reuse the current state
+  if (encryptionInitialized) {
+    console.log('🔐 Encryption already initialized, reusing current state');
+    return true;
+  }
+
   console.log('🔐 Checking for saved encryption key...');
 
   // Check if we already have a password saved locally
@@ -1050,6 +1067,7 @@ async function initializeRoomEncryption(roomId) {
     console.log('✅ Using saved key from IndexedDB');
     currentRoomKey = key;
     isRoomEncrypted = true;
+    encryptionInitialized = true;
     updateEncryptionUI();
     return true;
   }
@@ -1066,6 +1084,7 @@ async function initializeRoomEncryption(roomId) {
     await keyManager.saveRoomPassword(roomId, password);
     currentRoomKey = await keyManager.getRoomKey(roomId);
     isRoomEncrypted = true;
+    encryptionInitialized = true;
     updateEncryptionUI();
     return true;
   } else {
@@ -1076,6 +1095,7 @@ async function initializeRoomEncryption(roomId) {
     );
     currentRoomKey = null;
     isRoomEncrypted = false;
+    encryptionInitialized = true; // Mark as initialized even if user skipped
     updateEncryptionUI();
     return true;
   }
@@ -2172,6 +2192,11 @@ function handleDestructionUpdate(data) {
 
 function startChat() {
   roomForm.remove();
+
+  // Reset encryption initialization flag for new room
+  encryptionInitialized = false;
+  currentRoomKey = null;
+  isRoomEncrypted = false;
 
   // Show right sidebar
   const rightSidebar = document.querySelector('#right-sidebar');
