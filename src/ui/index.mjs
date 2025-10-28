@@ -3,36 +3,11 @@ import CryptoUtils from '../common/crypto-utils.js';
 import { keyManager } from '../common/key-manager.js';
 import FileCrypto from '../common/file-crypto.js';
 import { getCryptoPool } from './crypto-worker-pool.js';
+import { createReactiveState } from './react/state.mjs';
 import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
 
 const cryptoPool = getCryptoPool();
 
-function createReactiveState(initialState) {
-  const listeners = new Set();
-
-  const proxy = new Proxy(initialState, {
-    get(target, property, receiver) {
-      return Reflect.get(target, property, receiver);
-    },
-
-    set(target, property, value, receiver) {
-      const oldValue = target[property];
-      const success = Reflect.set(target, property, value, receiver);
-      if (success && oldValue !== value) {
-        listeners.forEach((listener) => listener(property, value, oldValue));
-      }
-      return success;
-    },
-  });
-
-  return {
-    state: proxy,
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  };
-}
 // Chat input component custom element
 class ChatInputComponent extends HTMLElement {
   constructor() {
@@ -853,10 +828,35 @@ let currentHashtagFilter = null; // Current active hashtag filter
 let allHashtags = []; // Cache of all hashtags
 
 // E2EE state variables
-let currentRoomKey = null; // Current room encryption key
-let isRoomEncrypted = false; // Whether current room is encrypted
-let encryptionInitialized = false; // Whether encryption has been initialized for this session
-let passwordDialogOpen = false; // Prevent multiple password dialogs
+const { state: encryptionState, subscribe: subscribeEncryption } = createReactiveState({
+  roomKey: null, // Current room encryption key
+  isEncrypted: false, // Whether current room is encrypted
+  initialized: false, // Whether encryption has been initialized for this session
+  dialogOpen: false, // Prevent multiple password dialogs
+});
+
+// Backward compatibility getters (temporary during migration)
+let currentRoomKey = null;
+let isRoomEncrypted = false;
+
+// Setup encryption state listener - auto update UI when encryption state changes
+subscribeEncryption((property, newValue, oldValue) => {
+  console.log(`🔐 Encryption state changed: ${property} = ${newValue}`);
+  
+  // Sync backward compatibility variables
+  currentRoomKey = encryptionState.roomKey;
+  isRoomEncrypted = encryptionState.isEncrypted;
+  
+  // Auto update UI when key or encryption status changes
+  if (['roomKey', 'isEncrypted'].includes(property)) {
+    updateEncryptionUI();
+  }
+  
+  // Log initialization completion
+  if (property === 'initialized' && newValue === true) {
+    console.log('✅ Encryption initialization completed');
+  }
+});
 
 // Helper function to setup image load handlers for maintaining scroll position
 function setupImageScrollHandler(img, scrollContainer, shouldScrollToBottom) {
@@ -945,12 +945,12 @@ function generateLegacyMessageId(timestamp, username) {
  */
 function showPasswordDialog(roomData) {
   // Prevent multiple dialogs from opening
-  if (passwordDialogOpen) {
+  if (encryptionState.dialogOpen) {
     console.log('⚠️ Password dialog already open, ignoring request');
     return Promise.resolve(null);
   }
 
-  passwordDialogOpen = true;
+  encryptionState.dialogOpen = true;
 
   return new Promise((resolve) => {
     const dialog = document.createElement('div');
@@ -999,7 +999,6 @@ function showPasswordDialog(roomData) {
             box-sizing: border-box;
           "
         />
-        <div id="password-error" style="color: red; margin-top: 8px; display: none;"></div>
         <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
           <button id="password-cancel-btn" style="
             padding: 8px 16px;
@@ -1023,7 +1022,6 @@ function showPasswordDialog(roomData) {
     document.body.appendChild(dialog);
 
     const input = dialog.querySelector('#room-password-input');
-    const errorDiv = dialog.querySelector('#password-error');
     const submitBtn = dialog.querySelector('#password-submit-btn');
     const cancelBtn = dialog.querySelector('#password-cancel-btn');
 
@@ -1032,7 +1030,7 @@ function showPasswordDialog(roomData) {
     const cleanup = () => {
       document.body.removeChild(dialog);
       document.removeEventListener('keydown', handleEscape);
-      passwordDialogOpen = false; // Reset flag when dialog closes
+      encryptionState.dialogOpen = false; // Reset flag when dialog closes
     };
 
     const handleEscape = (e) => {
@@ -1072,7 +1070,7 @@ function showPasswordDialog(roomData) {
  */
 async function initializeRoomEncryption(roomId) {
   // If already initialized in this session, reuse the current state
-  if (encryptionInitialized) {
+  if (encryptionState.initialized) {
     console.log('🔐 Encryption already initialized, reusing current state');
     return true;
   }
@@ -1084,10 +1082,9 @@ async function initializeRoomEncryption(roomId) {
 
   if (key) {
     console.log('✅ Using saved key from IndexedDB');
-    currentRoomKey = key;
-    isRoomEncrypted = true;
-    encryptionInitialized = true;
-    updateEncryptionUI();
+    encryptionState.roomKey = key;
+    encryptionState.isEncrypted = true;
+    encryptionState.initialized = true;
     return true;
   }
 
@@ -1101,10 +1098,9 @@ async function initializeRoomEncryption(roomId) {
     // User entered a key - save it locally
     console.log('🔑 Saving user-provided key');
     await keyManager.saveRoomPassword(roomId, password);
-    currentRoomKey = await keyManager.getRoomKey(roomId);
-    isRoomEncrypted = true;
-    encryptionInitialized = true;
-    updateEncryptionUI();
+    encryptionState.roomKey = await keyManager.getRoomKey(roomId);
+    encryptionState.isEncrypted = true;
+    encryptionState.initialized = true;
     return true;
   } else {
     // User cancelled or skipped - enter without encryption
@@ -1112,10 +1108,9 @@ async function initializeRoomEncryption(roomId) {
     addSystemMessage(
       '* You entered the room without an encryption key. You can set one in the room settings.',
     );
-    currentRoomKey = null;
-    isRoomEncrypted = false;
-    encryptionInitialized = true; // Mark as initialized even if user skipped
-    updateEncryptionUI();
+    encryptionState.roomKey = null;
+    encryptionState.isEncrypted = false;
+    encryptionState.initialized = true; // Mark as initialized even if user skipped
     return true;
   }
 }
@@ -1207,8 +1202,8 @@ async function setupRoomEncryption(roomId, password) {
     await keyManager.saveRoomPassword(roomId, password);
 
     // Get the derived key
-    currentRoomKey = await keyManager.getRoomKey(roomId);
-    isRoomEncrypted = true;
+    encryptionState.roomKey = await keyManager.getRoomKey(roomId);
+    encryptionState.isEncrypted = true;
 
     console.log('✅ Room encryption key saved locally');
     return true;
@@ -1542,28 +1537,6 @@ function clearReplyTo() {
   document.getElementById('reply-indicator').style.display = 'none';
 }
 
-// Recursively collect all replies in a thread (depth-first traversal)
-function collectAllThreadReplies(rootMessageId) {
-  const allReplies = [];
-  const visited = new Set();
-
-  function collectReplies(messageId) {
-    if (visited.has(messageId)) return;
-    visited.add(messageId);
-
-    // Get direct replies from threadsCache
-    const directReplies = threadsCache.get(messageId) || [];
-
-    for (const reply of directReplies) {
-      allReplies.push(reply);
-      // Recursively collect replies to this reply
-      collectReplies(reply.messageId);
-    }
-  }
-
-  collectReplies(rootMessageId);
-  return allReplies;
-}
 
 // Count total replies for a message (including nested)
 function countTotalReplies(messageId) {
@@ -2234,9 +2207,9 @@ function startChat() {
   roomForm.remove();
 
   // Reset encryption initialization flag for new room
-  encryptionInitialized = false;
-  currentRoomKey = null;
-  isRoomEncrypted = false;
+  encryptionState.initialized = false;
+  encryptionState.roomKey = null;
+  encryptionState.isEncrypted = false;
 
   // Show right sidebar
   const rightSidebar = document.querySelector('#right-sidebar');
@@ -2431,8 +2404,8 @@ function startChat() {
         if (result === '') {
           // Empty string means clear the key
           await keyManager.deleteRoomPassword(roomname);
-          currentRoomKey = null;
-          isRoomEncrypted = false;
+          encryptionState.roomKey = null;
+          encryptionState.isEncrypted = false;
 
           alert(
             '✅ Encryption key cleared!\n\nThe room is now unencrypted for you.',
@@ -2440,8 +2413,8 @@ function startChat() {
         } else {
           // Save the new key locally (no server verification)
           await keyManager.saveRoomPassword(roomname, result);
-          currentRoomKey = await keyManager.getRoomKey(roomname);
-          isRoomEncrypted = true;
+          encryptionState.roomKey = await keyManager.getRoomKey(roomname);
+          encryptionState.isEncrypted = true;
 
           alert(
             '✅ Encryption key saved locally!\n\nYou can now try to decrypt messages with this key.',
