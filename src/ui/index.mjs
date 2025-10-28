@@ -103,7 +103,6 @@ class ChatInputComponent extends HTMLElement {
             <input 
               type="file" 
               class="chat-input-file" 
-              accept="image/*,application/pdf,.doc,.docx,.txt"
               style="display: none;"
             >
             <button 
