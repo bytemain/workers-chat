@@ -2,6 +2,7 @@ import { HashtagManager, extractHashtags } from './hashtag.mjs';
 import { Hono } from 'hono';
 import { getPath, splitPath } from 'hono/utils/url';
 import { showRoutes } from 'hono/dev';
+import { cors } from 'hono/cors'
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -37,6 +38,7 @@ function ignite(mount) {
     console.error(`${err}`);
     return c.text('Error: ' + err.message, 500);
   });
+  app.use('*', cors())
   showRoutes(app, {
     verbose: true,
   });
@@ -62,9 +64,7 @@ const app = ignite((app) => {
       // could coincidentally create the same ID at the same time, because unique IDs are,
       // well, unique!
       let id = c.env.rooms.newUniqueId();
-      return new Response(id.toString(), {
-        headers: { 'Access-Control-Allow-Origin': '*' },
-      });
+      return new Response(id.toString());
     });
 
     api.all('/room/*', async (c, next) => {
@@ -328,13 +328,7 @@ export class ChatRoom {
         });
         let cooldown = +(await response.text());
         if (cooldown > 0) {
-          return new Response(
-            JSON.stringify({ error: 'Rate limited. Please try again later.' }),
-            {
-              status: 429,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: 'Rate limited. Please try again later.' }, 429);
         }
 
         // Parse multipart form data
@@ -342,21 +336,12 @@ export class ChatRoom {
         const file = formData.get('file');
 
         if (!file || !(file instanceof File)) {
-          return new Response(JSON.stringify({ error: 'No file provided' }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return c.json({ error: 'No file provided' }, 400);
         }
 
         // Validate file size (10MB max)
         if (file.size > 10 * 1024 * 1024) {
-          return new Response(
-            JSON.stringify({ error: 'File too large. Maximum size is 10MB.' }),
-            {
-              status: 400,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: 'File too large. Maximum size is 10MB.' }, 400);
         }
 
         // Generate unique file key
@@ -373,60 +358,34 @@ export class ChatRoom {
 
         // Return the file URL
         const fileUrl = `/files/${fileKey}`;
-        return new Response(
-          JSON.stringify({
-            success: true,
-            fileUrl: fileUrl,
-            fileName: file.name,
-            fileType: file.type,
-            fileSize: file.size,
-          }),
-          {
-            headers: { 'Content-Type': 'application/json' },
-          },
-        );
+        return c.json({
+          success: true,
+          fileUrl: fileUrl,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+        });
       });
 
       app.get('/hashtags', async (c) => {
         const tags = await this.hashtagManager.getAllHashtags(100);
-        return new Response(JSON.stringify({ hashtags: tags }), {
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        });
+        return c.json({ hashtags: tags });
       });
 
       app.get('/hashtag', async (c) => {
         const tag = c.req.query('tag');
         if (!tag) {
-          return new Response(
-            JSON.stringify({ error: "Missing 'tag' parameter" }),
-            {
-              status: 400,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: "Missing 'tag' parameter" }, 400);
         }
 
         const messages = await this.hashtagManager.getMessagesForTag(tag, 100);
-        return new Response(JSON.stringify({ tag, messages }), {
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        });
+        return c.json({ tag, messages });
       });
 
       app.get('/hashtag/search', async (c) => {
         const query = c.req.query('q') || '';
         const tags = await this.hashtagManager.searchHashtags(query, 20);
-        return new Response(JSON.stringify({ query, results: tags }), {
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        });
+        return c.json({ query, results: tags });
       });
 
       app.delete('/message/:messageId', async (c) => {
@@ -434,13 +393,7 @@ export class ChatRoom {
         const { username } = await c.req.json();
         
         if (!messageId) {
-          return new Response(
-            JSON.stringify({ error: "Missing 'messageId' parameter" }),
-            {
-              status: 400,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: "Missing 'messageId' parameter" }, 400);
         }
 
         // Find the message by searching storage
@@ -466,24 +419,12 @@ export class ChatRoom {
         }
         
         if (!messageData) {
-          return new Response(
-            JSON.stringify({ error: 'Message not found' }),
-            {
-              status: 404,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: 'Message not found' }, 404);
         }
         
         // Verify the user owns this message
         if (messageData.name !== username) {
-          return new Response(
-            JSON.stringify({ error: 'You can only delete your own messages' }),
-            {
-              status: 403,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: 'You can only delete your own messages' }, 403);
         }
         
         // Extract hashtags from the message to clean up indexes
@@ -509,15 +450,7 @@ export class ChatRoom {
           hashtagsUpdated: updatedHashtags,
         });
 
-        return new Response(
-          JSON.stringify({ success: true, messageId }),
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*',
-            },
-          },
-        );
+        return c.json({ success: true, messageId });
       });
 
       app.put('/message/:messageId', async (c) => {
@@ -525,24 +458,12 @@ export class ChatRoom {
         const { username, newMessage } = await c.req.json();
         
         if (!messageId || !newMessage) {
-          return new Response(
-            JSON.stringify({ error: "Missing 'messageId' or 'newMessage' parameter" }),
-            {
-              status: 400,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: "Missing 'messageId' or 'newMessage' parameter" }, 400);
         }
 
         // Check message length
         if (newMessage.length > 6000) {
-          return new Response(
-            JSON.stringify({ error: 'Message too long' }),
-            {
-              status: 400,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: 'Message too long' }, 400);
         }
 
         // Find the message by searching storage
@@ -568,35 +489,17 @@ export class ChatRoom {
         }
         
         if (!messageData) {
-          return new Response(
-            JSON.stringify({ error: 'Message not found' }),
-            {
-              status: 404,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: 'Message not found' }, 404);
         }
         
         // Verify the user owns this message
         if (messageData.name !== username) {
-          return new Response(
-            JSON.stringify({ error: 'You can only edit your own messages' }),
-            {
-              status: 403,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: 'You can only edit your own messages' }, 403);
         }
 
         // Can't edit file messages
         if (messageData.message.startsWith('FILE:')) {
-          return new Response(
-            JSON.stringify({ error: 'Cannot edit file messages' }),
-            {
-              status: 400,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
+          return c.json({ error: 'Cannot edit file messages' }, 400);
         }
         
         // Save original message to edit history
@@ -655,30 +558,17 @@ export class ChatRoom {
           hashtagsUpdated: updatedHashtags,
         });
 
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            messageId,
-            message: newMessage,
-            editedAt: messageData.editedAt,
-          }),
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*',
-            },
-          },
-        );
+        return c.json({ 
+          success: true, 
+          messageId,
+          message: newMessage,
+          editedAt: messageData.editedAt,
+        });
       });
 
       app.get('/info', async (c) => {
         const info = (await this.storage.get('room-info')) || {};
-        return new Response(JSON.stringify(info), {
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        });
+        return c.json(info);
       });
 
       app.put('/info', async (c) => {
@@ -716,12 +606,7 @@ export class ChatRoom {
           });
         }
 
-        return new Response(JSON.stringify({ success: true }), {
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        });
+        return c.json({ success: true });
       });
 
       app.get('/thread/:messageId', async (c) => {
@@ -737,12 +622,7 @@ export class ChatRoom {
           if (nested) {
             // Return all nested replies recursively
             const allReplies = await this.getAllThreadReplies(messageId);
-            return new Response(JSON.stringify({ replies: allReplies }), {
-              headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-              },
-            });
+            return c.json({ replies: allReplies });
           } else {
             // Return only direct replies (original behavior)
             const threadKey = `thread:${messageId}`;
@@ -763,18 +643,10 @@ export class ChatRoom {
               }
             }
 
-            return new Response(JSON.stringify({ replies }), {
-              headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-              },
-            });
+            return c.json({ replies });
           }
         } catch (err) {
-          return new Response(JSON.stringify({ error: err.message }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return c.json({ error: err.message }, 500);
         }
       });
 
@@ -798,15 +670,10 @@ export class ChatRoom {
               await this.executeDestruction();
             }, 1000);
 
-            return new Response(
-              JSON.stringify({
-                success: true,
-                immediate: true,
-              }),
-              {
-                headers: { 'Content-Type': 'application/json' },
-              },
-            );
+            return c.json({
+              success: true,
+              immediate: true,
+            });
           }
 
           // Set destruction time
@@ -851,20 +718,12 @@ export class ChatRoom {
             },
           });
 
-          return new Response(
-            JSON.stringify({
-              success: true,
-              destructionTime: this.destructionTime,
-            }),
-            {
-              headers: { 'Content-Type': 'application/json' },
-            },
-          );
-        } catch (err) {
-          return new Response(JSON.stringify({ error: err.message }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' },
+          return c.json({
+            success: true,
+            destructionTime: this.destructionTime,
           });
+        } catch (err) {
+          return c.json({ error: err.message }, 500);
         }
       });
 
@@ -894,14 +753,9 @@ export class ChatRoom {
             },
           });
 
-          return new Response(JSON.stringify({ success: true }), {
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return c.json({ success: true });
         } catch (err) {
-          return new Response(JSON.stringify({ error: err.message }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return c.json({ error: err.message }, 500);
         }
       });
 
