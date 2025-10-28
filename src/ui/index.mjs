@@ -150,6 +150,13 @@ class ChatInputComponent extends HTMLElement {
         this.submit();
         return;
       }
+      
+      // Clear reply when ESC is pressed
+      if (event.key === 'Escape' && currentReplyTo) {
+        event.preventDefault();
+        clearReplyTo();
+        return;
+      }
     });
 
     // Auto-resize on input
