@@ -679,6 +679,19 @@ class ChatMessage extends HTMLElement {
   }
 
   renderTextMessage(text) {
+    // Helper function to add text with preserved newlines
+    const addTextWithNewlines = (textContent) => {
+      const lines = textContent.split('\n');
+      lines.forEach((line, index) => {
+        if (line) {
+          this.appendChild(document.createTextNode(line));
+        }
+        if (index < lines.length - 1) {
+          this.appendChild(document.createElement('br'));
+        }
+      });
+    };
+
     // Combined regex pattern - matches URLs and hashtags
     // URLs: http://, https://, and www. URLs
     // Hashtags: imported from common/hashtag.mjs
@@ -695,10 +708,7 @@ class ChatMessage extends HTMLElement {
     while ((match = combinedRegex.exec(text)) !== null) {
       // Add text before the match
       if (match.index > lastIndex) {
-        const textNode = document.createTextNode(
-          text.substring(lastIndex, match.index),
-        );
-        this.appendChild(textNode);
+        addTextWithNewlines(text.substring(lastIndex, match.index));
       }
 
       if (match[3]) {
@@ -739,8 +749,7 @@ class ChatMessage extends HTMLElement {
 
     // Add remaining text after last match (or all text if no matches found)
     if (lastIndex < text.length) {
-      const textNode = document.createTextNode(text.substring(lastIndex));
-      this.appendChild(textNode);
+      addTextWithNewlines(text.substring(lastIndex));
     }
   }
 }
