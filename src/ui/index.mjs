@@ -1720,6 +1720,9 @@ function createMessageElement(
           if (!response.ok) {
             const error = await response.json();
             alert(error.error || 'Failed to delete message');
+          } else {
+            // Show re-edit banner with the deleted message content
+            showReEditBanner(data.message);
           }
         } catch (err) {
           console.error('Error deleting message:', err);
@@ -3446,6 +3449,78 @@ function addSystemMessage(text) {
   sysMsg.setAttribute('message', text);
   p.appendChild(sysMsg);
   chatlog.appendChild(p);
+  isAtBottom = true;
+  chatlog.scrollBy(0, 1e8);
+}
+
+// Show re-edit button after deleting a message
+function showReEditBanner(deletedMessage) {
+  // Remove any existing re-edit element
+  const existingElement = document.querySelector('.re-edit-container');
+  if (existingElement) {
+    existingElement.remove();
+  }
+
+  // Create container
+  const container = document.createElement('div');
+  container.className = 're-edit-container';
+  container.style.cssText = `
+    display: block;
+    margin: 0px auto;
+    padding: 8px 16px;
+    text-align: center;
+    font-size: 14px;
+    color: #666;
+  `;
+
+  // Create text node
+  const textNode = document.createTextNode('Message deleted, ');
+  
+  // Create clickable link
+  const link = document.createElement('a');
+  link.textContent = 'click to re-edit.';
+  link.href = '#';
+  link.style.cssText = `
+    color: #007bff;
+    text-decoration: none;
+    cursor: pointer;
+  `;
+
+  // Click to restore message to input
+  link.onclick = (e) => {
+    e.preventDefault();
+    
+    // Put the deleted message back into the input
+    if (chatInputComponent) {
+      chatInputComponent.setValue(deletedMessage);
+      chatInputComponent.focus();
+    }
+    
+    // Remove the container
+    container.remove();
+    
+    // Scroll to bottom to show input
+    chatlog.scrollBy(0, 1e8);
+  };
+
+  // Hover effect
+  link.onmouseenter = () => {
+    link.style.color = '#0056b3';
+    link.style.textDecoration = 'underline';
+  };
+  link.onmouseleave = () => {
+    link.style.color = '#007bff';
+    link.style.textDecoration = 'none';
+  };
+
+  // Assemble elements
+  container.appendChild(textNode);
+  container.appendChild(link);
+
+  // Add to chatlog
+  chatlog.appendChild(container);
+  
+  // Scroll to show the element
   isAtBottom = true;
   chatlog.scrollBy(0, 1e8);
 }
