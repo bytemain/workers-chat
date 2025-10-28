@@ -2105,14 +2105,7 @@ function startRoomChooser() {
     
     roomname = roomNameInput.value;
     if (roomname.length > 0) {
-      // E2EE: Each user sets their own encryption key locally
-      // Default: use room name as key (user can change later in settings)
-      const password = roomname;
-
-      const success = await setupRoomEncryption(roomname, password);
-      if (success) {
-        startChat();
-      }
+      startChat();
     }
   });
 
@@ -2132,19 +2125,7 @@ function startRoomChooser() {
 
     try {
       roomname = await api.createPrivateRoom();
-
-      // E2EE: Use room ID as default key (user can change later)
-      const password = roomname;
-
-      const success = await setupRoomEncryption(roomname, password);
-      if (success) {
-        startChat();
-      } else {
-        // Re-enable buttons if setup failed
-        roomNameInput.disabled = false;
-        goPublicButton.disabled = false;
-        event.currentTarget.disabled = false;
-      }
+      startChat();
     } catch (err) {
       alert('something went wrong');
       document.location.reload();
@@ -2275,7 +2256,7 @@ function handleDestructionUpdate(data) {
   }
 }
 
-function startChat() {
+async function startChat() {
   roomForm.remove();
 
   // Reset encryption initialization flag for new room
@@ -2301,6 +2282,25 @@ function startChat() {
   }
 
   document.location.hash = '#' + roomname;
+
+  // Setup encryption with room name as default password if not already set
+  // This handles all entry paths (form submit, buttons, URL hash)
+  try {
+    const existingPassword = await keyManager.getRoomPassword(roomname);
+    if (!existingPassword) {
+      // No password saved yet - use room name as default
+      console.log('🔐 Setting up default encryption key (room name)');
+      const defaultPassword = roomname;
+      await setupRoomEncryption(roomname, defaultPassword);
+    } else {
+      console.log('🔐 Using existing saved encryption key');
+    }
+  } catch (error) {
+    console.error('❌ Failed to setup encryption:', error);
+    addSystemMessage(
+      '❌: Failed to setup encryption: ' + error.message,
+    );
+  }
 
   // Save to room history
   addToRoomHistory(roomname);
@@ -3467,6 +3467,7 @@ function join() {
           '* WARNING: Participants in this chat are random people on the internet. ' +
             'Names are not authenticated; anyone can pretend to be anyone.Chat history is saved.',
         );
+        addSystemMessage('* Hello ' + username + '!');
         if (roomname.length == 64) {
           addSystemMessage(
             '* This is a private room. You can invite someone to the room by sending them the URL.',
