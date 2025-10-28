@@ -520,6 +520,157 @@ export class ChatRoom {
         );
       });
 
+      app.put('/message/:messageId', async (c) => {
+        const messageId = c.req.param('messageId');
+        const { username, newMessage } = await c.req.json();
+        
+        if (!messageId || !newMessage) {
+          return new Response(
+            JSON.stringify({ error: "Missing 'messageId' or 'newMessage' parameter" }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+
+        // Check message length
+        if (newMessage.length > 6000) {
+          return new Response(
+            JSON.stringify({ error: 'Message too long' }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+
+        // Find the message by searching storage
+        const messages = await this.storage.list();
+        let messageKey = null;
+        let messageData = null;
+        
+        for (const [key, value] of messages) {
+          if (key.startsWith('thread:') || key === 'room-info' || key === 'destruction-time') {
+            continue;
+          }
+          
+          try {
+            const msg = typeof value === 'string' ? JSON.parse(value) : value;
+            if (msg.messageId === messageId) {
+              messageKey = key;
+              messageData = msg;
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (!messageData) {
+          return new Response(
+            JSON.stringify({ error: 'Message not found' }),
+            {
+              status: 404,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        
+        // Verify the user owns this message
+        if (messageData.name !== username) {
+          return new Response(
+            JSON.stringify({ error: 'You can only edit your own messages' }),
+            {
+              status: 403,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+
+        // Can't edit file messages
+        if (messageData.message.startsWith('FILE:')) {
+          return new Response(
+            JSON.stringify({ error: 'Cannot edit file messages' }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        
+        // Save original message to edit history
+        if (!messageData.editHistory) {
+          messageData.editHistory = [];
+        }
+        messageData.editHistory.push({
+          message: messageData.message,
+          editedAt: Date.now(),
+        });
+        
+        // Extract old and new hashtags
+        const oldHashtags = extractHashtags(messageData.message);
+        const newHashtags = extractHashtags(newMessage);
+        
+        console.log(`[EDIT] Editing message ${messageId} (key: ${messageKey})`);
+        console.log(`[EDIT] Old hashtags:`, oldHashtags);
+        console.log(`[EDIT] New hashtags:`, newHashtags);
+        
+        // Update the message
+        messageData.message = newMessage;
+        messageData.hashtags = newHashtags;
+        messageData.editedAt = Date.now();
+        
+        // Save updated message
+        await this.storage.put(messageKey, JSON.stringify(messageData));
+        
+        // Update hashtag indexes
+        // Remove from old hashtags that are no longer present
+        for (const tag of oldHashtags) {
+          if (!newHashtags.includes(tag)) {
+            console.log(`[EDIT] Removing from hashtag #${tag}`);
+            await this.hashtagManager.removeMessageFromTag(tag, messageKey);
+          }
+        }
+        
+        // Add to new hashtags
+        for (const tag of newHashtags) {
+          if (!oldHashtags.includes(tag)) {
+            console.log(`[EDIT] Adding to hashtag #${tag}`);
+            await this.hashtagManager.addMessageToTag(tag, messageKey, messageData.timestamp);
+          }
+        }
+        
+        // Get updated hashtag list
+        const updatedHashtags = await this.hashtagManager.getAllHashtags(100);
+        
+        // Broadcast message edit and hashtag update to all clients
+        this.broadcast({
+          messageEdited: {
+            messageId: messageId,
+            message: newMessage,
+            hashtags: newHashtags,
+            editedAt: messageData.editedAt,
+          },
+          hashtagsUpdated: updatedHashtags,
+        });
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            messageId,
+            message: newMessage,
+            editedAt: messageData.editedAt,
+          }),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          },
+        );
+      });
+
       app.get('/info', async (c) => {
         const info = (await this.storage.get('room-info')) || {};
         return new Response(JSON.stringify(info), {

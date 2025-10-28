@@ -452,6 +452,7 @@ class ChatMessage extends HTMLElement {
     const threadCount = this.getAttribute('thread-count') || '0';
     const isInThread = this.getAttribute('is-in-thread') === 'true';
     const hashtagsAttr = this.getAttribute('hashtags');
+    const editedAt = this.getAttribute('edited-at');
 
     // Clear existing content
     this.innerHTML = '';
@@ -468,6 +469,18 @@ class ChatMessage extends HTMLElement {
       timeSpan.style.color = '#888';
       timeSpan.style.fontSize = '0.95em';
       this.appendChild(timeSpan);
+      
+      // Add "edited" indicator if message was edited
+      if (editedAt) {
+        const editedSpan = document.createElement('span');
+        editedSpan.className = 'msg-edited';
+        editedSpan.textContent = '(edited) ';
+        editedSpan.style.color = '#999';
+        editedSpan.style.fontSize = '0.85em';
+        editedSpan.style.fontStyle = 'italic';
+        editedSpan.title = 'Edited at ' + new Date(Number(editedAt)).toLocaleString();
+        this.appendChild(editedSpan);
+      }
     }
 
     // Add username if present
@@ -1666,6 +1679,11 @@ function createMessageElement(
     chatMessage.setAttribute('hashtags', JSON.stringify(data.hashtags));
   }
 
+  // Add edited timestamp if message was edited
+  if (data.editedAt) {
+    chatMessage.setAttribute('edited-at', String(data.editedAt));
+  }
+
   p.appendChild(chatMessage);
   wrapper.appendChild(p);
 
@@ -1700,6 +1718,19 @@ function createMessageElement(
 
   // Add Delete button if user owns this message
   if (data.name === username) {
+    // Add Edit button (only for non-file messages)
+    if (!data.message.startsWith('FILE:')) {
+      const editBtn = document.createElement('button');
+      editBtn.className = 'message-action-btn';
+      editBtn.innerHTML = '✏️ Edit';
+      editBtn.title = 'Edit this message';
+      editBtn.onclick = async (e) => {
+        e.stopPropagation();
+        showEditDialog(data);
+      };
+      actions.appendChild(editBtn);
+    }
+    
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'message-action-btn';
     deleteBtn.innerHTML = '🗑️ Delete';
@@ -3250,7 +3281,59 @@ function join() {
       // Update hashtag list if provided
       if (data.hashtagsUpdated) {
         allHashtags = data.hashtagsUpdated;
-        displayHashtags();
+        renderHashtagList();
+      }
+    } else if (data.messageEdited) {
+      // Handle message edit broadcast
+      const editData = data.messageEdited;
+      const messageId = editData.messageId;
+      
+      // Update in cache
+      const cachedMsg = messagesCache.get(messageId);
+      if (cachedMsg) {
+        cachedMsg.message = editData.message;
+        cachedMsg.hashtags = editData.hashtags;
+        cachedMsg.editedAt = editData.editedAt;
+      }
+      
+      // Update in main chat
+      const mainChatMsg = chatlog.querySelector(`[data-message-id="${messageId}"]`);
+      if (mainChatMsg) {
+        const chatMessage = mainChatMsg.querySelector('chat-message');
+        if (chatMessage) {
+          chatMessage.setAttribute('message', editData.message);
+          chatMessage.setAttribute('edited-at', String(editData.editedAt));
+          if (editData.hashtags && editData.hashtags.length > 0) {
+            chatMessage.setAttribute('hashtags', JSON.stringify(editData.hashtags));
+          } else {
+            chatMessage.removeAttribute('hashtags');
+          }
+          // Trigger re-render
+          chatMessage.render();
+        }
+      }
+      
+      // Update in thread panel if open
+      const threadMsg = threadReplies.querySelector(`[data-message-id="${messageId}"]`);
+      if (threadMsg) {
+        const chatMessage = threadMsg.querySelector('chat-message');
+        if (chatMessage) {
+          chatMessage.setAttribute('message', editData.message);
+          chatMessage.setAttribute('edited-at', String(editData.editedAt));
+          if (editData.hashtags && editData.hashtags.length > 0) {
+            chatMessage.setAttribute('hashtags', JSON.stringify(editData.hashtags));
+          } else {
+            chatMessage.removeAttribute('hashtags');
+          }
+          // Trigger re-render
+          chatMessage.render();
+        }
+      }
+      
+      // Update hashtag list if provided
+      if (data.hashtagsUpdated) {
+        allHashtags = data.hashtagsUpdated;
+        renderHashtagList();
       }
     } else if (data.joined) {
       // Check if user is already in the roster (prevent duplicates)
@@ -3402,6 +3485,7 @@ function join() {
           replyTo: data.replyTo,
           threadInfo: data.threadInfo,
           hashtags: data.hashtags || [],
+          editedAt: data.editedAt || null,
         });
         lastSeenTimestamp = data.timestamp;
 
@@ -3525,6 +3609,183 @@ function showReEditBanner(deletedMessage) {
   chatlog.scrollBy(0, 1e8);
 }
 
+// Show edit dialog for a message
+function showEditDialog(messageData) {
+  // Create overlay
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+  // Create dialog
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    width: 90%;
+    max-width: 600px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  `;
+
+  // Title
+  const title = document.createElement('h3');
+  title.textContent = 'Edit Message';
+  title.style.marginTop = '0';
+  dialog.appendChild(title);
+
+  // Textarea
+  const textarea = document.createElement('textarea');
+  textarea.value = messageData.message;
+  textarea.style.cssText = `
+    width: 100%;
+    min-height: 150px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 14px;
+    resize: vertical;
+    box-sizing: border-box;
+  `;
+  dialog.appendChild(textarea);
+
+  // Character count
+  const charCount = document.createElement('div');
+  charCount.style.cssText = `
+    text-align: right;
+    color: #666;
+    font-size: 12px;
+    margin-top: 4px;
+  `;
+  charCount.textContent = `${textarea.value.length} / 6000`;
+  dialog.appendChild(charCount);
+
+  textarea.addEventListener('input', () => {
+    const len = textarea.value.length;
+    charCount.textContent = `${len} / 6000`;
+    charCount.style.color = len > 6000 ? '#dc3545' : '#666';
+  });
+
+  // Buttons container
+  const buttons = document.createElement('div');
+  buttons.style.cssText = `
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 16px;
+  `;
+
+  // Cancel button
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = `
+    padding: 8px 16px;
+    border: 1px solid #ccc;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+  `;
+  cancelBtn.onclick = () => overlay.remove();
+  buttons.appendChild(cancelBtn);
+
+  // Save button
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.style.cssText = `
+    padding: 8px 16px;
+    border: none;
+    background: #007bff;
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+  `;
+  saveBtn.onclick = async () => {
+    const newMessage = textarea.value.trim();
+    
+    if (!newMessage) {
+      alert('Message cannot be empty');
+      return;
+    }
+
+    if (newMessage.length > 6000) {
+      alert('Message is too long (max 6000 characters)');
+      return;
+    }
+
+    if (newMessage === messageData.message) {
+      // No changes
+      overlay.remove();
+      return;
+    }
+
+    try {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+      
+      const response = await fetch(`/api/room/${roomname}/message/${messageData.messageId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          username,
+          newMessage,
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        alert(error.error || 'Failed to edit message');
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+      } else {
+        overlay.remove();
+        // Message will be updated via WebSocket broadcast
+      }
+    } catch (err) {
+      console.error('Error editing message:', err);
+      alert('Failed to edit message');
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+    }
+  };
+  buttons.appendChild(saveBtn);
+
+  dialog.appendChild(buttons);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+
+  // Focus textarea and select all
+  textarea.focus();
+  textarea.select();
+
+  // Close on overlay click
+  overlay.onclick = (e) => {
+    if (e.target === overlay) {
+      overlay.remove();
+    }
+  };
+
+  // Close on Escape key
+  const escHandler = (e) => {
+    if (e.key === 'Escape') {
+      overlay.remove();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
+}
+
 function addChatMessage(name, text, ts, msgData = {}) {
   // ts: message timestamp (ms)
   let timestamp = ts;
@@ -3545,6 +3806,7 @@ function addChatMessage(name, text, ts, msgData = {}) {
     replyTo: msgData.replyTo || null,
     threadInfo: msgData.threadInfo || null,
     hashtags: msgData.hashtags || [],
+    editedAt: msgData.editedAt || null,
   };
 
   // Cache the message
