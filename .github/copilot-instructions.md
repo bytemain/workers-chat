@@ -57,6 +57,13 @@ Each IP gets its own `RateLimiter` Durable Object (separate namespace):
 - State stored in memory only (resets on eviction = acceptable)
 - Multiple rooms share same limiter (global IP rate limit)
 
+### 5. Frontend Architecture
+
+All network request logic must be written in `src/ui/api.mjs` (`ChatAPI` class):
+
+- Uses Fetch API for REST, WebSocket API for real-time
+- Handles message sending, file uploads, room joining
+
 ## Development Workflows
 
 ### Local Development

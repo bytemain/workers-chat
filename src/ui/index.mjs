@@ -4,6 +4,7 @@ import { keyManager } from '../common/key-manager.js';
 import FileCrypto from '../common/file-crypto.js';
 import { getCryptoPool } from './crypto-worker-pool.js';
 import { createReactiveState } from './react/state.mjs';
+import { api } from './api.mjs';
 import { generateRandomUsername } from './utils/random.mjs';
 import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
 
@@ -1034,8 +1035,6 @@ function showPasswordDialog(roomData, currentPassword = null) {
       z-index: 10000;
     `;
 
-    const roomName = roomData.name || 'this room';
-
     // Show current key section if exists
     const currentKeySection = currentPassword
       ? `
@@ -1305,133 +1304,6 @@ async function setupRoomEncryption(roomId, password) {
     return false;
   }
 }
-
-let hostname = window.location.host;
-
-// API Client class for server requests
-class ChatAPI {
-  constructor(hostname) {
-    this.hostname = hostname;
-    this.baseUrl = `https://${hostname}/api`;
-  }
-
-  // Create private room
-  async createPrivateRoom() {
-    const response = await fetch(`${this.baseUrl}/room`, { method: 'POST' });
-    if (!response.ok) {
-      throw new Error('Failed to create private room');
-    }
-    return await response.text();
-  }
-
-  // Get hashtags for a room
-  async getHashtags(roomName) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/hashtags`);
-    if (!response.ok) {
-      throw new Error('Failed to load hashtags');
-    }
-    return await response.json();
-  }
-
-  // Get room info
-  async getRoomInfo(roomName) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/info`);
-    if (!response.ok) {
-      throw new Error('Failed to load room info');
-    }
-    return await response.json();
-  }
-
-  // Update room info
-  async updateRoomInfo(roomName, data) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/info`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const error = new Error(errorData.error || 'Failed to save room info');
-      error.code = errorData.code;
-      error.status = response.status;
-      throw error;
-    }
-    return await response.json();
-  }
-
-  // Upload file
-  async uploadFile(roomName, formData) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/upload`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Upload failed');
-    }
-    return await response.json();
-  }
-
-  // Get thread replies
-  async getThreadReplies(roomName, messageId, nested = true) {
-    const response = await fetch(
-      `${this.baseUrl}/room/${roomName}/thread/${messageId}?nested=${nested}`,
-    );
-    if (!response.ok) {
-      throw new Error('Failed to load thread');
-    }
-    return await response.json();
-  }
-
-  // Get WebSocket URL
-  getWebSocketUrl(roomName) {
-    const wss = window.location.protocol === 'http:' ? 'ws://' : 'wss://';
-    return `${wss}${this.hostname}/api/room/${roomName}/websocket`;
-  }
-
-  async exportData(roomName) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/export`, {
-      method: 'GET',
-    });
-    if (!response.ok) {
-      throw new Error('Failed to export data');
-    }
-    return await response.json();
-  }
-
-  // destruction/start
-  async destroyRoom(roomName, minutes) {
-    const response = await fetch(`/api/room/${roomName}/destruction/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ minutes }),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to start destruction');
-    }
-
-    const data = await response.json();
-    return data;
-  }
-
-  async cancelRoomDestruction(roomName) {
-    const response = await fetch(`/api/room/${roomName}/destruction/cancel`, {
-      method: 'POST',
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to cancel destruction');
-    }
-    const data = await response.json();
-    return data;
-  }
-}
-
-// Initialize API client
-const api = new ChatAPI(hostname);
 
 // User message API - handles sending messages through WebSocket
 class UserMessageAPI {
@@ -1818,27 +1690,12 @@ function createMessageElement(
       e.stopPropagation();
       if (confirm('Delete this message? This action cannot be undone.')) {
         try {
-          const response = await fetch(
-            `/api/room/${roomname}/message/${data.messageId}`,
-            {
-              method: 'DELETE',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ username }),
-            },
-          );
-
-          if (!response.ok) {
-            const error = await response.json();
-            alert(error.error || 'Failed to delete message');
-          } else {
-            // Show re-edit banner with the deleted message content
-            showReEditBanner(data.message);
-          }
+          await api.deleteMessage(roomname, data.messageId, username);
+          // Show re-edit banner with the deleted message content
+          showReEditBanner(data.message);
         } catch (err) {
           console.error('Error deleting message:', err);
-          alert('Failed to delete message');
+          alert(err.message || 'Failed to delete message');
         }
       }
     };
@@ -3825,32 +3682,18 @@ function showEditDialog(messageData) {
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
 
-      const response = await fetch(
-        `/api/room/${roomname}/message/${messageData.messageId}`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            username,
-            newMessage,
-          }),
-        },
+      await api.editMessage(
+        roomname,
+        messageData.messageId,
+        username,
+        newMessage,
       );
 
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Failed to edit message');
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Save';
-      } else {
-        overlay.remove();
-        // Message will be updated via WebSocket broadcast
-      }
+      overlay.remove();
+      // Message will be updated via WebSocket broadcast
     } catch (err) {
       console.error('Error editing message:', err);
-      alert('Failed to edit message');
+      alert(err.message || 'Failed to edit message');
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save';
     }
