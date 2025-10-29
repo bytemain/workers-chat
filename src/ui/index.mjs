@@ -1595,6 +1595,14 @@ async function loadThreadReplies(messageId) {
     const data = await api.getThreadReplies(roomname, messageId, true);
     const allReplies = data.replies || [];
 
+    // Decrypt all replies if needed (in parallel for better performance)
+    await Promise.all(
+      allReplies.map(async (reply) => {
+        const decryptedMessage = await tryDecryptMessage(reply);
+        reply.message = decryptedMessage;
+      }),
+    );
+
     // Cache all replies in messagesCache and organize by parent
     const replyMap = new Map();
     allReplies.forEach((reply) => {
