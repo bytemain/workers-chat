@@ -4,6 +4,7 @@ import { keyManager } from '../common/key-manager.js';
 import FileCrypto from '../common/file-crypto.js';
 import { getCryptoPool } from './crypto-worker-pool.js';
 import { createReactiveState } from './react/state.mjs';
+import { generateRandomUsername } from './utils/random.mjs';
 import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
 
 const cryptoPool = getCryptoPool();
@@ -124,7 +125,7 @@ class ChatInputComponent extends HTMLElement {
         this.submit();
         return;
       }
-      
+
       // Clear reply when ESC is pressed
       if (event.key === 'Escape' && currentReplyTo) {
         event.preventDefault();
@@ -450,7 +451,7 @@ class ChatMessage extends HTMLElement {
       timeSpan.style.color = '#888';
       timeSpan.style.fontSize = '0.95em';
       this.appendChild(timeSpan);
-      
+
       // Add "edited" indicator if message was edited
       if (editedAt) {
         const editedSpan = document.createElement('span');
@@ -459,7 +460,8 @@ class ChatMessage extends HTMLElement {
         editedSpan.style.color = '#999';
         editedSpan.style.fontSize = '0.85em';
         editedSpan.style.fontStyle = 'italic';
-        editedSpan.title = 'Edited at ' + new Date(Number(editedAt)).toLocaleString();
+        editedSpan.title =
+          'Edited at ' + new Date(Number(editedAt)).toLocaleString();
         this.appendChild(editedSpan);
       }
     }
@@ -527,7 +529,7 @@ class ChatMessage extends HTMLElement {
           tagContainer.style.flexWrap = 'wrap';
           tagContainer.style.gap = '4px';
 
-          hashtags.forEach(tag => {
+          hashtags.forEach((tag) => {
             const tagBadge = document.createElement('span');
             tagBadge.className = 'tag-badge';
             tagBadge.style.background = '#e8f5fd';
@@ -539,18 +541,18 @@ class ChatMessage extends HTMLElement {
             tagBadge.style.border = '1px solid #1da1f2';
             tagBadge.style.transition = 'all 0.2s';
             tagBadge.textContent = '#' + tag;
-            
+
             tagBadge.onclick = (e) => {
               e.preventDefault();
               e.stopPropagation();
               window.filterByHashtag(tag);
             };
-            
+
             tagBadge.onmouseenter = () => {
               tagBadge.style.background = '#1da1f2';
               tagBadge.style.color = 'white';
             };
-            
+
             tagBadge.onmouseleave = () => {
               tagBadge.style.background = '#e8f5fd';
               tagBadge.style.color = '#1da1f2';
@@ -828,12 +830,13 @@ let currentHashtagFilter = null; // Current active hashtag filter
 let allHashtags = []; // Cache of all hashtags
 
 // E2EE state variables
-const { state: encryptionState, subscribe: subscribeEncryption } = createReactiveState({
-  roomKey: null, // Current room encryption key
-  isEncrypted: false, // Whether current room is encrypted
-  initialized: false, // Whether encryption has been initialized for this session
-  dialogOpen: false, // Prevent multiple password dialogs
-});
+const { state: encryptionState, subscribe: subscribeEncryption } =
+  createReactiveState({
+    roomKey: null, // Current room encryption key
+    isEncrypted: false, // Whether current room is encrypted
+    initialized: false, // Whether encryption has been initialized for this session
+    dialogOpen: false, // Prevent multiple password dialogs
+  });
 
 // Backward compatibility getters (temporary during migration)
 let currentRoomKey = null;
@@ -842,16 +845,16 @@ let isRoomEncrypted = false;
 // Setup encryption state listener - auto update UI when encryption state changes
 subscribeEncryption((property, newValue, oldValue) => {
   console.log(`🔐 Encryption state changed: ${property} = ${newValue}`);
-  
+
   // Sync backward compatibility variables
   currentRoomKey = encryptionState.roomKey;
   isRoomEncrypted = encryptionState.isEncrypted;
-  
+
   // Auto update UI when key or encryption status changes
   if (['roomKey', 'isEncrypted'].includes(property)) {
     updateEncryptionUI();
   }
-  
+
   // Log initialization completion
   if (property === 'initialized' && newValue === true) {
     console.log('✅ Encryption initialization completed');
@@ -968,9 +971,10 @@ function showPasswordDialog(roomData, currentPassword = null) {
     `;
 
     const roomName = roomData.name || 'this room';
-    
+
     // Show current key section if exists
-    const currentKeySection = currentPassword ? `
+    const currentKeySection = currentPassword
+      ? `
       <div style="
         margin: 0 0 16px 0;
         padding: 12px;
@@ -990,7 +994,8 @@ function showPasswordDialog(roomData, currentPassword = null) {
           border: 1px solid #e0e0e0;
         ">${currentPassword}</div>
       </div>
-    ` : '';
+    `
+      : '';
 
     dialog.innerHTML = `
       <div style="
@@ -1560,7 +1565,6 @@ function clearReplyTo() {
   document.getElementById('reply-indicator').style.display = 'none';
 }
 
-
 // Count total replies for a message (including nested)
 function countTotalReplies(messageId) {
   const visited = new Set();
@@ -1732,7 +1736,7 @@ function createMessageElement(
       };
       actions.appendChild(editBtn);
     }
-    
+
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'message-action-btn';
     deleteBtn.innerHTML = '🗑️ Delete';
@@ -1742,14 +1746,17 @@ function createMessageElement(
       e.stopPropagation();
       if (confirm('Delete this message? This action cannot be undone.')) {
         try {
-          const response = await fetch(`/api/room/${roomname}/message/${data.messageId}`, {
-            method: 'DELETE',
-            headers: {
-              'Content-Type': 'application/json',
+          const response = await fetch(
+            `/api/room/${roomname}/message/${data.messageId}`,
+            {
+              method: 'DELETE',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ username }),
             },
-            body: JSON.stringify({ username }),
-          });
-          
+          );
+
           if (!response.ok) {
             const error = await response.json();
             alert(error.error || 'Failed to delete message');
@@ -2000,51 +2007,20 @@ function displayRoomHistory() {
   });
 }
 
-// Generate a random username
-function generateRandomUsername() {
-  const adjectives = [
-    'Happy', 'Clever', 'Swift', 'Brave', 'Calm', 'Eager', 'Gentle', 'Jolly', 
-    'Kind', 'Lively', 'Noble', 'Proud', 'Quick', 'Wise', 'Bold', 'Bright',
-    'Cool', 'Daring', 'Epic', 'Fancy', 'Fuzzy', 'Great', 'Hero', 'Mega',
-    'Mighty', 'Mystic', 'Sharp', 'Silent', 'Silver', 'Smart', 'Smooth', 'Solid',
-    'Speedy', 'Stellar', 'Strong', 'Super', 'Sunny', 'Tidy', 'Vivid', 'Wild',
-    'Zen', 'Agile', 'Cosmic', 'Cyber', 'Divine', 'Electric', 'Fiery', 'Frosty',
-    'Glowing', 'Golden', 'Humble', 'Nimble', 'Radiant', 'Royal', 'Savage', 'Serene',
-    'Shiny', 'Spicy', 'Stormy', 'Thunder', 'Turbo', 'Ultra', 'Velvet', 'Wicked'
-  ];
-  
-  const nouns = [
-    'Panda', 'Tiger', 'Eagle', 'Dolphin', 'Fox', 'Wolf', 'Bear', 'Hawk',
-    'Lion', 'Owl', 'Deer', 'Falcon', 'Raven', 'Swan', 'Phoenix', 'Dragon',
-    'Leopard', 'Panther', 'Cobra', 'Shark', 'Whale', 'Otter', 'Penguin', 'Koala',
-    'Jaguar', 'Lynx', 'Rhino', 'Bison', 'Moose', 'Badger', 'Weasel', 'Ferret',
-    'Gecko', 'Chameleon', 'Scorpion', 'Mantis', 'Beetle', 'Spider', 'Hornet', 'Wasp',
-    'Sparrow', 'Robin', 'Blue Jay', 'Cardinal', 'Finch', 'Starling', 'Crow', 'Magpie',
-    'Stag', 'Buck', 'Ram', 'Bull', 'Stallion', 'Mare', 'Colt', 'Fawn',
-    'Viper', 'Python', 'Anaconda', 'Mamba', 'Boa', 'Adder', 'Krait', 'Taipan'
-  ];
-  
-  const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
-  const noun = nouns[Math.floor(Math.random() * nouns.length)];
-  const number = Math.floor(Math.random() * 100);
-  
-  return `${adjective}${noun}${number}`;
-}
-
 export function startNameChooser() {
   // Check if username is saved in localStorage
   let savedUsername = localStorage.getItem('chatUsername');
-  
+
   // If no saved username, generate a random one (but don't save yet)
   if (!savedUsername) {
     savedUsername = generateRandomUsername();
     // Don't save here - wait until user enters a room
   }
-  
+
   // Set username and display it
   username = savedUsername;
   nameInput.value = savedUsername;
-  
+
   // Bind username input event listener for editing in room form
   nameInput.addEventListener('input', (event) => {
     if (event.currentTarget.value.length > 32) {
@@ -2070,7 +2046,7 @@ function startRoomChooser() {
 
   roomForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    
+
     // Validate username before proceeding
     username = nameInput.value.trim();
     if (username.length === 0) {
@@ -2079,7 +2055,7 @@ function startRoomChooser() {
       return;
     }
     localStorage.setItem('chatUsername', username);
-    
+
     // Validate room name
     roomname = roomNameInput.value;
     if (roomname.length > 0) {
@@ -2102,7 +2078,7 @@ function startRoomChooser() {
       return;
     }
     localStorage.setItem('chatUsername', username);
-    
+
     roomname = roomNameInput.value;
     if (roomname.length > 0) {
       startChat();
@@ -2118,7 +2094,7 @@ function startRoomChooser() {
       return;
     }
     localStorage.setItem('chatUsername', username);
-    
+
     roomNameInput.disabled = true;
     goPublicButton.disabled = true;
     event.currentTarget.disabled = true;
@@ -2256,6 +2232,45 @@ function handleDestructionUpdate(data) {
   }
 }
 
+async function tryDecryptMessage(data) {
+  let messageText = data.message;
+  if (CryptoUtils.isEncrypted(data.message)) {
+    if (isRoomEncrypted && currentRoomKey) {
+      try {
+        console.log('🔓 Decrypting message via worker pool...');
+        const encryptedData = CryptoUtils.parseEncryptedMessage(data.message);
+        if (encryptedData) {
+          // Export key for worker
+          const keyData = Array.from(
+            new Uint8Array(
+              await crypto.subtle.exportKey('raw', currentRoomKey),
+            ),
+          );
+
+          // Decrypt via worker pool
+          messageText = await cryptoPool.submitTask('decrypt', {
+            encrypted: encryptedData,
+            keyData: keyData,
+          });
+
+          console.log('✅ Message decrypted');
+        } else {
+          console.error('❌ Failed to parse encrypted message');
+          messageText = '[Encrypted message - failed to parse]';
+        }
+      } catch (error) {
+        console.error('❌ Failed to decrypt message:', error);
+        messageText = '[Encrypted message - decryption failed]';
+      }
+    } else {
+      console.warn('⚠️ Received encrypted message but no room key available');
+      messageText = '[Encrypted message]';
+    }
+  }
+
+  return messageText;
+}
+
 async function startChat() {
   roomForm.remove();
 
@@ -2297,9 +2312,7 @@ async function startChat() {
     }
   } catch (error) {
     console.error('❌ Failed to setup encryption:', error);
-    addSystemMessage(
-      '❌: Failed to setup encryption: ' + error.message,
-    );
+    addSystemMessage('❌: Failed to setup encryption: ' + error.message);
   }
 
   // Save to room history
@@ -2473,7 +2486,10 @@ async function startChat() {
       }
 
       // Show dialog to enter new key with current key displayed
-      const result = await showPasswordDialog({ name: roomname }, currentPassword);
+      const result = await showPasswordDialog(
+        { name: roomname },
+        currentPassword,
+      );
 
       if (result === null) {
         // User cancelled (clicked cancel or ESC)
@@ -2657,39 +2673,7 @@ async function startChat() {
 
       for (let i = 0; i < exportData.messages.length; i++) {
         const msg = exportData.messages[i];
-        let decryptedMessage = msg.message;
-
-        if (CryptoUtils.isEncrypted(msg.message)) {
-          if (isRoomEncrypted && currentRoomKey) {
-            try {
-              // Parse encrypted message
-              const encryptedData = CryptoUtils.parseEncryptedMessage(
-                msg.message,
-              );
-              if (encryptedData) {
-                // Export key for worker
-                const keyData = Array.from(
-                  new Uint8Array(
-                    await crypto.subtle.exportKey('raw', currentRoomKey),
-                  ),
-                );
-
-                // Decrypt via worker pool
-                decryptedMessage = await cryptoPool.submitTask('decrypt', {
-                  encrypted: encryptedData,
-                  keyData: keyData,
-                });
-              } else {
-                decryptedMessage = '[Decryption failed - invalid format]';
-              }
-            } catch (error) {
-              console.error('Failed to decrypt message:', error);
-              decryptedMessage = '[Decryption failed]';
-            }
-          } else {
-            decryptedMessage = '[Encrypted - no key]';
-          }
-        }
+        let decryptedMessage = await tryDecryptMessage(msg);
 
         // Add decrypted message
         decryptedMessages.push({ ...msg, message: decryptedMessage });
@@ -3321,22 +3305,26 @@ function join() {
     } else if (data.messageDeleted) {
       // Handle message deletion broadcast
       const deletedMessageId = data.messageDeleted;
-      
+
       // Remove from main chat
-      const mainChatMsg = chatlog.querySelector(`[data-message-id="${deletedMessageId}"]`);
+      const mainChatMsg = chatlog.querySelector(
+        `[data-message-id="${deletedMessageId}"]`,
+      );
       if (mainChatMsg) {
         mainChatMsg.remove();
       }
-      
+
       // Remove from thread panel if open
-      const threadMsg = threadReplies.querySelector(`[data-message-id="${deletedMessageId}"]`);
+      const threadMsg = threadReplies.querySelector(
+        `[data-message-id="${deletedMessageId}"]`,
+      );
       if (threadMsg) {
         threadMsg.remove();
       }
-      
+
       // Remove from cache
       messagesCache.delete(deletedMessageId);
-      
+
       // Update hashtag list if provided
       if (data.hashtagsUpdated) {
         allHashtags = data.hashtagsUpdated;
@@ -3346,7 +3334,7 @@ function join() {
       // Handle message edit broadcast
       const editData = data.messageEdited;
       const messageId = editData.messageId;
-      
+
       // Update in cache
       const cachedMsg = messagesCache.get(messageId);
       if (cachedMsg) {
@@ -3354,16 +3342,21 @@ function join() {
         cachedMsg.hashtags = editData.hashtags;
         cachedMsg.editedAt = editData.editedAt;
       }
-      
+
       // Update in main chat
-      const mainChatMsg = chatlog.querySelector(`[data-message-id="${messageId}"]`);
+      const mainChatMsg = chatlog.querySelector(
+        `[data-message-id="${messageId}"]`,
+      );
       if (mainChatMsg) {
         const chatMessage = mainChatMsg.querySelector('chat-message');
         if (chatMessage) {
           chatMessage.setAttribute('message', editData.message);
           chatMessage.setAttribute('edited-at', String(editData.editedAt));
           if (editData.hashtags && editData.hashtags.length > 0) {
-            chatMessage.setAttribute('hashtags', JSON.stringify(editData.hashtags));
+            chatMessage.setAttribute(
+              'hashtags',
+              JSON.stringify(editData.hashtags),
+            );
           } else {
             chatMessage.removeAttribute('hashtags');
           }
@@ -3371,16 +3364,21 @@ function join() {
           chatMessage.render();
         }
       }
-      
+
       // Update in thread panel if open
-      const threadMsg = threadReplies.querySelector(`[data-message-id="${messageId}"]`);
+      const threadMsg = threadReplies.querySelector(
+        `[data-message-id="${messageId}"]`,
+      );
       if (threadMsg) {
         const chatMessage = threadMsg.querySelector('chat-message');
         if (chatMessage) {
           chatMessage.setAttribute('message', editData.message);
           chatMessage.setAttribute('edited-at', String(editData.editedAt));
           if (editData.hashtags && editData.hashtags.length > 0) {
-            chatMessage.setAttribute('hashtags', JSON.stringify(editData.hashtags));
+            chatMessage.setAttribute(
+              'hashtags',
+              JSON.stringify(editData.hashtags),
+            );
           } else {
             chatMessage.removeAttribute('hashtags');
           }
@@ -3388,7 +3386,7 @@ function join() {
           chatMessage.render();
         }
       }
-      
+
       // Update hashtag list if provided
       if (data.hashtagsUpdated) {
         allHashtags = data.hashtagsUpdated;
@@ -3501,44 +3499,7 @@ function join() {
       // A regular chat message.
       if (data.timestamp > lastSeenTimestamp) {
         // Decrypt message if encrypted
-        let messageText = data.message;
-        if (CryptoUtils.isEncrypted(data.message)) {
-          if (isRoomEncrypted && currentRoomKey) {
-            try {
-              console.log('🔓 Decrypting message via worker pool...');
-              const encryptedData = CryptoUtils.parseEncryptedMessage(
-                data.message,
-              );
-              if (encryptedData) {
-                // Export key for worker
-                const keyData = Array.from(
-                  new Uint8Array(
-                    await crypto.subtle.exportKey('raw', currentRoomKey),
-                  ),
-                );
-
-                // Decrypt via worker pool
-                messageText = await cryptoPool.submitTask('decrypt', {
-                  encrypted: encryptedData,
-                  keyData: keyData,
-                });
-
-                console.log('✅ Message decrypted');
-              } else {
-                console.error('❌ Failed to parse encrypted message');
-                messageText = '[Encrypted message - failed to parse]';
-              }
-            } catch (error) {
-              console.error('❌ Failed to decrypt message:', error);
-              messageText = '[Encrypted message - decryption failed]';
-            }
-          } else {
-            console.warn(
-              '⚠️ Received encrypted message but no room key available',
-            );
-            messageText = '[Encrypted message]';
-          }
-        }
+        let messageText = await tryDecryptMessage(data);
 
         addChatMessage(data.name, messageText, data.timestamp, {
           messageId: data.messageId,
@@ -3619,7 +3580,7 @@ function showReEditBanner(deletedMessage) {
 
   // Create text node
   const textNode = document.createTextNode('Message deleted, ');
-  
+
   // Create clickable link
   const link = document.createElement('a');
   link.textContent = 'click to re-edit.';
@@ -3633,16 +3594,16 @@ function showReEditBanner(deletedMessage) {
   // Click to restore message to input
   link.onclick = (e) => {
     e.preventDefault();
-    
+
     // Put the deleted message back into the input
     if (chatInputComponent) {
       chatInputComponent.setValue(deletedMessage);
       chatInputComponent.focus();
     }
-    
+
     // Remove the container
     container.remove();
-    
+
     // Scroll to bottom to show input
     chatlog.scrollBy(0, 1e8);
   };
@@ -3663,7 +3624,7 @@ function showReEditBanner(deletedMessage) {
 
   // Add to chatlog
   chatlog.appendChild(container);
-  
+
   // Scroll to show the element
   isAtBottom = true;
   chatlog.scrollBy(0, 1e8);
@@ -3771,7 +3732,7 @@ function showEditDialog(messageData) {
   `;
   saveBtn.onclick = async () => {
     const newMessage = textarea.value.trim();
-    
+
     if (!newMessage) {
       alert('Message cannot be empty');
       return;
@@ -3791,18 +3752,21 @@ function showEditDialog(messageData) {
     try {
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
-      
-      const response = await fetch(`/api/room/${roomname}/message/${messageData.messageId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
+
+      const response = await fetch(
+        `/api/room/${roomname}/message/${messageData.messageId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username,
+            newMessage,
+          }),
         },
-        body: JSON.stringify({ 
-          username,
-          newMessage,
-        }),
-      });
-      
+      );
+
       if (!response.ok) {
         const error = await response.json();
         alert(error.error || 'Failed to edit message');
