@@ -118,7 +118,7 @@ class ChatInputComponent extends HTMLElement {
     if (!this.textarea) return;
 
     // Handle Enter key (submit on Enter, new line on Shift+Enter)
-    // Also check isComposing to avoid sending during IME composition (Chinese input)
+    // Also check isComposing to avoid sending during IME composition
     this.textarea.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
@@ -135,11 +135,7 @@ class ChatInputComponent extends HTMLElement {
     });
 
     // Auto-resize on input
-    this.textarea.addEventListener('input', (event) => {
-      // Limit length
-      if (event.currentTarget.value.length > 6000) {
-        event.currentTarget.value = event.currentTarget.value.slice(0, 6000);
-      }
+    this.textarea.addEventListener('input', () => {
       this.autoResize();
     });
 
@@ -163,12 +159,17 @@ class ChatInputComponent extends HTMLElement {
     // File input change
     if (this.fileInput) {
       this.fileInput.addEventListener('change', async (event) => {
-        const file = event.target.files[0];
-        if (file && this.onFileUpload) {
-          await this.onFileUpload(file);
-          // Clear the file input
-          this.fileInput.value = '';
-        }
+        if (!event.target.files || event.target.files.length === 0) return;
+
+        await Promise.all(
+          Array.from(event.target.files).map(async (file) => {
+            if (this.onFileUpload) {
+              await this.onFileUpload(file);
+            }
+          }),
+        );
+
+        this.fileInput.value = '';
       });
     }
   }
@@ -273,6 +274,7 @@ class LazyImg extends HTMLElement {
     super();
     this.observer = null;
     this.loaded = false;
+    this._decryptedObjectUrl = null; // Store decrypted blob URL for cleanup
   }
 
   connectedCallback() {
@@ -281,37 +283,61 @@ class LazyImg extends HTMLElement {
     const alt = this.getAttribute('alt') || '';
     const maxWidth = this.getAttribute('max-width') || '300px';
     const maxHeight = this.getAttribute('max-height') || '300px';
+    const isEncrypted = this.getAttribute('encrypted') === 'true';
+    const fileName = this.getAttribute('file-name') || 'image';
 
-    // Create image element with placeholder
-    const img = document.createElement('img');
-    img.alt = alt;
-    img.style.maxWidth = maxWidth;
-    img.style.maxHeight = maxHeight;
-    img.style.display = 'block';
-    img.style.marginTop = '5px';
-    img.style.cursor = 'pointer';
-    img.style.backgroundColor = '#f0f0f0'; // Placeholder background
-    img.style.minHeight = '100px'; // Minimum height for placeholder
-
-    // Set a placeholder or loading indicator
-    img.src =
-      'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999" font-size="14"%3ELoading...%3C/text%3E%3C/svg%3E';
-
-    // Store the real src
+    // Store attributes
     this._realSrc = src;
-    this._img = img;
+    this._isEncrypted = isEncrypted;
+    this._fileName = fileName;
+    this._maxWidth = maxWidth;
+    this._maxHeight = maxHeight;
 
-    // Add click handler
-    img.onclick = () => {
-      if (this.loaded && src) {
-        window.open(src, '_blank');
-      }
-    };
+    // Create placeholder container
+    const placeholder = document.createElement('div');
+    placeholder.style.cssText = `
+      width: ${maxWidth};
+      max-width: ${maxWidth};
+      height: 200px;
+      max-height: ${maxHeight};
+      background: ${isEncrypted ? '#f5f5f5' : '#f0f0f0'};
+      border: 2px dashed ${isEncrypted ? '#999' : '#ccc'};
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      margin-top: 5px;
+      cursor: ${isEncrypted && !isRoomEncrypted ? 'default' : 'pointer'};
+    `;
 
-    this.appendChild(img);
+    if (isEncrypted && !isRoomEncrypted) {
+      // Encrypted but no key available
+      placeholder.innerHTML = `
+        <div style="font-size: 48px;">🔒</div>
+        <div style="margin-top: 8px; color: #999;">Encrypted Image</div>
+        <div style="margin-top: 4px; font-size: 12px; color: #999;">No decryption key available</div>
+      `;
+    } else if (isEncrypted) {
+      // Encrypted with key - will decrypt on load
+      placeholder.innerHTML = `
+        <div style="font-size: 48px;">🔓</div>
+        <div style="margin-top: 8px; color: #666;">Loading...</div>
+      `;
+    } else {
+      // Not encrypted
+      placeholder.innerHTML = `
+        <div style="font-size: 48px; color: #999;">📷</div>
+        <div style="margin-top: 8px; color: #999;">Loading...</div>
+      `;
+    }
 
-    // Setup IntersectionObserver for lazy loading
-    this.setupLazyLoading();
+    this._placeholder = placeholder;
+    this.appendChild(placeholder);
+
+    // Only setup lazy loading if we can display the image
+    if (!isEncrypted || (isEncrypted && isRoomEncrypted && currentRoomKey)) {
+      this.setupLazyLoading();
+    }
   }
 
   setupLazyLoading() {
@@ -345,69 +371,132 @@ class LazyImg extends HTMLElement {
     this.observer.observe(this);
   }
 
-  loadImage() {
+  async loadImage() {
     if (this.loaded || !this._realSrc) return;
 
-    const img = this._img;
+    const placeholder = this._placeholder;
 
-    // Create a new image to preload
-    const tempImg = new Image();
+    try {
+      if (this._isEncrypted && isRoomEncrypted && currentRoomKey) {
+        // Decrypt encrypted image
+        console.log('🔓 Lazy-decrypting image...');
 
-    tempImg.onload = () => {
-      // Set the real src
-      img.src = this._realSrc;
-      img.style.backgroundColor = 'transparent';
-      img.style.minHeight = 'auto';
-      this.loaded = true;
+        placeholder.innerHTML = `
+          <div style="font-size: 48px;">🔓</div>
+          <div style="margin-top: 8px; color: #666;">Decrypting...</div>
+        `;
 
-      // Handle scroll position maintenance
-      const isInThreadPanel = this.closest('#thread-panel') !== null;
-      const scrollContainer = isInThreadPanel
-        ? document.querySelector('#thread-replies')
-        : document.querySelector('#chatlog');
+        const result = await FileCrypto.downloadAndDecrypt(
+          this._realSrc,
+          currentRoomKey,
+          (progress, stage) => {
+            placeholder.innerHTML = `
+              <div style="font-size: 32px;">🔓</div>
+              <div style="margin-top: 8px; color: #666;">${stage}: ${Math.round(progress)}%</div>
+            `;
+          },
+        );
 
-      if (scrollContainer) {
-        const shouldScroll = isInThreadPanel
-          ? () => {
-              const container = document.querySelector('#thread-replies');
-              return (
-                container &&
-                Math.abs(
-                  container.scrollTop +
-                    container.clientHeight -
-                    container.scrollHeight,
-                ) < 2
-              );
-            }
-          : () => window.isAtBottom;
+        // Create object URL from decrypted blob
+        const objectUrl = URL.createObjectURL(result.blob);
+        this._decryptedObjectUrl = objectUrl;
 
-        if (window.setupImageScrollHandler) {
-          // Use the existing scroll handler if available
-          window.setupImageScrollHandler(img, scrollContainer, shouldScroll);
-        } else {
-          // Fallback: simple scroll to bottom if at bottom
-          if (shouldScroll()) {
-            scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        // Create and display the image
+        const img = document.createElement('img');
+        img.src = objectUrl;
+        img.alt = this._fileName;
+        img.style.maxWidth = this._maxWidth;
+        img.style.maxHeight = this._maxHeight;
+        img.style.display = 'block';
+        img.style.marginTop = '5px';
+        img.style.cursor = 'pointer';
+        img.onclick = () => window.open(objectUrl, '_blank');
+
+        this.replaceChild(img, placeholder);
+        this.loaded = true;
+        console.log('✅ Image lazy-decrypted and displayed');
+
+        // Handle scroll position maintenance
+        this._handleScrollMaintenance(img);
+      } else {
+        // Load non-encrypted image normally
+        const tempImg = new Image();
+
+        tempImg.onload = () => {
+          const img = document.createElement('img');
+          img.src = this._realSrc;
+          img.alt = this._fileName;
+          img.style.maxWidth = this._maxWidth;
+          img.style.maxHeight = this._maxHeight;
+          img.style.display = 'block';
+          img.style.marginTop = '5px';
+          img.style.cursor = 'pointer';
+          img.onclick = () => window.open(this._realSrc, '_blank');
+
+          this.replaceChild(img, placeholder);
+          this.loaded = true;
+
+          // Handle scroll position maintenance
+          this._handleScrollMaintenance(img);
+
+          // Dispatch loaded event
+          this.dispatchEvent(
+            new CustomEvent('lazy-loaded', { detail: { src: this._realSrc } }),
+          );
+        };
+
+        tempImg.onerror = () => {
+          console.warn('Failed to load lazy image:', this._realSrc);
+          placeholder.innerHTML = `
+            <div style="font-size: 32px; color: #cc0000;">❌</div>
+            <div style="margin-top: 8px; color: #cc0000;">Load Failed</div>
+          `;
+          placeholder.style.background = '#ffeeee';
+          placeholder.style.cursor = 'default';
+        };
+
+        // Start loading
+        tempImg.src = this._realSrc;
+      }
+    } catch (error) {
+      console.error('❌ Failed to load/decrypt image:', error);
+      placeholder.innerHTML = `
+        <div style="font-size: 32px; color: #cc0000;">❌</div>
+        <div style="margin-top: 8px; color: #cc0000;">Failed to decrypt</div>
+      `;
+      placeholder.style.background = '#ffeeee';
+    }
+  }
+
+  _handleScrollMaintenance(img) {
+    const isInThreadPanel = this.closest('#thread-panel') !== null;
+    const scrollContainer = isInThreadPanel
+      ? document.querySelector('#thread-replies')
+      : document.querySelector('#chatlog');
+
+    if (scrollContainer) {
+      const shouldScroll = isInThreadPanel
+        ? () => {
+            const container = document.querySelector('#thread-replies');
+            return (
+              container &&
+              Math.abs(
+                container.scrollTop +
+                  container.clientHeight -
+                  container.scrollHeight,
+              ) < 2
+            );
           }
+        : () => window.isAtBottom;
+
+      if (window.setupImageScrollHandler) {
+        window.setupImageScrollHandler(img, scrollContainer, shouldScroll);
+      } else {
+        if (shouldScroll()) {
+          scrollContainer.scrollTop = scrollContainer.scrollHeight;
         }
       }
-
-      // Dispatch loaded event
-      this.dispatchEvent(
-        new CustomEvent('lazy-loaded', { detail: { src: this._realSrc } }),
-      );
-    };
-
-    tempImg.onerror = () => {
-      console.warn('Failed to load lazy image:', this._realSrc);
-      img.src =
-        'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ffeeee" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23cc0000" font-size="12"%3ELoad Failed%3C/text%3E%3C/svg%3E';
-      img.style.backgroundColor = '#ffeeee';
-      img.style.cursor = 'default';
-    };
-
-    // Start loading
-    tempImg.src = this._realSrc;
+    }
   }
 
   disconnectedCallback() {
@@ -415,9 +504,92 @@ class LazyImg extends HTMLElement {
     if (this.observer) {
       this.observer.disconnect();
     }
+
+    // Clean up decrypted blob URL to prevent memory leaks
+    if (this._decryptedObjectUrl) {
+      URL.revokeObjectURL(this._decryptedObjectUrl);
+      this._decryptedObjectUrl = null;
+    }
   }
 }
 customElements.define('lazy-img', LazyImg);
+
+// File message custom element (for non-image files)
+class FileMessage extends HTMLElement {
+  connectedCallback() {
+    this.render();
+  }
+
+  render() {
+    const fileUrl = this.getAttribute('file-url');
+    const fileName = this.getAttribute('file-name') || 'file';
+    const isEncrypted = this.getAttribute('encrypted') === 'true';
+
+    // Clear existing content
+    this.innerHTML = '';
+
+    // Create download link
+    const link = document.createElement('a');
+    link.textContent = '📎 ' + fileName;
+    link.style.cursor = 'pointer';
+    link.style.color = '#0066cc';
+    link.style.textDecoration = 'underline';
+
+    if (isEncrypted && isRoomEncrypted && currentRoomKey) {
+      // Encrypted file - decrypt on click
+      link.onclick = async (e) => {
+        e.preventDefault();
+        const originalText = link.textContent;
+        try {
+          link.textContent = '⏳ Decrypting...';
+          console.log('🔓 Decrypting file...');
+
+          const result = await FileCrypto.downloadAndDecrypt(
+            fileUrl,
+            currentRoomKey,
+            (progress, stage) => {
+              link.textContent = `⏳ ${stage}: ${Math.round(progress)}%`;
+            },
+          );
+
+          // Create download
+          const objectUrl = URL.createObjectURL(result.blob);
+          const a = document.createElement('a');
+          a.href = objectUrl;
+          a.download = result.metadata.fileName || fileName;
+          a.click();
+          URL.revokeObjectURL(objectUrl);
+
+          link.textContent = originalText;
+          console.log('✅ File decrypted and downloaded');
+        } catch (error) {
+          console.error('❌ Failed to decrypt file:', error);
+          link.textContent = originalText + ' (decryption failed)';
+        }
+      };
+    } else if (isEncrypted && !isRoomEncrypted) {
+      // Encrypted file but no key - show locked indicator
+      link.style.cursor = 'default';
+      link.style.color = '#999';
+      link.textContent = '🔒 ' + fileName + ' (encrypted)';
+      link.title = 'No decryption key available';
+      link.onclick = (e) => {
+        e.preventDefault();
+        alert(
+          'This file is encrypted. You need the correct encryption key to download it.',
+        );
+      };
+    } else {
+      // Non-encrypted file - normal download
+      link.href = fileUrl;
+      link.download = fileName;
+      link.target = '_blank';
+    }
+
+    this.appendChild(link);
+  }
+}
+customElements.define('file-message', FileMessage);
 
 // Define custom element for chat messages
 class ChatMessage extends HTMLElement {
@@ -590,139 +762,31 @@ class ChatMessage extends HTMLElement {
     const fileType = parts[2] || '';
     const isEncrypted = parts[3] === 'encrypted';
 
-    // If it's an image, display it inline with lazy loading
+    // If it's an image, use lazy-img component
     if (fileType.startsWith('image/')) {
+      const lazyImg = document.createElement('lazy-img');
+      lazyImg.setAttribute('data-src', fileUrl);
+      lazyImg.setAttribute('alt', fileName);
+      lazyImg.setAttribute('file-name', fileName);
+      lazyImg.setAttribute('max-width', '300px');
+      lazyImg.setAttribute('max-height', '300px');
+
       if (isEncrypted) {
-        if (isRoomEncrypted && currentRoomKey) {
-          // Encrypted image with valid key - auto decrypt and display
-          const container = document.createElement('div');
-          container.className = 'encrypted-image-container';
-          container.style.cssText =
-            'position: relative; display: inline-block;';
-
-          const placeholder = document.createElement('div');
-          placeholder.style.cssText = `
-            width: 300px;
-            height: 200px;
-            background: #f0f0f0;
-            border: 2px dashed #ccc;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-          `;
-          placeholder.innerHTML = `
-            <div style="font-size: 48px;">🔓</div>
-            <div style="margin-top: 8px; color: #666;">Decrypting...</div>
-          `;
-
-          container.appendChild(placeholder);
-          this.appendChild(container);
-
-          // Auto decrypt immediately
-          (async () => {
-            try {
-              console.log('🔓 Auto-decrypting image file...');
-
-              const result = await FileCrypto.downloadAndDecrypt(
-                fileUrl,
-                currentRoomKey,
-                (progress, stage) => {
-                  placeholder.innerHTML = `<div>🔓 ${stage}: ${Math.round(progress)}%</div>`;
-                },
-              );
-
-              const objectUrl = URL.createObjectURL(result.blob);
-              const img = document.createElement('img');
-              img.src = objectUrl;
-              img.alt = fileName;
-              img.style.maxWidth = '300px';
-              img.style.maxHeight = '300px';
-              img.style.cursor = 'pointer';
-              img.onclick = () => window.open(objectUrl, '_blank');
-
-              container.replaceChild(img, placeholder);
-              console.log('✅ Image auto-decrypted and displayed');
-            } catch (error) {
-              console.error('❌ Failed to decrypt image:', error);
-              placeholder.innerHTML = `<div style="color: red;">❌ Decryption failed</div>`;
-            }
-          })();
-        } else {
-          // Encrypted image but no key - show locked placeholder
-          const placeholder = document.createElement('div');
-          placeholder.style.cssText = `
-            width: 300px;
-            height: 200px;
-            background: #f5f5f5;
-            border: 2px dashed #999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-          `;
-          placeholder.innerHTML = `
-            <div style="font-size: 48px;">🔒</div>
-            <div style="margin-top: 8px; color: #999;">Encrypted Image</div>
-            <div style="margin-top: 4px; font-size: 12px; color: #999;">No decryption key available</div>
-          `;
-          this.appendChild(placeholder);
-        }
-      } else {
-        // Non-encrypted image - use lazy loading as before
-        const lazyImg = document.createElement('lazy-img');
-        lazyImg.setAttribute('data-src', fileUrl);
-        lazyImg.setAttribute('alt', fileName);
-        lazyImg.setAttribute('max-width', '300px');
-        lazyImg.setAttribute('max-height', '300px');
-        this.appendChild(lazyImg);
+        lazyImg.setAttribute('encrypted', 'true');
       }
+
+      this.appendChild(lazyImg);
     } else {
-      // For other files, show a download link
-      const link = document.createElement('a');
-      link.textContent = '📎 ' + fileName;
-      link.style.cursor = 'pointer';
+      // For other files, use file-message component
+      const fileMessage = document.createElement('file-message');
+      fileMessage.setAttribute('file-url', fileUrl);
+      fileMessage.setAttribute('file-name', fileName);
 
-      if (isEncrypted && isRoomEncrypted && currentRoomKey) {
-        // Encrypted file - decrypt on click
-        link.onclick = async (e) => {
-          e.preventDefault();
-          const originalText = link.textContent;
-          try {
-            link.textContent = '⏳ Decrypting...';
-            console.log('🔓 Decrypting file...');
-
-            const result = await FileCrypto.downloadAndDecrypt(
-              fileUrl,
-              currentRoomKey,
-              (progress, stage) => {
-                link.textContent = `⏳ ${stage}: ${Math.round(progress)}%`;
-              },
-            );
-
-            // Create download
-            const objectUrl = URL.createObjectURL(result.blob);
-            const a = document.createElement('a');
-            a.href = objectUrl;
-            a.download = result.metadata.fileName || fileName;
-            a.click();
-            URL.revokeObjectURL(objectUrl);
-
-            link.textContent = originalText;
-            console.log('✅ File decrypted and downloaded');
-          } catch (error) {
-            console.error('❌ Failed to decrypt file:', error);
-            link.textContent = originalText + ' (decryption failed)';
-          }
-        };
-      } else {
-        // Non-encrypted file - normal download
-        link.href = fileUrl;
-        link.download = fileName;
-        link.target = '_blank';
+      if (isEncrypted) {
+        fileMessage.setAttribute('encrypted', 'true');
       }
 
-      this.appendChild(link);
+      this.appendChild(fileMessage);
     }
   }
 
