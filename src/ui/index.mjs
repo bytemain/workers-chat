@@ -634,23 +634,40 @@ class ChatMessage extends HTMLElement {
       }
     }
 
+    // Create main container with avatar and content side by side
+    const messageContainer = document.createElement('div');
+    messageContainer.className = 'msg-container';
+    messageContainer.style.display = 'flex';
+    messageContainer.style.gap = '10px';
+
     // Add username with avatar if present and should be shown
     if (username && showUsername) {
-      const userInfoDiv = document.createElement('div');
-      userInfoDiv.className = 'user-info';
-
       // Add avatar
       const avatar = document.createElement('playful-avatar');
       avatar.setAttribute('name', username);
       avatar.setAttribute('variant', 'beam');
-      userInfoDiv.appendChild(avatar);
+      avatar.className = 'msg-avatar';
+      messageContainer.appendChild(avatar);
 
-      // Add username
+      // Create right side content container
+      const rightContent = document.createElement('div');
+      rightContent.className = 'msg-right-content';
+      rightContent.style.flex = '1';
+      rightContent.style.minWidth = '0';
+
+      // Add username and time in a header
+      const userHeader = document.createElement('div');
+      userHeader.className = 'msg-user-header';
+      userHeader.style.display = 'flex';
+      userHeader.style.alignItems = 'baseline';
+      userHeader.style.gap = '8px';
+      userHeader.style.marginBottom = '2px';
+
       const usernameSpan = document.createElement('span');
       usernameSpan.className = 'username';
       usernameSpan.textContent = username;
       usernameSpan.style.fontWeight = 'bold';
-      userInfoDiv.appendChild(usernameSpan);
+      userHeader.appendChild(usernameSpan);
 
       // Add time next to username
       if (timestamp) {
@@ -659,31 +676,58 @@ class ChatMessage extends HTMLElement {
         timeSpan.textContent = formatTimestamp(timestamp);
         timeSpan.style.color = '#888';
         timeSpan.style.fontSize = '0.85em';
-        timeSpan.style.marginLeft = '8px';
         timeSpan.style.whiteSpace = 'nowrap';
         timeSpan.setAttribute('data-first-message', 'true');
-        userInfoDiv.appendChild(timeSpan);
+        userHeader.appendChild(timeSpan);
       }
 
-      this.appendChild(userInfoDiv);
-    }
+      rightContent.appendChild(userHeader);
 
-    // Create message content container
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'msg-content';
-    contentDiv.style.wordWrap = 'break-word';
-    contentDiv.style.lineHeight = '1.4';
+      // Create message content container
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'msg-content';
+      contentDiv.style.wordWrap = 'break-word';
+      contentDiv.style.lineHeight = '1.4';
 
-    // Store reference to contentDiv for rendering methods
-    this._contentDiv = contentDiv;
+      // Store reference to contentDiv for rendering methods
+      this._contentDiv = contentDiv;
 
-    // Handle file messages (check inside the element)
-    if (message.startsWith('FILE:')) {
-      this.renderFileMessage(message, contentDiv);
+      // Handle file messages (check inside the element)
+      if (message.startsWith('FILE:')) {
+        this.renderFileMessage(message, contentDiv);
+      } else {
+        // Handle regular text messages with link detection
+        this.renderTextMessage(message, contentDiv);
+      }
+
+      rightContent.appendChild(contentDiv);
+      messageContainer.appendChild(rightContent);
     } else {
-      // Handle regular text messages with link detection
-      this.renderTextMessage(message, contentDiv);
+      // No username shown - just content with left padding
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'msg-content';
+      contentDiv.style.wordWrap = 'break-word';
+      contentDiv.style.lineHeight = '1.4';
+      contentDiv.style.paddingLeft = '46px'; // Align with messages that have avatar
+
+      // Store reference to contentDiv for rendering methods
+      this._contentDiv = contentDiv;
+
+      // Handle file messages (check inside the element)
+      if (message.startsWith('FILE:')) {
+        this.renderFileMessage(message, contentDiv);
+      } else {
+        // Handle regular text messages with link detection
+        this.renderTextMessage(message, contentDiv);
+      }
+
+      messageContainer.appendChild(contentDiv);
     }
+
+    this.appendChild(messageContainer);
+
+    // Get contentDiv for adding reply references and other content
+    const contentDiv = this.querySelector('.msg-content');
 
     // Add reply reference if this is a reply and not in thread view
     if (replyTo && !isInThread) {
@@ -782,8 +826,6 @@ class ChatMessage extends HTMLElement {
       };
       contentDiv.appendChild(threadIndicator);
     }
-
-    this.appendChild(contentDiv);
   }
 
   renderFileMessage(message, container) {
