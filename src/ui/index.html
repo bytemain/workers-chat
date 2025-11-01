@@ -201,6 +201,93 @@
         flex-direction: column;
       }
 
+      /* Room Selector in Chatlog */
+      #room-selector {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: var(--spacing);
+        flex: 1;
+      }
+
+      #room-selector.visible {
+        display: flex;
+      }
+
+      .room-selector-content {
+        max-width: 500px;
+        width: 100%;
+      }
+
+      .room-selector-section {
+        margin-bottom: 2em;
+      }
+
+      .room-selector-label {
+        display: block;
+        font-size: 0.9em;
+        margin-bottom: 0.5em;
+        color: var(--text-muted);
+        font-weight: 500;
+      }
+
+      .room-selector-input-group {
+        display: flex;
+        gap: 0.5em;
+        flex-wrap: wrap;
+      }
+
+      .room-selector-input {
+        flex: 1;
+        min-width: 200px;
+        padding: 0.6em 1em;
+        border: 1px solid var(--border);
+        border-radius: var(--border-radius);
+        font-size: 1em;
+        font-family: inherit;
+        transition: border-color 0.2s;
+      }
+
+      .room-selector-input:focus {
+        outline: none;
+        border-color: var(--links);
+      }
+
+      .room-selector-btn {
+        padding: 0.6em 1.5em;
+        border: none;
+        border-radius: var(--border-radius);
+        background: var(--links);
+        color: white;
+        font-size: 1em;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        font-family: inherit;
+      }
+
+      .room-selector-btn:hover {
+        opacity: 0.9;
+      }
+
+      .room-selector-btn.secondary {
+        background: transparent;
+        color: var(--text-main);
+        border: 1px solid var(--border);
+      }
+
+      .room-selector-btn.secondary:hover {
+        background: var(--background-alt);
+      }
+
+      .room-selector-divider {
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 0.9em;
+        margin: 1em 0;
+      }
+
       /* Mobile-specific styles */
       @media (max-width: 600px) {
         /* Prevent body scroll when thread is open */
@@ -274,12 +361,6 @@
         /* Adjust room info display in mobile dropdown */
         #right-sidebar #room-info {
           border-bottom: 2px solid #ddd;
-        }
-
-        /* Make sure content doesn't overlap with top bar */
-        #name-form,
-        #room-form {
-          padding-top: var(--header-height);
         }
       }
 
@@ -530,11 +611,6 @@
           display: none;
         }
 
-        /* Hide top bar when room form exists in DOM */
-        body:has(#room-form) #mobile-top-bar {
-          display: none !important;
-        }
-
         /* Hide titlebar on mobile (use mobile-top-bar instead) */
         #titlebar {
           display: none;
@@ -691,131 +767,8 @@
         z-index: 10;
       }
 
-      #room-form {
-        position: fixed;
-        z-index: 3;
-        top: 0;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background-color: white;
-        font-size: 200%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-      }
-
-      /* Hide titlebar and main container when room form is present */
-      body:has(#room-form) #titlebar,
-      body:has(#room-form) #main-container {
-        display: none;
-      }
-
-      #room-name {
-        width: 100%;
-        padding: 0.6em 1em;
-        font-size: 0.7em;
-        text-align: center;
-        border-radius: var(--border-radius);
-      }
-
-      /* Username input in room form */
-      #room-form #name-input {
-        width: 100%;
-        border-radius: var(--border-radius);
-        font-size: max(16px, 0.7em);
-      }
-
-      #room-form button {
-        border: none;
-        padding: 0.6em 1em;
-        border-radius: var(--border-radius);
-        cursor: pointer;
-        font-size: 0.7em;
-        transition: var(--transition);
-        touch-action: manipulation;
-        user-select: none;
-      }
-
-      #go-public {
-        width: auto;
-        min-width: 100px;
-        flex-shrink: 0;
-      }
-
-      #go-private {
-        width: 100%;
-        max-width: 100%;
-      }
-
       .chat-input-textarea {
         margin-bottom: 0 !important;
-      }
-
-      @media (max-width: 660px) {
-        #room-form {
-          font-size: 150%;
-        }
-
-        #room-name {
-          width: 100%;
-        }
-
-        #go-public {
-          min-width: 100px;
-        }
-
-        #go-private {
-          width: 100%;
-        }
-
-        /* Better touch targets on mobile */
-        #room-form #name-input,
-        #room-name {
-          padding: 0.8em 1em;
-          min-height: 2.5em;
-        }
-
-        #room-form button {
-          padding: 0.8em 1em;
-          min-height: 2.5em;
-        }
-      }
-
-      @media (max-width: 500px) {
-        #room-form {
-          font-size: 120%;
-        }
-
-        /* Ensure comfortable spacing on small screens */
-        #room-form > div {
-          padding: 0 15px;
-        }
-
-        /* Adjust emoji sizes for smaller screens */
-        #room-form > div > div:first-child {
-          font-size: 2em !important;
-        }
-      }
-
-      /* Very small screens optimization */
-      @media (max-width: 360px) {
-        #room-form {
-          font-size: 100%;
-        }
-
-        #room-form #name-input,
-        #room-name {
-          min-height: 3em;
-        }
-
-        #room-name {
-          min-width: auto;
-        }
       }
 
       /* Channel Panel Styles */
@@ -1652,95 +1605,6 @@
   </head>
 
   <body>
-    <!-- Room Entry Form (shown before joining) -->
-    <form id="room-form" action="javascript:void(0)">
-      <div style="width: 100%; max-width: 500px">
-        <div style="margin-bottom: 1.5em">
-          <label
-            for="name-input"
-            style="
-              display: block;
-              font-size: 0.7em;
-              margin-bottom: 0.3em;
-              color: #666;
-              text-align: center;
-            "
-            >Enter Your Name</label
-          >
-          <input
-            id="name-input"
-            type="text"
-            placeholder="Your name"
-            autocomplete="name"
-            inputmode="text"
-            required
-            aria-label="Your name"
-            maxlength="50"
-            style="
-              width: 100%;
-              padding: 0.6em 1em;
-              border: 1px solid #ddd;
-              border-radius: 6px;
-              font-size: 0.7em;
-              text-align: center;
-              transition: border-color 0.2s;
-            "
-          />
-        </div>
-
-        <label
-          for="room-name"
-          style="
-            display: block;
-            font-size: 0.7em;
-            margin-bottom: 0.3em;
-            color: #666;
-            text-align: center;
-          "
-          >Enter a Public Room</label
-        >
-        <div
-          style="
-            display: flex;
-            gap: 0.5em;
-            flex-wrap: wrap;
-            justify-content: center;
-          "
-        >
-          <input
-            id="room-name"
-            type="text"
-            placeholder="Room name"
-            autocomplete="off"
-            inputmode="text"
-            style="flex: 1; min-width: 200px"
-            aria-label="Room name"
-            maxlength="100"
-          />
-          <button id="go-public" type="submit" aria-label="Join room">
-            Go &raquo;
-          </button>
-        </div>
-        <p
-          style="
-            font-size: 0.7em;
-            color: #999;
-            text-align: center;
-            margin: 0.3em 0;
-          "
-        >
-          OR
-        </p>
-        <button
-          id="go-private"
-          type="button"
-          aria-label="Create a new private room"
-        >
-          🔒 Create a Private Room &raquo;
-        </button>
-      </div>
-    </form>
-
     <!-- Global Titlebar -->
     <div id="titlebar">
       <div
@@ -1756,7 +1620,7 @@
       <div id="channel-panel">
         <!-- Room Info Header with Dropdown -->
         <div id="room-info-header">
-          <div id="room-name-large">Room Name</div>
+          <div id="room-name-large">Select a Room</div>
           <button id="room-menu-btn" class="icon-btn" title="Room menu">
             <i class="ri-more-fill"></i>
           </button>
@@ -1857,6 +1721,52 @@
           </div>
         </div>
         <div id="chatlog">
+          <!-- Room Selector (shown when no room is selected) -->
+          <div id="room-selector">
+            <div class="room-selector-content">
+              <div class="room-selector-section">
+                <label class="room-selector-label">Enter Your Name</label>
+                <input
+                  id="selector-name-input"
+                  type="text"
+                  class="room-selector-input"
+                  placeholder="Your name"
+                  autocomplete="name"
+                  maxlength="50"
+                />
+              </div>
+
+              <div class="room-selector-section">
+                <label class="room-selector-label">Join a Public Room</label>
+                <div class="room-selector-input-group">
+                  <input
+                    id="selector-room-input"
+                    type="text"
+                    class="room-selector-input"
+                    placeholder="Room name"
+                    autocomplete="off"
+                    maxlength="100"
+                  />
+                  <button id="selector-join-btn" class="room-selector-btn">
+                    Join
+                  </button>
+                </div>
+              </div>
+
+              <div class="room-selector-divider">OR</div>
+
+              <div class="room-selector-section">
+                <button
+                  id="selector-private-btn"
+                  class="room-selector-btn secondary"
+                  style="width: 100%"
+                >
+                  🔒 Create a Private Room
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div id="spacer"></div>
         </div>
         <div id="reply-indicator" style="display: none">

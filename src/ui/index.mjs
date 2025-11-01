@@ -1049,12 +1049,6 @@ customElements.define('chat-message', ChatMessage);
 
 let currentWebSocket = null;
 
-let nameForm = document.querySelector('#name-form');
-let nameInput = document.querySelector('#name-input');
-let roomForm = document.querySelector('#room-form');
-let roomNameInput = document.querySelector('#room-name');
-let goPublicButton = document.querySelector('#go-public');
-let goPrivateButton = document.querySelector('#go-private');
 let chatroom = document.querySelector('#chatroom');
 let chatlog = document.querySelector('#chatlog');
 let chatInputComponent = null; // Will be initialized after DOM is ready
@@ -2551,22 +2545,11 @@ export function startNameChooser() {
     // Don't save here - wait until user enters a room
   }
 
-  // Set username and display it
+  // Set username
   username = savedUsername;
-  nameInput.value = savedUsername;
 
   // Update user info card in left sidebar
   updateUserInfoCard();
-
-  // Bind username input event listener for editing in room form
-  nameInput.addEventListener('input', (event) => {
-    if (event.currentTarget.value.length > 32) {
-      event.currentTarget.value = event.currentTarget.value.slice(0, 32);
-    }
-    // Update username in real-time (but don't save yet)
-    username = event.currentTarget.value.trim();
-    updateUserInfoCard();
-  });
 
   // Go directly to room chooser
   startRoomChooser();
@@ -2581,74 +2564,136 @@ function startRoomChooser() {
     return;
   }
 
-  // Initialize left sidebar UI (will show room list from history)
-  updateRoomListUI();
+  // Set roomname to empty string instead of undefined
+  roomname = '';
 
-  roomForm.addEventListener('submit', (event) => {
-    event.preventDefault();
+  // Update room name header to show we're in room selection mode
+  const roomNameLarge = document.getElementById('room-name-large');
+  if (roomNameLarge) {
+    // Clear any existing content and set text
+    roomNameLarge.textContent = 'Select a Room';
+  }
 
-    // Validate username before proceeding
-    username = nameInput.value.trim();
-    if (username.length === 0) {
-      nameInput.focus();
-      alert('Please enter your name');
-      return;
-    }
-    localStorage.setItem('chatUsername', username);
+  // Update user info card with current username
+  updateUserInfoCard();
 
-    // Validate room name
-    roomname = roomNameInput.value;
-    if (roomname.length > 0) {
-      startChat();
-    }
-  });
+  // Show main UI with room selector in chatlog
+  showRoomSelector();
 
-  roomNameInput.addEventListener('input', (event) => {
-    if (event.currentTarget.value.length > 32) {
-      event.currentTarget.value = event.currentTarget.value.slice(0, 32);
-    }
-  });
+  // Initialize left sidebar (room dropdown and user info)
+  initializeLeftSidebar();
 
-  goPublicButton.addEventListener('click', async (event) => {
-    // Validate username before proceeding
-    username = nameInput.value.trim();
-    if (username.length === 0) {
-      nameInput.focus();
-      alert('Please enter your name');
-      return;
-    }
-    localStorage.setItem('chatUsername', username);
+  // Set up room selector event handlers
+  const selectorNameInput = document.getElementById('selector-name-input');
+  const selectorRoomInput = document.getElementById('selector-room-input');
+  const selectorJoinBtn = document.getElementById('selector-join-btn');
+  const selectorPrivateBtn = document.getElementById('selector-private-btn');
 
-    roomname = roomNameInput.value;
-    if (roomname.length > 0) {
-      startChat();
-    }
-  });
+  if (selectorNameInput) {
+    selectorNameInput.value = username;
+    selectorNameInput.addEventListener('input', (event) => {
+      if (event.currentTarget.value.length > 32) {
+        event.currentTarget.value = event.currentTarget.value.slice(0, 32);
+      }
+      username = event.currentTarget.value.trim();
+      updateUserInfoCard();
+    });
+  }
 
-  goPrivateButton.addEventListener('click', async (event) => {
-    // Validate username before proceeding
-    username = nameInput.value.trim();
-    if (username.length === 0) {
-      nameInput.focus();
-      alert('Please enter your name');
-      return;
-    }
-    localStorage.setItem('chatUsername', username);
+  if (selectorRoomInput) {
+    selectorRoomInput.addEventListener('input', (event) => {
+      if (event.currentTarget.value.length > 32) {
+        event.currentTarget.value = event.currentTarget.value.slice(0, 32);
+      }
+    });
 
-    roomNameInput.disabled = true;
-    goPublicButton.disabled = true;
-    event.currentTarget.disabled = true;
+    // Allow Enter key to join
+    selectorRoomInput.addEventListener('keypress', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        selectorJoinBtn?.click();
+      }
+    });
+  }
 
-    try {
-      roomname = await api.createPrivateRoom();
-      startChat();
-    } catch (err) {
-      alert('something went wrong');
-      document.location.reload();
-    }
-  });
+  if (selectorJoinBtn) {
+    selectorJoinBtn.addEventListener('click', () => {
+      username = selectorNameInput?.value.trim() || username;
+      if (username.length === 0) {
+        selectorNameInput?.focus();
+        alert('Please enter your name');
+        return;
+      }
+      localStorage.setItem('chatUsername', username);
 
-  roomNameInput.focus();
+      roomname = selectorRoomInput?.value.trim() || '';
+      if (roomname.length > 0) {
+        window.location.hash = '#' + roomname;
+        startChat();
+      }
+    });
+  }
+
+  if (selectorPrivateBtn) {
+    selectorPrivateBtn.addEventListener('click', async () => {
+      username = selectorNameInput?.value.trim() || username;
+      if (username.length === 0) {
+        selectorNameInput?.focus();
+        alert('Please enter your name');
+        return;
+      }
+      localStorage.setItem('chatUsername', username);
+
+      selectorPrivateBtn.disabled = true;
+      selectorPrivateBtn.textContent = 'Creating...';
+
+      try {
+        roomname = await api.createPrivateRoom();
+        window.location.hash = '#' + roomname;
+        startChat();
+      } catch (err) {
+        alert('Something went wrong creating the private room');
+        selectorPrivateBtn.disabled = false;
+        selectorPrivateBtn.innerHTML = '🔒 Create a Private Room';
+      }
+    });
+  }
+
+  selectorRoomInput?.focus();
+}
+
+// Show room selector in chatlog
+function showRoomSelector() {
+  const roomSelector = document.getElementById('room-selector');
+  const spacer = document.getElementById('spacer');
+  const chatInput = document.getElementById('main-chat-input-container');
+
+  if (roomSelector) {
+    roomSelector.classList.add('visible');
+  }
+  if (spacer) {
+    spacer.style.display = 'none';
+  }
+  if (chatInput) {
+    chatInput.style.display = 'none';
+  }
+}
+
+// Hide room selector when entering a room
+function hideRoomSelector() {
+  const roomSelector = document.getElementById('room-selector');
+  const spacer = document.getElementById('spacer');
+  const chatInput = document.getElementById('main-chat-input-container');
+
+  if (roomSelector) {
+    roomSelector.classList.remove('visible');
+  }
+  if (spacer) {
+    spacer.style.display = 'block';
+  }
+  if (chatInput) {
+    chatInput.style.display = 'block';
+  }
 }
 
 // Room info state variables (declared at module level for WebSocket access)
@@ -2807,9 +2852,8 @@ async function tryDecryptMessage(data) {
 }
 
 async function startChat() {
-  if (roomForm && roomForm.parentElement) {
-    roomForm.remove();
-  }
+  // Hide room selector and show chat interface
+  hideRoomSelector();
 
   // Reset encryption initialization flag for new room
   encryptionState.initialized = false;
@@ -4528,14 +4572,9 @@ function updateRoomListUI() {
         ?.classList.remove('dropdown-open');
     },
     onCreateRoom: () => {
-      // Show room form
-      const roomForm = document.querySelector('#room-form');
-      if (roomForm) roomForm.style.display = 'flex';
-      // Close dropdown
-      roomDropdown.classList.remove('visible');
-      document
-        .querySelector('#room-info-header')
-        ?.classList.remove('dropdown-open');
+      // Clear hash and reload to go back to room selection
+      window.location.hash = '';
+      window.location.reload();
     },
     onRoomContextMenu: (e, roomName) => {
       showRoomContextMenu(e, roomName);
