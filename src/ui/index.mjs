@@ -2457,9 +2457,7 @@ async function startChat() {
     }
   }
 
-  // Load room info and hashtags on start
   loadRoomInfo();
-  loadHashtags();
 
   // Room name editing
   roomInfoNameDisplay.addEventListener('click', (event) => {
@@ -3612,6 +3610,7 @@ function join() {
 
       if (!wroteWelcomeMessages) {
         wroteWelcomeMessages = true;
+        addSystemMessage('* Hello ' + username + '!');
         addSystemMessage(
           '* This is a app built with Cloudflare Workers Durable Objects. The source code ' +
             'can be found at: https://github.com/bytemain/workers-chat',
@@ -3620,7 +3619,6 @@ function join() {
           '* WARNING: Participants in this chat are random people on the internet. ' +
             'Names are not authenticated; anyone can pretend to be anyone.Chat history is saved.',
         );
-        addSystemMessage('* Hello ' + username + '!');
         if (roomname.length == 64) {
           addSystemMessage(
             '* This is a private room. You can invite someone to the room by sending them the URL.',

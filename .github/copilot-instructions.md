@@ -4,6 +4,8 @@
 
 This is a real-time chat application running 100% on Cloudflare's edge using **Workers**, **Durable Objects**, and **R2 storage**. The key architectural insight: **Durable Objects coordinate WebSocket connections and manage per-room state** without traditional servers.
 
+`Local First` principles are applied to the frontend.
+
 You must make the UI looks like simple and efficient as possible.
 
 ## Core Architecture
