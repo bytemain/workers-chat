@@ -5,8 +5,14 @@
       name="viewport"
       content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, user-scalable=0"
     />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.min.css">
-    <script type="module" src="https://cdn.jsdelivr.net/npm/playful-avatars/index.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.min.css"
+    />
+    <script
+      type="module"
+      src="https://cdn.jsdelivr.net/npm/playful-avatars/index.js"
+    ></script>
     <style type="text/css">
       :root {
         --border-radius: 5px;
@@ -14,6 +20,7 @@
         --spacing-sm: 0.5rem;
         --spacing-xs: 0.25rem;
         --transition: 0.2s ease;
+        --left-sidebar-width: 72px;
       }
 
       * {
@@ -29,19 +36,29 @@
         width: 100vw;
       }
 
-      #chatlog {
+      #chatroom {
         position: fixed;
         top: 0;
-        bottom: 32px;
-        left: 0;
+        bottom: 0;
+        left: var(--left-sidebar-width);
         right: 200px;
+        display: flex;
+        flex-direction: column;
+        transition:
+          right 0.3s ease,
+          left 0.3s ease;
+      }
+
+      #chatlog {
+        flex: 1;
         overflow-y: auto;
         padding: var(--spacing);
         overflow-wrap: break-word;
-        transition: right 0.3s ease, bottom 0.1s ease;
+        display: flex;
+        flex-direction: column;
       }
 
-      #chatlog.thread-open {
+      #chatroom.thread-open {
         right: 600px;
       }
 
@@ -149,7 +166,9 @@
         height: 36px;
         border-radius: 50%;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
       }
 
       chat-message .msg-container:hover .msg-avatar::part(svg) {
@@ -186,13 +205,13 @@
         position: fixed;
         right: 0;
         top: 0;
-        bottom: 32px;
+        bottom: 0;
         width: 200px;
         display: none;
         flex-direction: column;
         border-left: 1px solid var(--border);
         background: var(--background);
-        transition: bottom 0.1s ease;
+        transition: none;
       }
 
       #right-sidebar.visible {
@@ -638,7 +657,7 @@
         transform: rotate(180deg);
       }
 
-      #mobile-top-bar + #chatlog {
+      #mobile-top-bar + #chatroom {
         top: 48px;
       }
 
@@ -652,12 +671,12 @@
           display: none !important;
         }
 
-        #chatlog {
+        #chatroom {
           top: 48px !important;
         }
 
-        /* When forms exist, chatlog should not have top spacing */
-        body:has(#room-form) #chatlog {
+        /* When forms exist, chatroom should not have top spacing */
+        body:has(#room-form) #chatroom {
           top: 0 !important;
         }
 
@@ -667,8 +686,8 @@
           z-index: 99;
         }
 
-        /* When filter banner is visible on mobile, adjust chatlog */
-        body:has(#hashtag-filter-banner.visible) #chatlog {
+        /* When filter banner is visible on mobile, adjust chatroom */
+        body:has(#hashtag-filter-banner.visible) #chatroom {
           top: 89px !important;
           /* 48px (top bar) + 41px (filter banner) */
         }
@@ -710,7 +729,7 @@
           display: block;
         }
 
-        #chatlog {
+        #chatroom {
           right: 0;
         }
 
@@ -728,11 +747,7 @@
         }
 
         /* Hide main chat when thread is open on mobile */
-        #chatlog.thread-open {
-          display: none;
-        }
-
-        #main-chat-input-container.thread-open {
+        #chatroom.thread-open {
           display: none;
         }
 
@@ -741,17 +756,14 @@
           display: none;
         }
 
-        /* Adjust chatlog when thread is open */
-        body.thread-open #chatlog {
+        /* Adjust chatroom when thread is open */
+        body.thread-open #chatroom {
           top: 0;
         }
       }
 
       #reply-indicator {
-        position: fixed;
-        left: 0;
-        bottom: 35px;
-        width: 100%;
+        flex-shrink: 0;
         background: var(--background-alt);
         border-top: 2px solid var(--links);
         padding: var(--spacing-sm);
@@ -760,7 +772,7 @@
         justify-content: space-between;
         font-size: 0.9em;
         color: var(--text-muted);
-        z-index: 100;
+        z-index: 5;
       }
 
       #reply-indicator .reply-indicator-text {
@@ -785,13 +797,11 @@
       }
 
       #main-chat-input-container {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
+        flex-shrink: 0;
         background: var(--background);
         border-top: 1px solid var(--border);
-        transition: bottom 0.1s ease;
+        padding: 0;
+        z-index: 10;
       }
 
       #room-form {
@@ -911,91 +921,6 @@
         }
       }
 
-      #room-history {
-        margin-top: 3em;
-        font-size: 0.5em;
-        width: 100%;
-        max-width: 650px;
-        padding: 0 20px;
-      }
-
-      #room-history h3 {
-        margin: 0 0 1.2em 0;
-        font-weight: 600;
-        font-size: 1.3em;
-        text-align: center;
-      }
-
-      #room-history-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--spacing-sm);
-        justify-content: center;
-        max-width: 650px;
-        margin: 0 auto;
-      }
-
-      .room-history-item {
-        background: var(--background);
-        border: 1px solid var(--border);
-        border-radius: var(--border-radius);
-        padding: 0.8em 1.2em;
-        cursor: pointer;
-        transition: var(--transition);
-        display: flex;
-        align-items: center;
-        gap: var(--spacing-sm);
-        min-height: 44px;
-        touch-action: manipulation;
-        user-select: none;
-      }
-
-      .room-history-item:hover {
-        border-color: var(--links);
-        transform: translateY(-2px);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-      }
-
-      .room-history-item .room-name {
-        font-weight: 600;
-        flex: 1;
-      }
-
-      .room-history-item .remove-btn {
-        background: rgba(220, 53, 69, 0.1);
-        border: none;
-        color: #999;
-        cursor: pointer;
-        font-size: 1.1em;
-        padding: 0.3em 0.5em;
-        line-height: 1;
-        border-radius: var(--border-radius);
-        transition: var(--transition);
-        min-width: 30px;
-        min-height: 30px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .room-history-item .remove-btn:hover {
-        color: #fff;
-        background: #dc3545;
-      }
-
-      /* Mobile optimization for room history */
-      @media (max-width: 660px) {
-        #room-history {
-          font-size: 0.6em;
-          margin-top: 2em;
-        }
-
-        .room-history-item {
-          padding: 1em 1.2em;
-          font-size: 1.1em;
-        }
-      }
-
       /* Hashtag styles */
       a.hashtag {
         color: #1da1f2;
@@ -1079,8 +1004,8 @@
         display: flex;
       }
 
-      /* When filter banner is visible, adjust chatlog top position */
-      body:has(#hashtag-filter-banner.visible) #chatlog {
+      /* When filter banner is visible, adjust chatroom top position */
+      body:has(#hashtag-filter-banner.visible) #chatroom {
         top: 41px;
       }
 
@@ -1104,14 +1029,14 @@
         position: fixed;
         right: 200px;
         top: 0;
-        bottom: 32px;
+        bottom: 0;
         width: 400px;
         background: var(--background);
         border-left: 1px solid var(--border);
         display: none;
         flex-direction: column;
         z-index: 50;
-        transition: bottom 0.1s ease;
+        transition: none;
       }
 
       #thread-panel.visible {
@@ -1230,7 +1155,7 @@
         white-space: nowrap;
         margin-left: 8px;
       }
- 
+
       .message-actions {
         position: absolute;
         right: var(--spacing-sm);
@@ -1473,10 +1398,253 @@
       #room-info h3 > span:first-child {
         flex: 1;
       }
+
+      /* Left Sidebar Styles */
+      #left-sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: var(--left-sidebar-width);
+        background: var(--background-alt);
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--border);
+        z-index: 100;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+
+      #room-list-container {
+        flex: 1;
+        overflow-y: auto;
+        padding: var(--spacing-sm) 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
+      .room-item {
+        position: relative;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: var(--background);
+        border: 2px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: var(--transition);
+        font-size: 24px;
+        flex-shrink: 0;
+      }
+
+      .room-item:hover {
+        border-radius: 35%;
+        background: var(--background-body);
+        border-color: var(--links);
+        transform: translateY(-2px);
+      }
+
+      .room-item.active {
+        border-radius: 35%;
+        border-color: var(--links);
+        background: var(--links);
+        color: white;
+      }
+
+      .room-item .room-unread-badge {
+        position: absolute;
+        bottom: -4px;
+        right: -4px;
+        background: #dc3545;
+        color: white;
+        border-radius: 10px;
+        padding: 2px 6px;
+        font-size: 11px;
+        font-weight: bold;
+        min-width: 18px;
+        text-align: center;
+        display: none;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
+
+      .room-item .room-unread-badge.visible {
+        display: block;
+      }
+
+      .room-item-add {
+        background: var(--links);
+        color: white;
+        font-size: 28px;
+        border: 2px dashed var(--links);
+      }
+
+      .room-item-add:hover {
+        background: var(--links);
+        opacity: 0.8;
+        border-style: solid;
+      }
+
+      /* User Info Card at Bottom */
+      #user-info-card {
+        position: relative;
+        padding: var(--spacing-sm);
+        background: var(--background-body);
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--spacing-xs);
+        flex-shrink: 0;
+      }
+
+      #user-info-card .user-avatar-container {
+        position: relative;
+        width: 40px;
+        height: 40px;
+      }
+
+      #user-info-card playful-avatar {
+        width: 40px;
+        height: 40px;
+      }
+
+      #user-info-card playful-avatar::part(svg) {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
+
+      #user-info-card .user-status-indicator {
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 12px;
+        height: 12px;
+        background: #28a745;
+        border: 2px solid var(--background-body);
+        border-radius: 50%;
+      }
+
+      #user-info-card .user-name {
+        font-size: 0.75em;
+        font-weight: 600;
+        color: var(--text-main);
+        text-align: center;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* Room Context Menu */
+      #room-context-menu {
+        position: fixed;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--border-radius);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+        display: none;
+        min-width: 150px;
+        padding: var(--spacing-xs) 0;
+      }
+
+      #room-context-menu.visible {
+        display: block;
+      }
+
+      .context-menu-item {
+        padding: var(--spacing-xs) var(--spacing);
+        cursor: pointer;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        font-size: 0.9em;
+      }
+
+      .context-menu-item:hover {
+        background: var(--background-alt);
+      }
+
+      .context-menu-item.danger {
+        color: #dc3545;
+      }
+
+      .context-menu-item.danger:hover {
+        background: rgba(220, 53, 69, 0.1);
+      }
+
+      /* Mobile adjustments for left sidebar */
+      @media (max-width: 600px) {
+        #left-sidebar {
+          width: 100%;
+          height: 60px;
+          bottom: auto;
+          flex-direction: row;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+
+        #room-list-container {
+          flex-direction: row;
+          padding: 0 var(--spacing-sm);
+          overflow-x: auto;
+          overflow-y: hidden;
+        }
+
+        #user-info-card {
+          flex-direction: row;
+          border-top: none;
+          border-left: 1px solid var(--border);
+          padding: var(--spacing-xs) var(--spacing-sm);
+        }
+
+        #chatroom {
+          top: 60px;
+          left: 0;
+        }
+
+        #chatlog {
+          padding-bottom: 80px;
+        }
+
+        #main-chat-input-container {
+          left: 0;
+          margin: 0;
+        }
+
+        #mobile-top-bar {
+          top: 60px;
+        }
+
+        #mobile-top-bar + #chatroom {
+          top: 108px;
+        }
+      }
     </style>
   </head>
 
   <body>
+    <!-- Left Sidebar for Room Navigation -->
+    <div id="left-sidebar">
+      <div id="room-list-container">
+        <!-- Room items will be dynamically added here -->
+      </div>
+      <div id="user-info-card">
+        <div class="user-avatar-container">
+          <playful-avatar id="user-avatar" name="User"></playful-avatar>
+          <div class="user-status-indicator"></div>
+        </div>
+        <div class="user-name" id="user-name-display">User</div>
+      </div>
+    </div>
+
     <form id="room-form" action="/fake-form-action">
       <div style="width: 100%; max-width: 500px">
         <div style="margin-bottom: 1.5em">
@@ -1545,7 +1713,16 @@
             Go &raquo;
           </button>
         </div>
-        <p style="font-size: 0.7em; color: #999; text-align: center; margin: 0.3em 0;">OR</p>
+        <p
+          style="
+            font-size: 0.7em;
+            color: #999;
+            text-align: center;
+            margin: 0.3em 0;
+          "
+        >
+          OR
+        </p>
         <button
           id="go-private"
           type="button"
@@ -1553,10 +1730,6 @@
         >
           🔒 Create a Private Room &raquo;
         </button>
-      </div>
-      <div id="room-history" style="display: none;">
-        <h3>📜 Recent Rooms</h3>
-        <div id="room-history-list" role="list"></div>
       </div>
     </form>
     <div id="thread-panel">
@@ -1577,61 +1750,15 @@
         ></chat-input-component>
       </div>
     </div>
-    <form id="chatroom" action="/fake-form-action">
+    <div id="chatroom">
       <div id="chatlog">
         <div id="spacer"></div>
-      </div>
-      <div id="right-sidebar">
-        <div id="room-info">
-          <h3>
-            <span>
-              <span>🏠 Room Info</span>
-              <span id="connection-status"></span>
-            </span>
-            <button class="settings-btn" id="btn-room-settings" title="Room Settings">⚙️</button>
-          </h3>
-          <div id="room-name-container">
-            <div id="room-name-display"></div>
-            <input type="text" id="room-name-input" />
-          </div>
-          <div id="room-description-container">
-            <div id="room-description-label">
-              📝 Description (click to edit)
-            </div>
-            <textarea
-              id="room-note"
-              placeholder="Add room description..."
-            ></textarea>
-          </div>
-          <div id="encryption-status" class="not-encrypted">
-            <span id="encryption-status-icon">🔓</span>
-            <span id="encryption-status-text">Not Encrypted</span>
-          </div>
-        </div>
-        <div id="roster-container">
-          <h3><span>👥</span><span>Online Members</span></h3>
-          <div id="roster"></div>
-        </div>
-        <div id="hashtag-container">
-          <h3><span>📌</span><span>Hashtags</span></h3>
-          <div id="hashtag-list"></div>
-        </div>
       </div>
       <div id="reply-indicator" style="display: none">
         <button type="button" class="reply-indicator-close">✕</button>
         <span class="reply-indicator-text"></span>
       </div>
-      <div
-        id="main-chat-input-container"
-        style="
-          position: fixed;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          background: white;
-          border-top: 1px solid #ddd;
-        "
-      >
+      <div id="main-chat-input-container">
         <chat-input-component
           id="chat-input"
           placeholder="Type a message..."
@@ -1642,7 +1769,47 @@
           show-prefix="true"
         ></chat-input-component>
       </div>
-    </form>
+    </div>
+    <div id="right-sidebar">
+      <div id="room-info">
+        <h3>
+          <span>
+            <span>🏠 Room Info</span>
+            <span id="connection-status"></span>
+          </span>
+          <button
+            class="settings-btn"
+            id="btn-room-settings"
+            title="Room Settings"
+          >
+            ⚙️
+          </button>
+        </h3>
+        <div id="room-name-container">
+          <div id="room-name-display"></div>
+          <input type="text" id="room-name-input" />
+        </div>
+        <div id="room-description-container">
+          <div id="room-description-label">📝 Description (click to edit)</div>
+          <textarea
+            id="room-note"
+            placeholder="Add room description..."
+          ></textarea>
+        </div>
+        <div id="encryption-status" class="not-encrypted">
+          <span id="encryption-status-icon">🔓</span>
+          <span id="encryption-status-text">Not Encrypted</span>
+        </div>
+      </div>
+      <div id="roster-container">
+        <h3><span>👥</span><span>Online Members</span></h3>
+        <div id="roster"></div>
+      </div>
+      <div id="hashtag-container">
+        <h3><span>📌</span><span>Hashtags</span></h3>
+        <div id="hashtag-list"></div>
+      </div>
+    </div>
     <div id="mobile-top-bar">
       <div id="mobile-top-bar-content">
         <span id="mobile-top-bar-icon">🏠</span>
@@ -1669,7 +1836,13 @@
         <div class="modal-body">
           <div class="modal-section">
             <h4>🔑 Encryption Key</h4>
-            <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: var(--spacing-sm);">
+            <p
+              style="
+                font-size: 0.9em;
+                color: var(--text-muted);
+                margin-bottom: var(--spacing-sm);
+              "
+            >
               Manage your local encryption key for this room.
             </p>
             <button
@@ -1722,14 +1895,32 @@
 
           <div class="modal-section">
             <h4>💾 Export</h4>
-            <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: var(--spacing-sm);">
+            <p
+              style="
+                font-size: 0.9em;
+                color: var(--text-muted);
+                margin-bottom: var(--spacing-sm);
+              "
+            >
               Download all messages and files as a ZIP archive.
             </p>
-            <button class="btn-export" id="btn-export-records" style="width: 100%;">
+            <button
+              class="btn-export"
+              id="btn-export-records"
+              style="width: 100%"
+            >
               💾 Export All Records
             </button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Room Context Menu -->
+    <div id="room-context-menu">
+      <div class="context-menu-item danger" id="context-menu-leave">
+        <span>🚪</span>
+        <span>Leave Room</span>
       </div>
     </div>
   </body>

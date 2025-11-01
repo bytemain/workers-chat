@@ -7,6 +7,7 @@ import { createReactiveState } from './react/state.mjs';
 import { api } from './api.mjs';
 import { generateRandomUsername } from './utils/random.mjs';
 import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
+import tooltip from './tooltip.js';
 
 const cryptoPool = getCryptoPool();
 
@@ -2029,51 +2030,8 @@ function removeFromRoomHistory(roomName) {
   let history = getRoomHistory();
   history = history.filter((item) => item.name !== roomName);
   localStorage.setItem('chatRoomHistory', JSON.stringify(history));
-}
-
-function displayRoomHistory() {
-  const historyList = document.querySelector('#room-history-list');
-  const history = getRoomHistory();
-
-  if (history.length === 0) {
-    document.querySelector('#room-history').style.display = 'none';
-    return;
-  }
-
-  document.querySelector('#room-history').style.display = 'block';
-  historyList.innerHTML = '';
-
-  history.forEach((item) => {
-    const div = document.createElement('div');
-    div.className = 'room-history-item';
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'room-name';
-    const isPrivate = item.name.length === 64;
-    const icon = isPrivate ? '🔒' : '💬';
-    const displayName = isPrivate ? 'Private Room' : '#' + item.name;
-    nameSpan.innerText = `${icon} ${displayName}`;
-    nameSpan.title = 'Click to enter ' + item.name;
-    div.appendChild(nameSpan);
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'remove-btn';
-    removeBtn.innerText = '×';
-    removeBtn.title = 'Remove from history';
-    removeBtn.onclick = (e) => {
-      e.stopPropagation();
-      removeFromRoomHistory(item.name);
-      displayRoomHistory();
-    };
-    div.appendChild(removeBtn);
-
-    div.onclick = () => {
-      roomname = item.name;
-      startChat();
-    };
-
-    historyList.appendChild(div);
-  });
+  // Update left sidebar
+  updateRoomListUI();
 }
 
 export function startNameChooser() {
@@ -2090,6 +2048,9 @@ export function startNameChooser() {
   username = savedUsername;
   nameInput.value = savedUsername;
 
+  // Update user info card in left sidebar
+  updateUserInfoCard();
+
   // Bind username input event listener for editing in room form
   nameInput.addEventListener('input', (event) => {
     if (event.currentTarget.value.length > 32) {
@@ -2097,6 +2058,7 @@ export function startNameChooser() {
     }
     // Update username in real-time (but don't save yet)
     username = event.currentTarget.value.trim();
+    updateUserInfoCard();
   });
 
   // Go directly to room chooser
@@ -2106,12 +2068,14 @@ export function startNameChooser() {
 function startRoomChooser() {
   if (document.location.hash.length > 1) {
     roomname = document.location.hash.slice(1);
+    // Save username to localStorage when directly entering via URL
+    localStorage.setItem('chatUsername', username);
     startChat();
     return;
   }
 
-  // Display room history
-  displayRoomHistory();
+  // Initialize left sidebar UI (will show room list from history)
+  updateRoomListUI();
 
   roomForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -2936,22 +2900,6 @@ async function startChat() {
 
   // Setup main chat input
   if (chatInputComponent) {
-    // Handle resize events from the component
-    chatInputComponent.addEventListener('resize', (event) => {
-      const newHeight = event.detail.height;
-
-      // Adjust chatlog, right-sidebar, hashtag panel, and thread panel bottom position
-      chatlog.style.bottom = newHeight + 'px';
-      let rightSidebar = document.querySelector('#right-sidebar');
-      if (rightSidebar) {
-        rightSidebar.style.bottom = newHeight + 'px';
-      }
-
-      if (threadPanel) {
-        threadPanel.style.bottom = newHeight + 'px';
-      }
-    });
-
     // Handle submit events from the component
     chatInputComponent.addEventListener('submit', (event) => {
       const message = event.detail.message;
@@ -3289,6 +3237,12 @@ async function startChat() {
       }
     });
   }
+
+  // Initialize left sidebar with room list and user info
+  initializeLeftSidebar();
+
+  // Clear unread count for current room
+  clearUnreadCount(roomname);
 
   join();
 }
@@ -4101,3 +4055,202 @@ window.addEventListener('popstate', () => {
     }
   }
 });
+
+// ============================================
+// Left Sidebar Room List Management
+// ============================================
+
+// Track unread counts for rooms
+const unreadCounts = new Map();
+
+// Get unread count for a room
+function getUnreadCount(roomName) {
+  return unreadCounts.get(roomName) || 0;
+}
+
+// Set unread count for a room
+function setUnreadCount(roomName, count) {
+  if (count <= 0) {
+    unreadCounts.delete(roomName);
+  } else {
+    unreadCounts.set(roomName, count);
+  }
+  updateRoomListUI();
+}
+
+// Increment unread count for a room
+function incrementUnreadCount(roomName) {
+  const current = getUnreadCount(roomName);
+  setUnreadCount(roomName, current + 1);
+}
+
+// Clear unread count for a room
+function clearUnreadCount(roomName) {
+  setUnreadCount(roomName, 0);
+}
+
+// Update room list UI
+function updateRoomListUI() {
+  const roomListContainer = document.querySelector('#room-list-container');
+  if (!roomListContainer) return;
+
+  const history = getRoomHistory();
+
+  // Clear existing room items (keep add button separate)
+  const existingItems = roomListContainer.querySelectorAll(
+    '.room-item:not(.room-item-add)',
+  );
+  existingItems.forEach((item) => item.remove());
+
+  // Create add button if it doesn't exist
+  let addButton = roomListContainer.querySelector('.room-item-add');
+  if (!addButton) {
+    addButton = document.createElement('div');
+    addButton.className = 'room-item room-item-add';
+    addButton.innerHTML = '+';
+    addButton.title = 'Add Room';
+    addButton.onclick = () => {
+      // Show room form
+      const roomForm = document.querySelector('#room-form');
+      const leftSidebar = document.querySelector('#left-sidebar');
+      if (roomForm) roomForm.style.display = 'flex';
+      if (leftSidebar) leftSidebar.style.display = 'none';
+    };
+    roomListContainer.appendChild(addButton);
+
+    // Attach tooltip to add button
+    tooltip.attach(addButton, 'Add Room', 'right');
+  }
+
+  // Add room items before the add button
+  history.forEach((item) => {
+    const roomItem = document.createElement('div');
+    roomItem.className = 'room-item';
+    roomItem.dataset.roomName = item.name;
+
+    // Check if this is the current room
+    if (roomname && item.name === roomname) {
+      roomItem.classList.add('active');
+    }
+
+    // Room icon (first letter or emoji)
+    const isPrivate = item.name.length === 64;
+    const icon = isPrivate ? '🔒' : (item.name[0] || '#').toUpperCase();
+    const displayName = isPrivate ? 'Private Room' : item.name;
+
+    // Create icon span
+    const iconSpan = document.createElement('span');
+    iconSpan.textContent = icon;
+    iconSpan.style.position = 'relative';
+    iconSpan.style.zIndex = '1';
+    roomItem.appendChild(iconSpan);
+
+    // Attach tooltip to show room name on hover
+    tooltip.attach(roomItem, displayName, 'right');
+
+    // Add unread badge
+    const unreadCount = getUnreadCount(item.name);
+    if (unreadCount > 0) {
+      const badge = document.createElement('div');
+      badge.className = 'room-unread-badge visible';
+      badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+      roomItem.appendChild(badge);
+    }
+
+    // Left click handler to switch rooms
+    roomItem.onclick = () => {
+      if (item.name !== roomname) {
+        window.location.hash = '#' + item.name;
+        window.location.reload();
+      }
+    };
+
+    // Right click handler for context menu
+    roomItem.oncontextmenu = (e) => {
+      e.preventDefault();
+      showRoomContextMenu(e, item.name);
+    };
+
+    // Insert before the add button
+    roomListContainer.insertBefore(roomItem, addButton);
+  });
+} // Show room context menu
+function showRoomContextMenu(event, targetRoomName) {
+  const contextMenu = document.querySelector('#room-context-menu');
+  if (!contextMenu) return;
+
+  // Position the context menu
+  contextMenu.style.left = event.pageX + 'px';
+  contextMenu.style.top = event.pageY + 'px';
+  contextMenu.classList.add('visible');
+
+  // Setup leave room handler
+  const leaveItem = document.querySelector('#context-menu-leave');
+  if (leaveItem) {
+    leaveItem.onclick = () => {
+      removeFromRoomHistory(targetRoomName);
+      contextMenu.classList.remove('visible');
+
+      // If leaving current room, redirect to room chooser
+      if (targetRoomName === roomname) {
+        window.location.hash = '';
+        window.location.reload();
+      }
+    };
+  }
+
+  // Close context menu when clicking elsewhere
+  const closeContextMenu = (e) => {
+    if (!contextMenu.contains(e.target)) {
+      contextMenu.classList.remove('visible');
+      document.removeEventListener('click', closeContextMenu);
+    }
+  };
+
+  // Delay to avoid immediate closing
+  setTimeout(() => {
+    document.addEventListener('click', closeContextMenu);
+  }, 10);
+}
+
+// Update user info card
+function updateUserInfoCard() {
+  const userAvatar = document.querySelector('#user-avatar');
+  const userNameDisplay = document.querySelector('#user-name-display');
+
+  if (userAvatar && username) {
+    userAvatar.setAttribute('name', username);
+  }
+
+  if (userNameDisplay && username) {
+    userNameDisplay.textContent = username;
+  }
+}
+
+// Initialize left sidebar when chat starts
+function initializeLeftSidebar() {
+  updateRoomListUI();
+  updateUserInfoCard();
+
+  // Show left sidebar when in a room
+  const leftSidebar = document.querySelector('#left-sidebar');
+  if (leftSidebar) {
+    leftSidebar.style.display = 'flex';
+  }
+}
+
+// Hide left sidebar when showing room form
+function hideLeftSidebar() {
+  const leftSidebar = document.querySelector('#left-sidebar');
+  if (leftSidebar) {
+    leftSidebar.style.display = 'none';
+  }
+}
+
+// Export functions for use in other parts of the code
+window.incrementUnreadCount = incrementUnreadCount;
+window.clearUnreadCount = clearUnreadCount;
+window.updateRoomListUI = updateRoomListUI;
+window.updateUserInfoCard = updateUserInfoCard;
+window.initializeLeftSidebar = initializeLeftSidebar;
+window.hideLeftSidebar = hideLeftSidebar;
