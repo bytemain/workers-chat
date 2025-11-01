@@ -3298,8 +3298,49 @@ async function startChat() {
 let lastSeenTimestamp = 0;
 let wroteWelcomeMessages = false;
 let isReconnecting = false; // Track if this is a reconnection
+let pendingMessages = []; // Queue for messages during initial load
+let isInitialLoad = true; // Flag to distinguish initial load from real-time messages
+
+// Process pending messages in order by timestamp (used during initial load)
+async function processPendingMessages() {
+  if (pendingMessages.length === 0) {
+    return;
+  }
+
+  // Sort messages by timestamp to ensure correct order
+  pendingMessages.sort((a, b) => a.timestamp - b.timestamp);
+
+  // Process all pending messages
+  for (const data of pendingMessages) {
+    if (data.timestamp > lastSeenTimestamp) {
+      // Decrypt message if encrypted
+      let messageText = await tryDecryptMessage(data);
+
+      addChatMessage(data.name, messageText, data.timestamp, {
+        messageId: data.messageId,
+        replyTo: data.replyTo,
+        threadInfo: data.threadInfo,
+        hashtags: data.hashtags || [],
+        editedAt: data.editedAt || null,
+      });
+      lastSeenTimestamp = data.timestamp;
+    }
+  }
+
+  // Clear the queue after processing
+  pendingMessages = [];
+
+  // Scroll to bottom
+  if (isAtBottom) {
+    chatlog.scrollBy(0, 1e8);
+  }
+}
 
 function join() {
+  // Clear pending messages and reset flags when starting a new connection
+  pendingMessages = [];
+  isInitialLoad = true;
+
   let ws = new WebSocket(api.getWebSocketUrl(roomname));
   let rejoined = false;
   let startTime = Date.now();
@@ -3563,6 +3604,12 @@ function join() {
       addSystemMessage(`* ${data.quit} has left the room`);
     } else if (data.ready) {
       // All pre-join messages have been delivered.
+      // Process any pending messages in correct order (from initial load)
+      await processPendingMessages();
+
+      // Mark initial load as complete - subsequent messages will be processed immediately
+      isInitialLoad = false;
+
       if (!wroteWelcomeMessages) {
         wroteWelcomeMessages = true;
         addSystemMessage(
@@ -3605,22 +3652,28 @@ function join() {
       }
     } else {
       // A regular chat message.
-      if (data.timestamp > lastSeenTimestamp) {
-        // Decrypt message if encrypted
-        let messageText = await tryDecryptMessage(data);
+      if (isInitialLoad) {
+        // During initial load, add to queue for batch processing
+        pendingMessages.push(data);
+      } else {
+        // After initial load, process real-time messages immediately
+        if (data.timestamp > lastSeenTimestamp) {
+          // Decrypt message if encrypted
+          let messageText = await tryDecryptMessage(data);
 
-        addChatMessage(data.name, messageText, data.timestamp, {
-          messageId: data.messageId,
-          replyTo: data.replyTo,
-          threadInfo: data.threadInfo,
-          hashtags: data.hashtags || [],
-          editedAt: data.editedAt || null,
-        });
-        lastSeenTimestamp = data.timestamp;
+          addChatMessage(data.name, messageText, data.timestamp, {
+            messageId: data.messageId,
+            replyTo: data.replyTo,
+            threadInfo: data.threadInfo,
+            hashtags: data.hashtags || [],
+            editedAt: data.editedAt || null,
+          });
+          lastSeenTimestamp = data.timestamp;
 
-        // Scroll to bottom if we were at bottom (includes our own messages)
-        if (isAtBottom) {
-          chatlog.scrollBy(0, 1e8);
+          // Scroll to bottom if we were at bottom (includes our own messages)
+          if (isAtBottom) {
+            chatlog.scrollBy(0, 1e8);
+          }
         }
       }
     }

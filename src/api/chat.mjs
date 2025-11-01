@@ -2,7 +2,7 @@ import { HashtagManager, extractHashtags } from './hashtag.mjs';
 import { Hono } from 'hono';
 import { getPath, splitPath } from 'hono/utils/url';
 import { showRoutes } from 'hono/dev';
-import { cors } from 'hono/cors'
+import { cors } from 'hono/cors';
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -38,7 +38,7 @@ function ignite(mount) {
     console.error(`${err}`);
     return c.text('Error: ' + err.message, 500);
   });
-  app.use('*', cors())
+  app.use('*', cors());
   showRoutes(app, {
     verbose: true,
   });
@@ -155,10 +155,10 @@ const app = ignite((app) => {
   app.notFound(async (c) => {
     console.log('Asset not found:', c.req.raw.url);
     const response = await c.env.ASSETS.fetch(c.req.raw);
-    
+
     // Clone the response so we can modify headers
     const newResponse = new Response(response.body, response);
-    
+
     // Get the Content-Type header
     const contentType = newResponse.headers.get('Content-Type');
     if (contentType) {
@@ -166,14 +166,21 @@ const app = ignite((app) => {
       let newContentType = contentType;
       if (contentType.includes('charset=')) {
         // Replace existing charset with UTF-8
-        newContentType = contentType.replace(/charset=[^;,\s]*/i, 'charset=UTF-8');
-      } else if (contentType.includes('text/') || contentType.includes('application/json') || contentType.includes('application/javascript')) {
+        newContentType = contentType.replace(
+          /charset=[^;,\s]*/i,
+          'charset=UTF-8',
+        );
+      } else if (
+        contentType.includes('text/') ||
+        contentType.includes('application/json') ||
+        contentType.includes('application/javascript')
+      ) {
         // Add charset=UTF-8 for text-based content types
         newContentType = contentType + ';charset=UTF-8';
       }
       newResponse.headers.set('Content-Type', newContentType);
     }
-    
+
     return newResponse;
   });
 });
@@ -328,7 +335,10 @@ export class ChatRoom {
         });
         let cooldown = +(await response.text());
         if (cooldown > 0) {
-          return c.json({ error: 'Rate limited. Please try again later.' }, 429);
+          return c.json(
+            { error: 'Rate limited. Please try again later.' },
+            429,
+          );
         }
 
         // Parse multipart form data
@@ -341,7 +351,10 @@ export class ChatRoom {
 
         // Validate file size (10MB max)
         if (file.size > 10 * 1024 * 1024) {
-          return c.json({ error: 'File too large. Maximum size is 10MB.' }, 400);
+          return c.json(
+            { error: 'File too large. Maximum size is 10MB.' },
+            400,
+          );
         }
 
         // Generate unique file key
@@ -391,7 +404,7 @@ export class ChatRoom {
       app.delete('/message/:messageId', async (c) => {
         const messageId = c.req.param('messageId');
         const { username } = await c.req.json();
-        
+
         if (!messageId) {
           return c.json({ error: "Missing 'messageId' parameter" }, 400);
         }
@@ -400,12 +413,16 @@ export class ChatRoom {
         const messages = await this.storage.list();
         let messageKey = null;
         let messageData = null;
-        
+
         for (const [key, value] of messages) {
-          if (key.startsWith('thread:') || key === 'room-info' || key === 'destruction-time') {
+          if (
+            key.startsWith('thread:') ||
+            key === 'room-info' ||
+            key === 'destruction-time'
+          ) {
             continue;
           }
-          
+
           try {
             const msg = typeof value === 'string' ? JSON.parse(value) : value;
             if (msg.messageId === messageId) {
@@ -417,33 +434,38 @@ export class ChatRoom {
             continue;
           }
         }
-        
+
         if (!messageData) {
           return c.json({ error: 'Message not found' }, 404);
         }
-        
+
         // Verify the user owns this message
         if (messageData.name !== username) {
-          return c.json({ error: 'You can only delete your own messages' }, 403);
+          return c.json(
+            { error: 'You can only delete your own messages' },
+            403,
+          );
         }
-        
+
         // Extract hashtags from the message to clean up indexes
         const hashtags = extractHashtags(messageData.message);
-        console.log(`[DELETE] Deleting message ${messageId} (key: ${messageKey})`);
+        console.log(
+          `[DELETE] Deleting message ${messageId} (key: ${messageKey})`,
+        );
         console.log(`[DELETE] Message has hashtags:`, hashtags);
-        
+
         // Delete the message
         await this.storage.delete(messageKey);
-        
+
         // Remove this message from all hashtag indexes
         for (const tag of hashtags) {
           console.log(`[DELETE] Cleaning up hashtag #${tag}`);
           await this.hashtagManager.removeMessageFromTag(tag, messageKey);
         }
-        
+
         // Get updated hashtag list after cleanup
         const updatedHashtags = await this.hashtagManager.getAllHashtags(100);
-        
+
         // Broadcast message deletion and hashtag update to all clients
         this.broadcast({
           messageDeleted: messageId,
@@ -456,9 +478,12 @@ export class ChatRoom {
       app.put('/message/:messageId', async (c) => {
         const messageId = c.req.param('messageId');
         const { username, newMessage } = await c.req.json();
-        
+
         if (!messageId || !newMessage) {
-          return c.json({ error: "Missing 'messageId' or 'newMessage' parameter" }, 400);
+          return c.json(
+            { error: "Missing 'messageId' or 'newMessage' parameter" },
+            400,
+          );
         }
 
         // Check message length
@@ -470,12 +495,16 @@ export class ChatRoom {
         const messages = await this.storage.list();
         let messageKey = null;
         let messageData = null;
-        
+
         for (const [key, value] of messages) {
-          if (key.startsWith('thread:') || key === 'room-info' || key === 'destruction-time') {
+          if (
+            key.startsWith('thread:') ||
+            key === 'room-info' ||
+            key === 'destruction-time'
+          ) {
             continue;
           }
-          
+
           try {
             const msg = typeof value === 'string' ? JSON.parse(value) : value;
             if (msg.messageId === messageId) {
@@ -487,11 +516,11 @@ export class ChatRoom {
             continue;
           }
         }
-        
+
         if (!messageData) {
           return c.json({ error: 'Message not found' }, 404);
         }
-        
+
         // Verify the user owns this message
         if (messageData.name !== username) {
           return c.json({ error: 'You can only edit your own messages' }, 403);
@@ -501,7 +530,7 @@ export class ChatRoom {
         if (messageData.message.startsWith('FILE:')) {
           return c.json({ error: 'Cannot edit file messages' }, 400);
         }
-        
+
         // Save original message to edit history
         if (!messageData.editHistory) {
           messageData.editHistory = [];
@@ -510,23 +539,23 @@ export class ChatRoom {
           message: messageData.message,
           editedAt: Date.now(),
         });
-        
+
         // Extract old and new hashtags
         const oldHashtags = extractHashtags(messageData.message);
         const newHashtags = extractHashtags(newMessage);
-        
+
         console.log(`[EDIT] Editing message ${messageId} (key: ${messageKey})`);
         console.log(`[EDIT] Old hashtags:`, oldHashtags);
         console.log(`[EDIT] New hashtags:`, newHashtags);
-        
+
         // Update the message
         messageData.message = newMessage;
         messageData.hashtags = newHashtags;
         messageData.editedAt = Date.now();
-        
+
         // Save updated message
         await this.storage.put(messageKey, JSON.stringify(messageData));
-        
+
         // Update hashtag indexes
         // Remove from old hashtags that are no longer present
         for (const tag of oldHashtags) {
@@ -535,18 +564,22 @@ export class ChatRoom {
             await this.hashtagManager.removeMessageFromTag(tag, messageKey);
           }
         }
-        
+
         // Add to new hashtags
         for (const tag of newHashtags) {
           if (!oldHashtags.includes(tag)) {
             console.log(`[EDIT] Adding to hashtag #${tag}`);
-            await this.hashtagManager.addMessageToTag(tag, messageKey, messageData.timestamp);
+            await this.hashtagManager.addMessageToTag(
+              tag,
+              messageKey,
+              messageData.timestamp,
+            );
           }
         }
-        
+
         // Get updated hashtag list
         const updatedHashtags = await this.hashtagManager.getAllHashtags(100);
-        
+
         // Broadcast message edit and hashtag update to all clients
         this.broadcast({
           messageEdited: {
@@ -558,8 +591,8 @@ export class ChatRoom {
           hashtagsUpdated: updatedHashtags,
         });
 
-        return c.json({ 
-          success: true, 
+        return c.json({
+          success: true,
           messageId,
           message: newMessage,
           editedAt: messageData.editedAt,
@@ -849,33 +882,41 @@ export class ChatRoom {
     // Load the last 100 messages from the chat history stored on disk, and send them to the
     // client.
     let storage = await this.storage.list({ reverse: true, limit: 100 });
+    // Convert to array and sort by message timestamp to ensure consistent ordering
     let backlog = [...storage.values()];
-    backlog.reverse();
-    backlog.forEach((value) => {
-      // Ensure old messages have messageId and hashtags for compatibility
-      try {
-        const msg = typeof value === 'string' ? JSON.parse(value) : value;
-        let modified = false;
-        
-        if (!msg.messageId && msg.timestamp && msg.name) {
-          // Generate legacy messageId for old messages
-          msg.messageId = `${msg.timestamp}-${msg.name}`;
-          modified = true;
+
+    // Parse messages and sort by timestamp
+    backlog = backlog
+      .map((value) => {
+        try {
+          const msg = typeof value === 'string' ? JSON.parse(value) : value;
+          let modified = false;
+
+          if (!msg.messageId && msg.timestamp && msg.name) {
+            // Generate legacy messageId for old messages
+            msg.messageId = `${msg.timestamp}-${msg.name}`;
+            modified = true;
+          }
+
+          // Extract hashtags if not present
+          if (!msg.hashtags && msg.message) {
+            msg.hashtags = extractHashtags(msg.message);
+            modified = true;
+          }
+
+          return {
+            timestamp: msg.timestamp || 0,
+            value: modified ? JSON.stringify(msg) : value,
+          };
+        } catch (e) {
+          // If parsing fails, use original value with timestamp 0
+          return { timestamp: 0, value };
         }
-        
-        // Extract hashtags if not present
-        if (!msg.hashtags && msg.message) {
-          msg.hashtags = extractHashtags(msg.message);
-          modified = true;
-        }
-        
-        if (modified) {
-          value = JSON.stringify(msg);
-        }
-      } catch (e) {
-        // If parsing fails, use original value
-      }
-      session.blockedMessages.push(value);
+      })
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    backlog.forEach((item) => {
+      session.blockedMessages.push(item.value);
     });
   }
 
