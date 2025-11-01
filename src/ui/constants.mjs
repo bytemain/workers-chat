@@ -5,7 +5,7 @@
 // Header/Top bar heights
 export const HEADER_HEIGHT = 48; // px - for channel-info-bar, titlebar
 export const FOOTER_HEIGHT = 60; // px - for user-info-card, channel-add
-export const MOBILE_TOP_BAR_HEIGHT = 60; // px - mobile top navigation
+export const MOBILE_NAV_BAR_HEIGHT = 56; // px - mobile navigation bar (also used for room selector on channel list page)
 
 // Sidebar widths
 export const LEFT_SIDEBAR_WIDTH = 72; // px
@@ -32,9 +32,10 @@ export function applyCSSConstants() {
   root.style.setProperty('--header-height', `${HEADER_HEIGHT}px`);
   root.style.setProperty('--footer-height', `${FOOTER_HEIGHT}px`);
   root.style.setProperty(
-    '--mobile-top-bar-height',
-    `${MOBILE_TOP_BAR_HEIGHT}px`,
+    '--mobile-nav-bar-height',
+    `${MOBILE_NAV_BAR_HEIGHT}px`,
   );
+
   root.style.setProperty('--left-sidebar-width', `${LEFT_SIDEBAR_WIDTH}px`);
   root.style.setProperty('--user-card-height', `${USER_CARD_HEIGHT}px`);
 }

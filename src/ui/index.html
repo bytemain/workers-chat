@@ -41,6 +41,7 @@
         margin-bottom: 0px;
         padding-right: 10px;
         padding-left: 10px;
+        background-color: unset;
       }
 
       body {
@@ -517,93 +518,270 @@
         display: none;
       }
 
-      /* Mobile top bar */
-      #mobile-top-bar {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: var(--mobile-top-bar-height);
-        background: linear-gradient(to bottom, #1da1f2, #1891d9);
-        color: white;
-        align-items: center;
-        padding: 0 16px;
-        z-index: 100;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-        cursor: pointer;
-        user-select: none;
-        -webkit-tap-highlight-color: transparent;
-      }
-
-      #mobile-top-bar:active {
-        background: linear-gradient(to bottom, #1891d9, #0d8dd9);
-      }
-
-      #mobile-top-bar-content {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        width: 100%;
-        gap: 8px;
-      }
-
-      #mobile-top-bar-title {
-        font-weight: bold;
-        font-size: 16px;
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      #mobile-top-bar-icon {
-        font-size: 20px;
-        flex-shrink: 0;
-      }
-
-      #mobile-top-bar-encryption {
-        font-size: 18px;
-        flex-shrink: 0;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.2);
-        transition: all 0.2s ease;
-      }
-
-      #mobile-top-bar-encryption.visible {
-        display: flex;
-      }
-
-      #mobile-top-bar-encryption.encrypted {
-        background: rgba(40, 167, 69, 0.3);
-      }
-
-      #mobile-top-bar-encryption.not-encrypted {
-        background: rgba(255, 193, 7, 0.3);
-      }
-
-      #mobile-top-bar-arrow {
-        font-size: 14px;
-        transition: transform 0.3s ease;
-        flex-shrink: 0;
-      }
-
-      #mobile-top-bar-arrow.open {
-        transform: rotate(180deg);
-      }
-
-      #mobile-top-bar + #chatroom {
-        top: var(--header-height);
+      /* Hide mobile pages on desktop */
+      .mobile-page,
+      .mobile-nav-bar,
+      #mobile-room-header {
+        display: none !important;
       }
 
       @media (max-width: 600px) {
-        #mobile-top-bar {
+        /* Mobile Page Navigation System */
+
+        /* Override desktop hiding rules */
+        .mobile-nav-bar {
+          display: flex !important;
+        }
+
+        #mobile-room-header {
+          display: flex !important;
+        }
+
+        /* Mobile Nav Bar */
+        .mobile-nav-bar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: var(--mobile-nav-bar-height);
+          background: var(--background);
+          border-bottom: 1px solid var(--border);
           display: flex;
+          align-items: center;
+          padding: 0 var(--spacing);
+          gap: var(--spacing);
+          z-index: 100;
+        }
+
+        .mobile-nav-back {
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: var(--text-main);
+          padding: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .mobile-nav-title {
+          flex: 1;
+          font-size: 18px;
+          font-weight: 600;
+          color: var(--text-main);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        /* Mobile Pages */
+        .mobile-page {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          background: var(--background);
+          z-index: 90;
+          display: none !important;
+          flex-direction: column;
+        }
+
+        .mobile-page.active {
+          display: flex !important;
+        }
+
+        .mobile-page-content {
+          flex: 1;
+          overflow-y: auto;
+          padding-top: var(--mobile-nav-bar-height);
+        }
+
+        /* Mobile Room Header - enhanced mobile-nav-bar with room selector */
+        #mobile-room-header {
+          cursor: pointer;
+          background: var(--background-alt);
+          border-bottom: 2px solid var(--border);
+        }
+
+        #mobile-room-header:active {
+          background: var(--background);
+        }
+
+        #mobile-room-name-display {
+          flex: 1;
+          font-size: 18px;
+          font-weight: 600;
+          color: var(--text-main);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        #mobile-room-name-display::after {
+          content: ' ▼';
+          font-size: 0.8em;
+          color: var(--text-muted);
+          margin-left: 4px;
+        }
+
+        #mobile-room-header.dropdown-open #mobile-room-name-display::after {
+          content: ' ▲';
+        }
+
+        #mobile-room-menu-btn {
+          padding: 8px;
+          font-size: 20px;
+          flex-shrink: 0;
+          background: none;
+          border: none;
+          color: var(--text-main);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        #mobile-room-dropdown {
+          position: fixed;
+          top: var(--mobile-nav-bar-height);
+          left: 0;
+          right: 0;
+          max-height: 0;
+          overflow: hidden;
+          background: var(--background);
+          border-bottom: 1px solid var(--border);
+          transition: max-height 0.3s ease;
+          z-index: 94;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        #mobile-room-dropdown.visible {
+          max-height: 400px;
+          overflow-y: auto;
+        }
+
+        /* Channel List Page */
+        #mobile-channel-list-page .mobile-page-content {
+          padding: 0;
+          padding-top: var(--mobile-nav-bar-height);
+        }
+
+        #mobile-channel-list {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .mobile-channel-section {
+          margin: var(--spacing) 0;
+        }
+
+        .mobile-channel-section-title {
+          padding: var(--spacing-sm) var(--spacing);
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .mobile-channel-item {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing);
+          padding: var(--spacing) var(--spacing);
+          cursor: pointer;
+          transition: background 0.15s ease;
+        }
+
+        .mobile-channel-item:active {
+          background: var(--background-alt);
+        }
+
+        .mobile-channel-item-icon {
+          width: 40px;
+          height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--background-alt);
+          border-radius: 8px;
+          font-size: 20px;
+        }
+
+        .mobile-channel-item-content {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .mobile-channel-item-name {
+          font-size: 16px;
+          font-weight: 500;
+          color: var(--text-main);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .mobile-channel-item-count {
+          font-size: 13px;
+          color: var(--text-muted);
+          margin-top: 2px;
+        }
+
+        .mobile-channel-item-arrow {
+          font-size: 18px;
+          color: var(--text-muted);
+        }
+
+        /* Chat Page - hide desktop elements */
+        #mobile-chat-page.active ~ #titlebar {
+          display: none !important;
+        }
+
+        body:has(#mobile-chat-page.active) #channel-panel {
+          display: none !important;
+        }
+
+        body:has(#mobile-chat-page.active) #main-container {
+          padding-top: 56px;
+          height: 100vh;
+          height: 100dvh; /* Use dynamic viewport height for mobile browsers */
+        }
+
+        body:has(#mobile-chat-page.active) #chatroom {
+          position: fixed;
+          top: var(--mobile-nav-bar-height);
+          left: 0;
+          right: 0;
+          bottom: 0;
+          height: auto !important;
+        }
+
+        body:has(#mobile-chat-page.active) #right-sidebar {
+          display: none !important;
+        }
+
+        body:has(#mobile-chat-page.active) #main-chat-input-container {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          margin: 0;
+          padding: var(--spacing-sm);
+          background: var(--background);
+          border-top: 1px solid var(--border);
+          z-index: 20;
+        }
+
+        body:has(#mobile-chat-page.active) #chatlog {
+          padding-bottom: 80px; /* Extra space for input container */
+        }
+
+        /* Hide channel list page content on desktop */
+        body:has(#mobile-channel-list-page.active) #titlebar,
+        body:has(#mobile-channel-list-page.active) #main-container {
+          display: none !important;
         }
 
         /* Hide channel info bar on mobile */
@@ -616,18 +794,8 @@
           display: none;
         }
 
-        body:has(#mobile-top-bar) {
-          padding-top: 0;
-        }
-
         #main-container {
           flex-direction: column;
-        }
-
-        #hashtag-filter-banner {
-          left: 0 !important;
-          right: 0 !important;
-          top: var(--mobile-top-bar-height) !important;
         }
 
         #right-sidebar {
@@ -672,7 +840,7 @@
           position: fixed !important;
           left: 0 !important;
           right: 0 !important;
-          top: var(--mobile-top-bar-height) !important;
+          top: var(--mobile-nav-bar-height) !important;
           bottom: 0 !important;
           width: auto !important;
           z-index: 200;
@@ -684,11 +852,6 @@
 
         /* Hide main chat when thread is open on mobile */
         body.thread-open #chatroom {
-          display: none;
-        }
-
-        /* Hide top bar when thread is open */
-        body.thread-open #mobile-top-bar {
           display: none;
         }
 
@@ -722,7 +885,7 @@
         }
 
         #main-container {
-          padding-top: var(--mobile-top-bar-height);
+          padding-top: var(--mobile-nav-bar-height);
         }
       }
 
@@ -1082,6 +1245,7 @@
         justify-content: space-between;
         align-items: center;
         flex-shrink: 0;
+        height: var(--header-height);
       }
 
       #thread-header h3 {
@@ -1592,10 +1756,6 @@
           left: 0;
         }
 
-        #chatlog {
-          padding-bottom: 80px;
-        }
-
         #main-chat-input-container {
           left: 0;
           margin: 0;
@@ -1814,13 +1974,50 @@
       </div>
     </div>
 
-    <div id="mobile-top-bar">
-      <div id="mobile-top-bar-content">
-        <span id="mobile-top-bar-icon">🏠</span>
-        <span id="mobile-top-bar-title">Loading...</span>
-        <span id="mobile-top-bar-encryption" title="Encryption Status"></span>
-        <span id="mobile-top-bar-arrow">▼</span>
+    <!-- Mobile Pages (Only visible on mobile) -->
+    <!-- Channel List Page -->
+    <div id="mobile-channel-list-page" class="mobile-page">
+      <!-- Mobile Nav Bar with Room Selector -->
+      <div class="mobile-nav-bar" id="mobile-room-header">
+        <div class="mobile-nav-title" id="mobile-room-name-display">
+          Select a Room
+        </div>
+        <button id="mobile-room-menu-btn" class="icon-btn" title="Room menu">
+          <i class="ri-more-fill"></i>
+        </button>
+        <!-- Room Dropdown (reuses room-list component) -->
+        <div id="mobile-room-dropdown"></div>
       </div>
+      <div class="mobile-page-content">
+        <div id="mobile-channel-list">
+          <!-- Channels Section -->
+          <div class="mobile-channel-section">
+            <div class="mobile-channel-section-title">Channels</div>
+            <div id="mobile-channels-container">
+              <!-- Channel items will be added here -->
+            </div>
+          </div>
+
+          <!-- Direct Messages Section -->
+          <div class="mobile-channel-section">
+            <div class="mobile-channel-section-title">Direct Messages</div>
+            <div id="mobile-dms-container">
+              <!-- DM items will be added here -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Page (reuses existing chatroom) -->
+    <div id="mobile-chat-page" class="mobile-page">
+      <div class="mobile-nav-bar">
+        <button class="mobile-nav-back" id="mobile-chat-back">
+          <i class="ri-arrow-left-line"></i>
+        </button>
+        <div class="mobile-nav-title" id="mobile-chat-title">#general</div>
+      </div>
+      <!-- Content is the existing #chatroom -->
     </div>
     <div id="mobile-room-info-overlay"></div>
 

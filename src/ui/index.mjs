@@ -6,6 +6,7 @@ import { getCryptoPool } from './crypto-worker-pool.js';
 import { createReactiveState } from './react/state.mjs';
 import { api } from './api.mjs';
 import { generateRandomUsername } from './utils/random.mjs';
+import { isMobile } from './utils/device.mjs';
 import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
 import tooltip from './tooltip.js';
 import { applyCSSConstants } from './constants.mjs';
@@ -1054,12 +1055,6 @@ let chatlog = document.querySelector('#chatlog');
 let chatInputComponent = null; // Will be initialized after DOM is ready
 let roster = document.querySelector('#roster');
 
-// Mobile room info elements
-let mobileTopBar = document.querySelector('#mobile-top-bar');
-let mobileTopBarTitle = document.querySelector('#mobile-top-bar-title');
-let mobileTopBarArrow = document.querySelector('#mobile-top-bar-arrow');
-let mobileRoomInfoOverlay = document.querySelector('#mobile-room-info-overlay');
-
 // Connection status element
 let connectionStatus = document.querySelector('#connection-status');
 
@@ -2105,6 +2100,11 @@ async function loadChannels() {
     // Convert back to array
     allChannels = Array.from(channelMap.values());
     renderChannelList();
+
+    // Update mobile channel list if on mobile
+    if (isMobile()) {
+      updateMobileChannelList();
+    }
   } catch (err) {
     console.error('Failed to load channels:', err);
   }
@@ -2199,6 +2199,11 @@ function switchToChannel(channel) {
 
   currentChannel = normalizedChannel;
 
+  // Update URL with channel parameter
+  const url = new URL(window.location);
+  url.searchParams.set('channel', normalizedChannel);
+  window.history.pushState({}, '', url);
+
   // Update channel info bar
   const channelNameDisplay = document.getElementById('channel-name-display');
   const channelHash = document.querySelector('.channel-hash');
@@ -2269,6 +2274,21 @@ function switchToChannel(channel) {
 
   // Also filter messages by this channel
   window.filterByChannel(normalizedChannel);
+
+  // Update mobile chat title if on mobile
+  if (isMobile()) {
+    const chatTitle = document.getElementById('mobile-chat-title');
+    if (chatTitle) {
+      const isDM = normalizedChannel.startsWith('dm-');
+      if (isDM) {
+        const dmUsername = normalizedChannel.substring(3);
+        chatTitle.textContent =
+          dmUsername === username ? `${username} (you)` : dmUsername;
+      } else {
+        chatTitle.textContent = '#' + normalizedChannel;
+      }
+    }
+  }
 }
 
 // Expose switchToChannel to window for use in click handlers
@@ -2907,11 +2927,6 @@ async function startChat() {
         titlebarRoomName.textContent = newValue;
       }
 
-      // Update mobile top bar title
-      if (mobileTopBarTitle) {
-        mobileTopBarTitle.textContent = newValue;
-      }
-
       // Update document title
       let title = newValue;
       if (newValue && newValue !== roomname && urlRoomHash) {
@@ -2926,9 +2941,7 @@ async function startChat() {
   if (titlebarRoomName) {
     titlebarRoomName.textContent = roomInfo.name;
   }
-  if (mobileTopBarTitle) {
-    mobileTopBarTitle.textContent = roomInfo.name;
-  }
+
   documentTitlePrefix = roomInfo.name;
   document.title = documentTitlePrefix + ' - Workers Chat';
 
@@ -3496,33 +3509,6 @@ async function startChat() {
     }
   });
 
-  // Mobile top bar toggle
-  if (mobileTopBar) {
-    mobileTopBar.addEventListener('click', (event) => {
-      event.stopPropagation();
-      const isOpen = rightSidebar.classList.contains('mobile-visible');
-      if (isOpen) {
-        rightSidebar.classList.remove('mobile-visible');
-        mobileRoomInfoOverlay.classList.remove('visible');
-        mobileTopBarArrow.classList.remove('open');
-      } else {
-        rightSidebar.classList.add('mobile-visible');
-        mobileRoomInfoOverlay.classList.add('visible');
-        mobileTopBarArrow.classList.add('open');
-        loadChannels();
-      }
-    });
-  }
-
-  // Close mobile room info when clicking overlay
-  if (mobileRoomInfoOverlay) {
-    mobileRoomInfoOverlay.addEventListener('click', () => {
-      rightSidebar.classList.remove('mobile-visible');
-      mobileRoomInfoOverlay.classList.remove('visible');
-      mobileTopBarArrow.classList.remove('open');
-    });
-  }
-
   // Thread panel close
   threadClose.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -3715,6 +3701,9 @@ async function startChat() {
 
   // Initialize left sidebar with room list and user info
   initializeLeftSidebar();
+
+  // Initialize mobile navigation if on mobile
+  initMobileNavigation();
 
   // Clear unread count for current room
   clearUnreadCount(roomname);
@@ -4545,18 +4534,8 @@ function updateRoomListUI() {
   const roomDropdown = document.querySelector('#room-dropdown');
   if (!roomDropdown) return;
 
-  const history = getRoomHistory();
-
   // Prepare room data for the component
-  const rooms = history.map((item) => {
-    const isPrivate = item.name.length === 64;
-    return {
-      name: item.name,
-      displayName: isPrivate ? 'Private Room' : item.name,
-      isPrivate: isPrivate,
-      unreadCount: getUnreadCount(item.name),
-    };
-  });
+  const rooms = getRecentRooms();
 
   // Callbacks for room list component
   const callbacks = {
@@ -4725,3 +4704,277 @@ window.updateRoomListUI = updateRoomListUI;
 window.updateUserInfoCard = updateUserInfoCard;
 window.initializeLeftSidebar = initializeLeftSidebar;
 window.hideLeftSidebar = hideLeftSidebar;
+
+// ============================================
+// Mobile Navigation System
+// ============================================
+
+// Show mobile channel list page
+function showMobileChannelList() {
+  if (!isMobile()) return;
+
+  const channelListPage = document.getElementById('mobile-channel-list-page');
+  const chatPage = document.getElementById('mobile-chat-page');
+
+  if (channelListPage) channelListPage.classList.add('active');
+  if (chatPage) chatPage.classList.remove('active');
+
+  // Clear channel parameter from URL
+  const url = new URL(window.location);
+  url.searchParams.delete('channel');
+  window.history.pushState({}, '', url);
+
+  // Clear current channel
+  currentChannel = null;
+
+  // Update channel list content
+  updateMobileChannelList();
+}
+
+// Show mobile chat page
+function showMobileChatPage() {
+  if (!isMobile()) return;
+
+  const channelListPage = document.getElementById('mobile-channel-list-page');
+  const chatPage = document.getElementById('mobile-chat-page');
+
+  if (channelListPage) channelListPage.classList.remove('active');
+  if (chatPage) chatPage.classList.add('active');
+
+  // Update chat title
+  const chatTitle = document.getElementById('mobile-chat-title');
+  if (chatTitle && currentChannel) {
+    const isDM = currentChannel.startsWith('dm-');
+    if (isDM) {
+      const dmUsername = currentChannel.substring(3);
+      chatTitle.textContent =
+        dmUsername === username ? `${username} (you)` : dmUsername;
+    } else {
+      chatTitle.textContent = '#' + currentChannel;
+    }
+  }
+}
+
+// Update mobile channel list content
+function updateMobileChannelList() {
+  const channelsContainer = document.getElementById(
+    'mobile-channels-container',
+  );
+  const dmsContainer = document.getElementById('mobile-dms-container');
+
+  if (!channelsContainer || !dmsContainer) return;
+
+  // Get hidden channels
+  const hiddenChannels = getHiddenChannels();
+
+  // Clear containers
+  channelsContainer.innerHTML = '';
+  dmsContainer.innerHTML = '';
+
+  // Render channels (filter out hidden and DM channels)
+  const visibleChannels = allChannels.filter(
+    (item) =>
+      !hiddenChannels.includes(item.channel) &&
+      !item.channel.toLowerCase().startsWith('dm-'),
+  );
+
+  if (visibleChannels.length === 0) {
+    channelsContainer.innerHTML = `
+      <div style="padding: var(--spacing); text-align: center; color: var(--text-muted);">
+        No channels yet
+      </div>
+    `;
+  } else {
+    visibleChannels.forEach((item) => {
+      const div = document.createElement('div');
+      div.className = 'mobile-channel-item';
+
+      div.innerHTML = `
+        <div class="mobile-channel-item-icon">
+          <i class="ri-hashtag"></i>
+        </div>
+        <div class="mobile-channel-item-content">
+          <div class="mobile-channel-item-name">${item.channel}</div>
+          <div class="mobile-channel-item-count">${item.count || 0} messages</div>
+        </div>
+        <div class="mobile-channel-item-arrow">
+          <i class="ri-arrow-right-s-line"></i>
+        </div>
+      `;
+
+      div.onclick = () => {
+        switchToChannel(item.channel);
+        showMobileChatPage();
+      };
+
+      channelsContainer.appendChild(div);
+    });
+  }
+
+  // Render DMs (self DM)
+  if (username) {
+    const selfDM = document.createElement('div');
+    selfDM.className = 'mobile-channel-item';
+
+    selfDM.innerHTML = `
+      <div class="mobile-channel-item-icon">
+        <i class="ri-user-3-line"></i>
+      </div>
+      <div class="mobile-channel-item-content">
+        <div class="mobile-channel-item-name">${username} (you)</div>
+        <div class="mobile-channel-item-count">Personal space</div>
+      </div>
+      <div class="mobile-channel-item-arrow">
+        <i class="ri-arrow-right-s-line"></i>
+      </div>
+    `;
+
+    selfDM.onclick = () => {
+      const selfChannelName = `dm-${username}`;
+      switchToChannel(selfChannelName);
+      showMobileChatPage();
+    };
+
+    dmsContainer.appendChild(selfDM);
+  }
+}
+
+// Initialize mobile navigation
+function initMobileNavigation() {
+  if (!isMobile()) return;
+
+  // Back button from chat to channel list
+  const chatBackBtn = document.getElementById('mobile-chat-back');
+  if (chatBackBtn) {
+    chatBackBtn.addEventListener('click', () => {
+      showMobileChannelList();
+    });
+  }
+
+  // Initialize mobile room selector
+  initMobileRoomSelector();
+
+  // If we have a current channel, show chat page, otherwise show channel list
+  if (currentChannel) {
+    showMobileChatPage();
+  } else {
+    showMobileChannelList();
+  }
+}
+
+// Initialize mobile room selector using room-list component
+function initMobileRoomSelector() {
+  const mobileRoomHeader = document.getElementById('mobile-room-header');
+  const mobileRoomNameDisplay = document.getElementById(
+    'mobile-room-name-display',
+  );
+  const mobileRoomDropdown = document.getElementById('mobile-room-dropdown');
+  const mobileRoomMenuBtn = document.getElementById('mobile-room-menu-btn');
+
+  if (!mobileRoomHeader || !mobileRoomNameDisplay || !mobileRoomDropdown)
+    return;
+
+  // Update room name display
+  const updateMobileRoomName = () => {
+    if (roomname) {
+      mobileRoomNameDisplay.textContent = roomname;
+    } else {
+      mobileRoomNameDisplay.textContent = 'Select a Room';
+    }
+  };
+  updateMobileRoomName();
+
+  // Toggle dropdown on header click
+  mobileRoomHeader.addEventListener('click', (e) => {
+    // Don't toggle if clicking the menu button
+    if (e.target.closest('#mobile-room-menu-btn')) return;
+
+    const isOpen = mobileRoomDropdown.classList.contains('visible');
+    if (isOpen) {
+      mobileRoomDropdown.classList.remove('visible');
+      mobileRoomHeader.classList.remove('dropdown-open');
+    } else {
+      mobileRoomDropdown.classList.add('visible');
+      mobileRoomHeader.classList.add('dropdown-open');
+      // Populate dropdown using room-list component
+      populateMobileRoomDropdown();
+    }
+  });
+
+  // Menu button - show room menu
+  if (mobileRoomMenuBtn) {
+    mobileRoomMenuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Reuse existing room menu functionality
+      const roomMenuBtn = document.getElementById('room-menu-btn');
+      if (roomMenuBtn) {
+        roomMenuBtn.click();
+      }
+    });
+  }
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (
+      !mobileRoomHeader.contains(e.target) &&
+      !mobileRoomDropdown.contains(e.target)
+    ) {
+      mobileRoomDropdown.classList.remove('visible');
+      mobileRoomHeader.classList.remove('dropdown-open');
+    }
+  });
+
+  // Listen for room changes
+  window.addEventListener('hashchange', () => {
+    updateMobileRoomName();
+  });
+}
+
+function getRecentRooms() {
+  const history = getRoomHistory();
+
+  // Prepare room data for room-list component
+  const rooms = history.map((item) => {
+    const isPrivate = item.name.length === 64;
+    return {
+      name: item.name,
+      displayName: isPrivate ? 'Private Room' : item.name,
+      isPrivate: isPrivate,
+      unreadCount: getUnreadCount(item.name),
+    };
+  });
+
+  return rooms;
+}
+
+// Populate mobile room dropdown using room-list component
+function populateMobileRoomDropdown() {
+  const mobileRoomDropdown = document.getElementById('mobile-room-dropdown');
+  if (!mobileRoomDropdown) return;
+
+  const rooms = getRecentRooms();
+  // Callbacks for room-list component
+  const callbacks = {
+    onRoomClick: (roomName) => {
+      window.location.hash = roomName;
+      window.location.reload();
+    },
+    onCreateRoom: () => {
+      window.location.hash = '';
+      window.location.reload();
+    },
+    onRoomContextMenu: (e, roomName) => {
+      // Can add context menu functionality later if needed
+      e.preventDefault();
+    },
+  };
+
+  // Use updateRoomList from room-list.mjs
+  updateRoomList(mobileRoomDropdown, rooms, roomname, callbacks);
+}
+
+// Export mobile functions
+window.showMobileChannelList = showMobileChannelList;
+window.showMobileChatPage = showMobileChatPage;
+window.updateMobileChannelList = updateMobileChannelList;
+window.initMobileNavigation = initMobileNavigation;
