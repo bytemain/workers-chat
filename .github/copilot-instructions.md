@@ -6,7 +6,9 @@ This is a real-time chat application running 100% on Cloudflare's edge using **W
 
 `Local First` principles are applied to the frontend.
 
-You must make the UI looks like simple and efficient as possible.
+You must make the UI looks like simple and efficient as possible, while also being visually appealing.
+And ui need to be responsive so it works well on both desktop and mobile devices.
+Something like title do not need to be bold or big font size, just compact, conscious.
 
 ## Core Architecture
 
