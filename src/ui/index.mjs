@@ -696,7 +696,6 @@ class ChatMessage extends HTMLElement {
     const replyTo = this.getAttribute('reply-to');
     const threadCount = this.getAttribute('thread-count') || '0';
     const isInThread = this.getAttribute('is-in-thread') === 'true';
-    const hashtagsAttr = this.getAttribute('hashtags');
     const editedAt = this.getAttribute('edited-at');
 
     // Clear existing content
@@ -852,57 +851,6 @@ class ChatMessage extends HTMLElement {
       }
     }
 
-    // Add hashtags at the bottom if provided by server
-    if (hashtagsAttr) {
-      try {
-        const hashtags = JSON.parse(hashtagsAttr);
-        if (hashtags && hashtags.length > 0) {
-          const tagContainer = document.createElement('div');
-          tagContainer.className = 'message-tags';
-          tagContainer.style.marginTop = '6px';
-          tagContainer.style.display = 'flex';
-          tagContainer.style.flexWrap = 'wrap';
-          tagContainer.style.gap = '4px';
-
-          hashtags.forEach((tag) => {
-            const tagBadge = document.createElement('span');
-            tagBadge.className = 'tag-badge';
-            tagBadge.style.background = '#e8f5fd';
-            tagBadge.style.color = '#1da1f2';
-            tagBadge.style.padding = '2px 8px';
-            tagBadge.style.borderRadius = '12px';
-            tagBadge.style.fontSize = '0.85em';
-            tagBadge.style.cursor = 'pointer';
-            tagBadge.style.border = '1px solid #1da1f2';
-            tagBadge.style.transition = 'all 0.2s';
-            tagBadge.textContent = '#' + tag;
-
-            tagBadge.onclick = (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              window.filterByHashtag(tag);
-            };
-
-            tagBadge.onmouseenter = () => {
-              tagBadge.style.background = '#1da1f2';
-              tagBadge.style.color = 'white';
-            };
-
-            tagBadge.onmouseleave = () => {
-              tagBadge.style.background = '#e8f5fd';
-              tagBadge.style.color = '#1da1f2';
-            };
-
-            tagContainer.appendChild(tagBadge);
-          });
-
-          contentDiv.appendChild(tagContainer);
-        }
-      } catch (e) {
-        console.error('Failed to parse hashtags:', e);
-      }
-    }
-
     // Add thread indicator if there are replies
     if (parseInt(threadCount) > 0) {
       const threadIndicator = document.createElement('div');
@@ -967,40 +915,124 @@ class ChatMessage extends HTMLElement {
       });
     };
 
-    // URL regex pattern only
-    const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)/g;
-    let lastIndex = 0;
-    let match;
+    // Create patterns for URLs and channels
+    // Note: We need to match them separately to avoid regex group index confusion
+    const patterns = [
+      {
+        type: 'url',
+        regex: /(https?:\/\/[^\s]+)/g,
+        handler: (match) => {
+          const link = document.createElement('a');
+          link.href = match;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = match;
+          link.style.color = '#0066cc';
+          link.style.textDecoration = 'underline';
+          return link;
+        },
+      },
+      {
+        type: 'www',
+        regex: /(www\.[^\s]+)/g,
+        handler: (match) => {
+          const link = document.createElement('a');
+          link.href = 'https://' + match;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = match;
+          link.style.color = '#0066cc';
+          link.style.textDecoration = 'underline';
+          return link;
+        },
+      },
+      {
+        type: 'channel',
+        regex: /#([a-zA-Z0-9_\-\u4e00-\u9fa5]{2,32})/g,
+        handler: (match, channelName) => {
+          const channelLink = document.createElement('a');
+          channelLink.href = '#';
+          channelLink.className = 'channel-link';
+          channelLink.textContent = '#' + channelName;
+          channelLink.dataset.channel = channelName;
+          channelLink.style.color = '#1da1f2';
+          channelLink.style.fontWeight = '500';
+          channelLink.style.textDecoration = 'none';
+          channelLink.style.cursor = 'pointer';
+          channelLink.style.padding = '0 2px';
+          channelLink.style.borderRadius = '2px';
+          channelLink.style.transition = 'background-color 0.2s';
 
-    // Find all URLs in the text
-    while ((match = urlRegex.exec(text)) !== null) {
+          channelLink.addEventListener('mouseenter', () => {
+            channelLink.style.backgroundColor = '#e8f5fd';
+            channelLink.style.textDecoration = 'underline';
+          });
+          channelLink.addEventListener('mouseleave', () => {
+            channelLink.style.backgroundColor = 'transparent';
+            channelLink.style.textDecoration = 'none';
+          });
+
+          channelLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.switchToChannel(channelName);
+          });
+
+          return channelLink;
+        },
+      },
+    ];
+
+    // Find all matches across all patterns
+    const matches = [];
+    patterns.forEach((pattern) => {
+      const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        matches.push({
+          type: pattern.type,
+          index: match.index,
+          length: match[0].length,
+          fullMatch: match[0],
+          captureGroup: match[1], // For channel name
+          handler: pattern.handler,
+        });
+      }
+    });
+
+    // Sort matches by index
+    matches.sort((a, b) => a.index - b.index);
+
+    // Remove overlapping matches (keep the first one)
+    const filteredMatches = [];
+    let lastEnd = 0;
+    matches.forEach((match) => {
+      if (match.index >= lastEnd) {
+        filteredMatches.push(match);
+        lastEnd = match.index + match.length;
+      }
+    });
+
+    // Build the output
+    let lastIndex = 0;
+    filteredMatches.forEach((match) => {
       // Add text before the match
       if (match.index > lastIndex) {
         addTextWithNewlines(text.substring(lastIndex, match.index));
       }
 
-      // It's a URL
-      const link = document.createElement('a');
-      let url = match[0];
-
-      // Add https:// if it's a www. link
-      if (url.startsWith('www.')) {
-        link.href = 'https://' + url;
+      // Add the matched element (URL or channel link)
+      if (match.type === 'channel') {
+        container.appendChild(
+          match.handler(match.fullMatch, match.captureGroup),
+        );
       } else {
-        link.href = url;
+        container.appendChild(match.handler(match.fullMatch));
       }
 
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = url;
-      link.style.color = '#0066cc';
-      link.style.textDecoration = 'underline';
-      container.appendChild(link);
+      lastIndex = match.index + match.length;
+    });
 
-      lastIndex = urlRegex.lastIndex;
-    }
-
-    // Add remaining text after last match (or all text if no matches found)
+    // Add remaining text after last match
     if (lastIndex < text.length) {
       addTextWithNewlines(text.substring(lastIndex));
     }
@@ -1022,9 +1054,6 @@ let chatroom = document.querySelector('#chatroom');
 let chatlog = document.querySelector('#chatlog');
 let chatInputComponent = null; // Will be initialized after DOM is ready
 let roster = document.querySelector('#roster');
-let hashtagList = document.querySelector('#hashtag-list'); // Hashtag list in right-sidebar
-let hashtagFilterBanner = document.querySelector('#hashtag-filter-banner');
-let activeHashtagSpan = document.querySelector('#active-hashtag');
 
 // Mobile room info elements
 let mobileTopBar = document.querySelector('#mobile-top-bar');
@@ -1053,8 +1082,10 @@ let isAtBottom = true;
 
 let username;
 let roomname;
-let currentHashtagFilter = null; // Current active hashtag filter
-let allHashtags = []; // Cache of all hashtags
+let currentChannelFilter = null; // Current active channel filter
+let currentChannel = 'general'; // Current channel for sending messages
+let allChannels = []; // Cache of all channels
+let temporaryChannels = new Set(); // Track frontend-only temporary channels
 
 // E2EE state variables
 const { state: encryptionState, subscribe: subscribeEncryption } =
@@ -1526,7 +1557,10 @@ class UserMessageAPI {
       }
     }
 
-    const payload = { message: messageToSend };
+    const payload = {
+      message: messageToSend,
+      channel: currentChannel, // Include current channel
+    };
 
     // Include replyTo information if provided
     if (replyTo) {
@@ -1786,6 +1820,7 @@ function createMessageElement(
   chatMessage.setAttribute('timestamp', String(data.timestamp));
   chatMessage.setAttribute('message-id', data.messageId);
   chatMessage.setAttribute('is-in-thread', isInThread ? 'true' : 'false');
+  chatMessage.setAttribute('channel', data.channel || 'general'); // Add channel attribute
 
   if (data.replyTo) {
     chatMessage.setAttribute('reply-to', JSON.stringify(data.replyTo));
@@ -1796,11 +1831,6 @@ function createMessageElement(
       'thread-count',
       String(data.threadInfo.replyCount),
     );
-  }
-
-  // Add hashtags if provided by server
-  if (data.hashtags && data.hashtags.length > 0) {
-    chatMessage.setAttribute('hashtags', JSON.stringify(data.hashtags));
   }
 
   // Add edited timestamp if message was edited
@@ -1958,20 +1988,18 @@ function locateMessageInMainChat(messageId) {
   }
 }
 
-// Hashtag functionality
-window.filterByHashtag = function (tag) {
-  currentHashtagFilter = tag;
-  activeHashtagSpan.textContent = '#' + tag;
-  hashtagFilterBanner.classList.add('visible');
+// Channel functionality
+window.filterByChannel = function (channel) {
+  currentChannelFilter = channel;
 
-  // Update URL with hashtag filter
+  // Update URL with channel filter
   const url = new URL(window.location);
-  url.searchParams.set('tag', tag);
+  url.searchParams.set('channel', channel);
   window.history.pushState({}, '', url);
 
-  // Update active state in hashtag list
-  document.querySelectorAll('.hashtag-item').forEach((item) => {
-    if (item.dataset.tag === tag) {
+  // Update active state in channel list
+  document.querySelectorAll('.channel-item').forEach((item) => {
+    if (item.dataset.channel === channel) {
       item.classList.add('active');
     } else {
       item.classList.remove('active');
@@ -1988,9 +2016,9 @@ window.filterByHashtag = function (tag) {
   messageWrappers.forEach((wrapper) => {
     const chatMessage = wrapper.querySelector('chat-message');
     if (chatMessage) {
-      const text = chatMessage.getAttribute('message') || '';
-      const hasTag = text.toLowerCase().includes('#' + tag.toLowerCase());
-      wrapper.style.display = hasTag ? 'block' : 'none';
+      const msgChannel = chatMessage.getAttribute('channel') || 'general';
+      wrapper.style.display =
+        msgChannel.toLowerCase() === channel.toLowerCase() ? 'block' : 'none';
     }
   });
 
@@ -1998,17 +2026,16 @@ window.filterByHashtag = function (tag) {
   chatlog.scrollBy(0, 1e8);
 };
 
-window.clearHashtagFilter = function () {
-  currentHashtagFilter = null;
-  hashtagFilterBanner.classList.remove('visible');
+window.clearChannelFilter = function () {
+  currentChannelFilter = null;
 
-  // Remove tag from URL
+  // Remove channel from URL
   const url = new URL(window.location);
-  url.searchParams.delete('tag');
+  url.searchParams.delete('channel');
   window.history.pushState({}, '', url);
 
   // Clear active state
-  document.querySelectorAll('.hashtag-item').forEach((item) => {
+  document.querySelectorAll('.channel-item').forEach((item) => {
     item.classList.remove('active');
   });
 
@@ -2026,33 +2053,68 @@ window.clearHashtagFilter = function () {
   chatlog.scrollBy(0, 1e8);
 };
 
-async function loadHashtags() {
+async function loadChannels() {
   try {
-    const data = await api.getHashtags(roomname);
-    allHashtags = data.hashtags || [];
-    renderHashtagList();
+    const data = await api.getChannels(roomname);
+    const serverChannels = data.channels || [];
+
+    // Merge server channels with temporary channels
+    const channelMap = new Map();
+
+    // Add all server channels
+    serverChannels.forEach((ch) => {
+      channelMap.set(ch.channel.toLowerCase(), ch);
+    });
+
+    // Add temporary channels that don't exist on server yet
+    temporaryChannels.forEach((tempChannel) => {
+      const key = tempChannel.toLowerCase();
+      if (!channelMap.has(key)) {
+        channelMap.set(key, {
+          channel: tempChannel,
+          count: 0,
+          lastUsed: Date.now(),
+        });
+      }
+    });
+
+    // Convert back to array
+    allChannels = Array.from(channelMap.values());
+    renderChannelList();
   } catch (err) {
-    console.error('Failed to load hashtags:', err);
+    console.error('Failed to load channels:', err);
   }
 }
 
-function renderHashtagList() {
-  if (!hashtagList) return;
+function renderChannelList() {
+  const channelList = document.querySelector('#channel-list');
+  if (!channelList) return;
 
-  hashtagList.innerHTML = '';
+  // Get hidden channels from localStorage
+  const hiddenChannels = getHiddenChannels();
 
-  if (allHashtags.length === 0) {
-    hashtagList.innerHTML =
-      '<div style="color:#999;font-size:0.85em;padding:8px;">No hashtags yet.<br>Use #tag in messages!</div>';
+  channelList.innerHTML = '';
+
+  // Filter out hidden channels
+  const visibleChannels = allChannels.filter(
+    (item) => !hiddenChannels.includes(item.channel),
+  );
+
+  if (visibleChannels.length === 0) {
+    channelList.innerHTML =
+      '<div style="color:#999;font-size:0.85em;padding:8px;">No channels yet.</div>';
     return;
   }
 
-  allHashtags.forEach((item) => {
+  visibleChannels.forEach((item) => {
     const div = document.createElement('div');
-    div.className = 'hashtag-item';
-    div.dataset.tag = item.tag;
-    if (currentHashtagFilter === item.tag) {
+    div.className = 'channel-item';
+    div.dataset.channel = item.channel;
+    if (currentChannelFilter === item.channel) {
       div.classList.add('active');
+    }
+    if (currentChannel === item.channel) {
+      div.classList.add('current');
     }
 
     const contentWrapper = document.createElement('div');
@@ -2063,31 +2125,195 @@ function renderHashtagList() {
     contentWrapper.style.cursor = 'pointer';
 
     const nameSpan = document.createElement('span');
-    nameSpan.className = 'hashtag-name';
-    nameSpan.textContent = '#' + item.tag;
+    nameSpan.className = 'channel-name';
+    nameSpan.textContent = '#' + item.channel;
     contentWrapper.appendChild(nameSpan);
 
     const countSpan = document.createElement('span');
-    countSpan.className = 'hashtag-count';
+    countSpan.className = 'channel-count';
     countSpan.textContent = item.count || 0;
     contentWrapper.appendChild(countSpan);
 
     contentWrapper.onclick = () => {
-      window.filterByHashtag(item.tag);
+      switchToChannel(item.channel);
     };
 
+    // Right-click context menu
+    div.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showChannelContextMenu(e, item.channel);
+    });
+
     div.appendChild(contentWrapper);
-    hashtagList.appendChild(div);
+    channelList.appendChild(div);
   });
 }
 
-function updateHashtagsOnNewMessage(message) {
-  // Extract hashtags from message
-  const matches = [...message.matchAll(regex)];
+// Switch to a channel (sets it as current for sending messages)
+function switchToChannel(channel) {
+  currentChannel = channel;
 
-  if (matches.length > 0) {
-    // Reload hashtags after a short delay to get updated counts
-    setTimeout(() => loadHashtags(), 500);
+  // Check if this channel exists in the current channel list
+  const channelExists = allChannels.some(
+    (c) => c.channel.toLowerCase() === channel.toLowerCase(),
+  );
+
+  // If channel doesn't exist in the list, add it temporarily (frontend only)
+  // It will be created on backend when first message is sent
+  if (!channelExists) {
+    // Add to temporary channels set
+    temporaryChannels.add(channel);
+
+    // Add to allChannels array for immediate display
+    allChannels.push({
+      channel: channel,
+      count: 0,
+      lastUsed: Date.now(),
+    });
+    renderChannelList();
+  }
+
+  // Update visual state
+  document.querySelectorAll('.channel-item').forEach((item) => {
+    if (item.dataset.channel === channel) {
+      item.classList.add('current');
+    } else {
+      item.classList.remove('current');
+    }
+  });
+
+  // Also filter messages by this channel
+  window.filterByChannel(channel);
+}
+
+// Expose switchToChannel to window for use in click handlers
+window.switchToChannel = switchToChannel;
+
+// Show context menu for right-click on channel
+function showChannelContextMenu(event, channel) {
+  // Remove any existing context menu
+  const existing = document.querySelector('.channel-context-menu');
+  if (existing) {
+    existing.remove();
+  }
+
+  const menu = document.createElement('div');
+  menu.className = 'channel-context-menu';
+  menu.style.position = 'fixed';
+  menu.style.left = event.clientX + 'px';
+  menu.style.top = event.clientY + 'px';
+  menu.style.background = 'white';
+  menu.style.border = '1px solid #ccc';
+  menu.style.borderRadius = '4px';
+  menu.style.padding = '4px 0';
+  menu.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+  menu.style.zIndex = '10000';
+
+  const hideOption = document.createElement('div');
+  hideOption.textContent = 'Remove from list';
+  hideOption.style.padding = '8px 16px';
+  hideOption.style.cursor = 'pointer';
+  hideOption.style.fontSize = '14px';
+  hideOption.addEventListener('mouseover', () => {
+    hideOption.style.background = '#f0f0f0';
+  });
+  hideOption.addEventListener('mouseout', () => {
+    hideOption.style.background = 'white';
+  });
+  hideOption.addEventListener('click', () => {
+    hideChannel(channel);
+    menu.remove();
+  });
+
+  menu.appendChild(hideOption);
+  document.body.appendChild(menu);
+
+  // Close menu on click outside
+  setTimeout(() => {
+    document.addEventListener('click', function closeMenu() {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    });
+  }, 0);
+}
+
+// Hide channel (client-side only, stored in localStorage)
+function hideChannel(channel) {
+  const hiddenChannels = getHiddenChannels();
+  if (!hiddenChannels.includes(channel)) {
+    hiddenChannels.push(channel);
+    saveHiddenChannels(hiddenChannels);
+  }
+  renderChannelList();
+}
+
+// Get hidden channels from localStorage
+function getHiddenChannels() {
+  const key = `hiddenChannels:${roomname}`;
+  const stored = localStorage.getItem(key);
+  return stored ? JSON.parse(stored) : [];
+}
+
+// Save hidden channels to localStorage
+function saveHiddenChannels(channels) {
+  const key = `hiddenChannels:${roomname}`;
+  localStorage.setItem(key, JSON.stringify(channels));
+}
+
+function updateChannelsOnNewMessage(channel) {
+  // If this was a temporary channel, it's now been created on the server
+  // Remove it from temporary set (it will come from server in next load)
+  if (temporaryChannels.has(channel)) {
+    temporaryChannels.delete(channel);
+  }
+
+  // Reload channels after a short delay to get updated counts
+  setTimeout(() => loadChannels(), 500);
+}
+
+// Create a new channel (show prompt and switch to it)
+function createNewChannel() {
+  const channelName = prompt(
+    'Enter channel name (2-32 characters, letters/numbers/underscore/hyphen only):',
+  );
+
+  if (!channelName) {
+    return; // User cancelled
+  }
+
+  // Validate channel name
+  const trimmed = channelName.trim().toLowerCase();
+
+  if (trimmed.length < 2 || trimmed.length > 32) {
+    alert('Channel name must be between 2 and 32 characters');
+    return;
+  }
+
+  if (!/^[a-z0-9_-]+$/.test(trimmed)) {
+    alert(
+      'Channel name can only contain lowercase letters, numbers, underscores, and hyphens',
+    );
+    return;
+  }
+
+  // Check if channel already exists
+  const exists = allChannels.some((ch) => ch.channel.toLowerCase() === trimmed);
+  if (exists) {
+    alert(`Channel #${trimmed} already exists`);
+    // Switch to it anyway
+    switchToChannel(trimmed);
+    return;
+  }
+
+  // Create and switch to the new channel
+  switchToChannel(trimmed);
+}
+
+// Initialize channel add button
+function initChannelAddButton() {
+  const addBtn = document.getElementById('channel-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', createNewChannel);
   }
 }
 
@@ -3053,8 +3279,7 @@ async function startChat() {
         rightSidebar.classList.add('mobile-visible');
         mobileRoomInfoOverlay.classList.add('visible');
         mobileTopBarArrow.classList.add('open');
-        // Load hashtags when opening the sidebar
-        loadHashtags();
+        loadChannels();
       }
     });
   }
@@ -3292,7 +3517,7 @@ async function processPendingMessages() {
         messageId: data.messageId,
         replyTo: data.replyTo,
         threadInfo: data.threadInfo,
-        hashtags: data.hashtags || [],
+        channel: data.channel || 'general', // Add channel support
         editedAt: data.editedAt || null,
       });
       lastSeenTimestamp = data.timestamp;
@@ -3445,12 +3670,6 @@ function join() {
 
       // Remove from cache
       messagesCache.delete(deletedMessageId);
-
-      // Update hashtag list if provided
-      if (data.hashtagsUpdated) {
-        allHashtags = data.hashtagsUpdated;
-        renderHashtagList();
-      }
     } else if (data.messageEdited) {
       // Handle message edit broadcast
       const editData = data.messageEdited;
@@ -3460,7 +3679,6 @@ function join() {
       const cachedMsg = messagesCache.get(messageId);
       if (cachedMsg) {
         cachedMsg.message = editData.message;
-        cachedMsg.hashtags = editData.hashtags;
         cachedMsg.editedAt = editData.editedAt;
       }
 
@@ -3473,14 +3691,6 @@ function join() {
         if (chatMessage) {
           chatMessage.setAttribute('message', editData.message);
           chatMessage.setAttribute('edited-at', String(editData.editedAt));
-          if (editData.hashtags && editData.hashtags.length > 0) {
-            chatMessage.setAttribute(
-              'hashtags',
-              JSON.stringify(editData.hashtags),
-            );
-          } else {
-            chatMessage.removeAttribute('hashtags');
-          }
           // Trigger re-render
           chatMessage.render();
         }
@@ -3495,23 +3705,9 @@ function join() {
         if (chatMessage) {
           chatMessage.setAttribute('message', editData.message);
           chatMessage.setAttribute('edited-at', String(editData.editedAt));
-          if (editData.hashtags && editData.hashtags.length > 0) {
-            chatMessage.setAttribute(
-              'hashtags',
-              JSON.stringify(editData.hashtags),
-            );
-          } else {
-            chatMessage.removeAttribute('hashtags');
-          }
           // Trigger re-render
           chatMessage.render();
         }
-      }
-
-      // Update hashtag list if provided
-      if (data.hashtagsUpdated) {
-        allHashtags = data.hashtagsUpdated;
-        renderHashtagList();
       }
     } else if (data.joined) {
       // Check if user is already in the roster (prevent duplicates)
@@ -3601,13 +3797,16 @@ function join() {
           addSystemMessage('* Welcome to ' + documentTitlePrefix + '. Say hi!');
         }
 
-        loadHashtags().then(() => {
-          // Check if there's a tag filter in the URL
+        loadChannels().then(() => {
+          // Initialize channel add button
+          initChannelAddButton();
+
+          // Check if there's a channel filter in the URL
           const urlParams = new URLSearchParams(window.location.search);
-          const tagParam = urlParams.get('tag');
-          if (tagParam) {
-            // Apply the filter from URL
-            window.filterByHashtag(tagParam);
+          const channelParam = urlParams.get('channel');
+          if (channelParam) {
+            // Switch to the channel from URL
+            switchToChannel(channelParam);
           }
 
           // Check if there's a thread ID in the URL
@@ -3637,7 +3836,7 @@ function join() {
             messageId: data.messageId,
             replyTo: data.replyTo,
             threadInfo: data.threadInfo,
-            hashtags: data.hashtags || [],
+            channel: data.channel || 'general', // Extract channel from message data
             editedAt: data.editedAt || null,
           });
           lastSeenTimestamp = data.timestamp;
@@ -3948,7 +4147,7 @@ function addChatMessage(name, text, ts, msgData = {}) {
     messageId: messageId,
     replyTo: msgData.replyTo || null,
     threadInfo: msgData.threadInfo || null,
-    hashtags: msgData.hashtags || [],
+    channel: msgData.channel || 'general', // Include channel field
     editedAt: msgData.editedAt || null,
   };
 
@@ -3979,12 +4178,10 @@ function addChatMessage(name, text, ts, msgData = {}) {
   // Create message element using new function
   const messageElement = createMessageElement(messageData, false);
 
-  // Check if message should be hidden based on current filter
-  if (currentHashtagFilter) {
-    const hasTag = text
-      .toLowerCase()
-      .includes('#' + currentHashtagFilter.toLowerCase());
-    if (!hasTag) {
+  // Check if message should be hidden based on current channel filter
+  if (currentChannelFilter) {
+    const msgChannel = messageData.channel || 'general';
+    if (msgChannel.toLowerCase() !== currentChannelFilter.toLowerCase()) {
       messageElement.style.display = 'none';
     }
   }
@@ -4045,8 +4242,8 @@ function addChatMessage(name, text, ts, msgData = {}) {
     chatlog.scrollBy(0, 1e8);
   }
 
-  // Update hashtags if message contains any
-  updateHashtagsOnNewMessage(text);
+  // Update channels list with the new message's channel
+  updateChannelsOnNewMessage(messageData.channel || 'general');
 }
 
 // Listen for hash changes to switch rooms

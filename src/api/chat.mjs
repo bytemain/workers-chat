@@ -1,4 +1,4 @@
-import { HashtagManager, extractHashtags } from './hashtag.mjs';
+import { ChannelManager, validateChannelName } from './channel.mjs';
 import { Hono } from 'hono';
 import { getPath, splitPath } from 'hono/utils/url';
 import { showRoutes } from 'hono/dev';
@@ -222,8 +222,8 @@ export class ChatRoom {
     // `env` is our environment bindings (discussed earlier).
     this.env = env;
 
-    // Initialize hashtag manager
-    this.hashtagManager = new HashtagManager(this.storage);
+    // Initialize channel manager
+    this.channelManager = new ChannelManager(this.storage);
 
     // Destruction timer
     this.destructionTimer = null;
@@ -392,25 +392,28 @@ export class ChatRoom {
         });
       });
 
-      app.get('/hashtags', async (c) => {
-        const tags = await this.hashtagManager.getAllHashtags(100);
-        return c.json({ hashtags: tags });
+      app.get('/channels', async (c) => {
+        const channels = await this.channelManager.getAllChannels(100);
+        return c.json({ channels });
       });
 
-      app.get('/hashtag', async (c) => {
-        const tag = c.req.query('tag');
-        if (!tag) {
-          return c.json({ error: "Missing 'tag' parameter" }, 400);
+      app.get('/channel', async (c) => {
+        const channel = c.req.query('channel');
+        if (!channel) {
+          return c.json({ error: "Missing 'channel' parameter" }, 400);
         }
 
-        const messages = await this.hashtagManager.getMessagesForTag(tag, 100);
-        return c.json({ tag, messages });
+        const messages = await this.channelManager.getMessagesForChannel(
+          channel,
+          100,
+        );
+        return c.json({ channel, messages });
       });
 
-      app.get('/hashtag/search', async (c) => {
+      app.get('/channel/search', async (c) => {
         const query = c.req.query('q') || '';
-        const tags = await this.hashtagManager.searchHashtags(query, 20);
-        return c.json({ query, results: tags });
+        const channels = await this.channelManager.searchChannels(query, 20);
+        return c.json({ query, results: channels });
       });
 
       app.delete('/message/:messageId', async (c) => {
@@ -459,29 +462,24 @@ export class ChatRoom {
           );
         }
 
-        // Extract hashtags from the message to clean up indexes
-        const hashtags = extractHashtags(messageData.message);
         console.log(
           `[DELETE] Deleting message ${messageId} (key: ${messageKey})`,
         );
-        console.log(`[DELETE] Message has hashtags:`, hashtags);
+
+        // Get the channel from the message
+        const channel = messageData.channel || 'general';
+        console.log(`[DELETE] Message is in channel: #${channel}`);
 
         // Delete the message
         await this.storage.delete(messageKey);
 
-        // Remove this message from all hashtag indexes
-        for (const tag of hashtags) {
-          console.log(`[DELETE] Cleaning up hashtag #${tag}`);
-          await this.hashtagManager.removeMessageFromTag(tag, messageKey);
-        }
+        // Remove this message from the channel index
+        await this.channelManager.removeMessageFromChannel(channel, messageKey);
 
-        // Get updated hashtag list after cleanup
-        const updatedHashtags = await this.hashtagManager.getAllHashtags(100);
-
-        // Broadcast message deletion and hashtag update to all clients
+        // Broadcast message deletion to all clients
+        // Note: We don't send channelsUpdated - channels persist even when empty
         this.broadcast({
           messageDeleted: messageId,
-          hashtagsUpdated: updatedHashtags,
         });
 
         return c.json({ success: true, messageId });
@@ -552,55 +550,27 @@ export class ChatRoom {
           editedAt: Date.now(),
         });
 
-        // Extract old and new hashtags
-        const oldHashtags = extractHashtags(messageData.message);
-        const newHashtags = extractHashtags(newMessage);
-
         console.log(`[EDIT] Editing message ${messageId} (key: ${messageKey})`);
-        console.log(`[EDIT] Old hashtags:`, oldHashtags);
-        console.log(`[EDIT] New hashtags:`, newHashtags);
+
+        // Get the channel from the message (channel doesn't change on edit)
+        const channel = messageData.channel || 'general';
+        console.log(`[EDIT] Message is in channel: #${channel}`);
 
         // Update the message
         messageData.message = newMessage;
-        messageData.hashtags = newHashtags;
         messageData.editedAt = Date.now();
 
         // Save updated message
         await this.storage.put(messageKey, JSON.stringify(messageData));
 
-        // Update hashtag indexes
-        // Remove from old hashtags that are no longer present
-        for (const tag of oldHashtags) {
-          if (!newHashtags.includes(tag)) {
-            console.log(`[EDIT] Removing from hashtag #${tag}`);
-            await this.hashtagManager.removeMessageFromTag(tag, messageKey);
-          }
-        }
-
-        // Add to new hashtags
-        for (const tag of newHashtags) {
-          if (!oldHashtags.includes(tag)) {
-            console.log(`[EDIT] Adding to hashtag #${tag}`);
-            await this.hashtagManager.addMessageToTag(
-              tag,
-              messageKey,
-              messageData.timestamp,
-            );
-          }
-        }
-
-        // Get updated hashtag list
-        const updatedHashtags = await this.hashtagManager.getAllHashtags(100);
-
-        // Broadcast message edit and hashtag update to all clients
+        // Broadcast message edit to all clients
+        // Note: Channel doesn't change, no need to update channel indexes
         this.broadcast({
           messageEdited: {
             messageId: messageId,
             message: newMessage,
-            hashtags: newHashtags,
             editedAt: messageData.editedAt,
           },
-          hashtagsUpdated: updatedHashtags,
         });
 
         return c.json({
@@ -810,7 +780,7 @@ export class ChatRoom {
           const exportData = {
             roomInfo: (await this.storage.get('room-info')) || {},
             messages: [],
-            hashtags: await this.hashtagManager.getAllHashtags(1000),
+            channels: await this.channelManager.getAllChannels(1000),
             exportedAt: new Date().toISOString(),
           };
 
@@ -910,9 +880,9 @@ export class ChatRoom {
             modified = true;
           }
 
-          // Extract hashtags if not present
-          if (!msg.hashtags && msg.message) {
-            msg.hashtags = extractHashtags(msg.message);
+          // Set default channel for old messages if not present
+          if (!msg.channel) {
+            msg.channel = 'general';
             modified = true;
           }
 
@@ -1039,7 +1009,20 @@ export class ChatRoom {
         message: '' + data.message,
         messageId: data.messageId || crypto.randomUUID(), // Generate UUID if not provided
         replyTo: data.replyTo || null, // Include reply information if present
+        channel: data.channel || 'general', // Channel field (plaintext, not encrypted)
       };
+
+      // Validate and normalize channel name
+      try {
+        data.channel = validateChannelName(data.channel);
+      } catch (err) {
+        webSocket.send(
+          JSON.stringify({ error: 'Invalid channel name: ' + err.message }),
+        );
+        return;
+      }
+
+      console.log(`[WebSocket] Message for channel: #${data.channel}`);
 
       // Check if this is a file message
       if (data.message.startsWith('FILE:')) {
@@ -1060,13 +1043,6 @@ export class ChatRoom {
       data.timestamp = Math.max(Date.now(), this.lastTimestamp + 1);
       this.lastTimestamp = data.timestamp;
 
-      // Extract and attach hashtags from the message (server-side parsing)
-      const hashtags = extractHashtags(data.message);
-      console.log('Extracted hashtags:', hashtags);
-      if (hashtags.length > 0) {
-        data.hashtags = hashtags; // Array of hashtags without # prefix
-      }
-
       // Broadcast the message to all other WebSockets.
       let dataStr = JSON.stringify(data);
       this.broadcast(dataStr);
@@ -1080,8 +1056,8 @@ export class ChatRoom {
         await this.updateThreadIndex(data.replyTo.messageId, key, data);
       }
 
-      // Index hashtags in the message
-      await this.hashtagManager.indexMessage(key, data.message, data.timestamp);
+      // Index message in the channel
+      await this.channelManager.indexMessage(key, data.channel, data.timestamp);
     } catch (err) {
       // Report any exceptions directly back to the client. As with our handleErrors() this
       // probably isn't what you'd want to do in production, but it's convenient when testing.

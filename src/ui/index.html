@@ -265,24 +265,14 @@
         display: flex;
       }
 
-      #roster-container,
-      #hashtag-container {
+      #roster-container {
         padding: var(--spacing);
         background: var(--background);
-      }
-
-      #roster-container {
         flex-shrink: 0;
         border-bottom: 1px solid var(--border);
       }
 
-      #hashtag-container {
-        flex: 1;
-        overflow-y: auto;
-      }
-
-      #roster-container h3,
-      #hashtag-container h3 {
+      #roster-container h3 {
         margin: 0 0 var(--spacing-sm) 0;
         font-size: 0.85em;
         font-weight: 600;
@@ -294,14 +284,12 @@
         gap: 6px;
       }
 
-      #roster-container h3 span:first-child,
-      #hashtag-container h3 span:first-child {
+      #roster-container h3 span:first-child {
         font-size: 1.2em;
         line-height: 1;
       }
 
-      #roster-container h3 span:last-child,
-      #hashtag-container h3 span:last-child {
+      #roster-container h3 span:last-child {
         font-size: 0.9em;
       }
 
@@ -740,38 +728,35 @@
         }
       }
 
-      /* Hashtag styles */
-      a.hashtag {
-        color: #1da1f2;
-        font-weight: 500;
-        text-decoration: none;
-        cursor: pointer;
-        padding: 0 2px;
-        border-radius: 2px;
-        transition: background-color 0.2s;
+      /* Channel link styles */
+      #channel-panel {
+        flex-shrink: 0;
+        width: 180px;
+        background: var(--background);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
       }
 
-      a.hashtag:hover {
-        background-color: #e8f5fd;
-        text-decoration: underline;
+      #channel-header {
+        padding: var(--spacing);
+        border-bottom: 2px solid var(--border);
+        background: var(--background-alt);
+        font-size: 0.9em;
+        font-weight: 600;
+        color: var(--text-main);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
       }
 
-      /* Hashtag container is part of right-sidebar for both desktop and mobile */
-      #hashtag-container {
-        padding: 8px;
+      #channel-list {
         flex: 1;
         overflow-y: auto;
-        background: white;
+        padding: var(--spacing-sm);
       }
 
-      #hashtag-container h3 {
-        margin: 0 0 8px 0;
-        font-size: 1em;
-        color: #333;
-        font-weight: bold;
-      }
-
-      .hashtag-item {
+      .channel-item {
         background: var(--background);
         border: 1px solid var(--border);
         border-radius: var(--border-radius);
@@ -782,64 +767,114 @@
         justify-content: space-between;
         align-items: center;
         cursor: pointer;
-      }
-
-      .hashtag-item:hover {
-        background: var(--background-alt);
-        border-color: var(--links);
-      }
-
-      .hashtag-item.active {
-        background: var(--background-alt);
-        border-color: var(--links);
-        font-weight: bold;
-      }
-
-      .hashtag-name {
-        color: var(--links);
-        font-weight: 500;
-      }
-
-      .hashtag-count {
-        color: var(--text-muted);
-        font-size: 0.85em;
-      }
-
-      #hashtag-filter-banner {
-        position: absolute;
-        top: 0;
-        left: var(--left-sidebar-width);
-        right: 200px;
-        background: #fff3cd;
-        border-bottom: 1px solid #ffc107;
-        padding: var(--spacing-sm);
-        display: none;
-        align-items: center;
-        justify-content: space-between;
-        z-index: 99;
-      }
-
-      #hashtag-filter-banner.visible {
-        display: flex;
-      }
-
-      #main-container {
         position: relative;
       }
 
-      .filter-clear-btn {
-        background: #ffc107;
-        color: #333;
-        border: none;
-        border-radius: var(--border-radius);
-        padding: var(--spacing-xs) var(--spacing-sm);
-        cursor: pointer;
-        font-size: 0.9em;
-        transition: var(--transition);
+      .channel-item:hover {
+        background: var(--background-alt);
+        border-color: var(--links);
       }
 
-      .filter-clear-btn:hover {
-        background: #ffb300;
+      .channel-item.active {
+        background: rgba(29, 161, 242, 0.1);
+        border-color: var(--links);
+      }
+
+      .channel-item.current {
+        font-weight: bold;
+        background: var(--background-alt);
+        border-color: var(--links);
+      }
+
+      .channel-item.current::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3px;
+        height: 60%;
+        background: var(--links);
+        border-radius: 0 2px 2px 0;
+      }
+
+      .channel-name {
+        color: var(--links);
+        font-weight: 500;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .channel-count {
+        color: var(--text-muted);
+        font-size: 0.85em;
+        flex-shrink: 0;
+        margin-left: var(--spacing-xs);
+      }
+
+      .channel-context-menu {
+        position: fixed;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--border-radius);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 10000;
+        min-width: 150px;
+        padding: var(--spacing-xs) 0;
+      }
+
+      .channel-context-menu > div {
+        padding: var(--spacing-xs) var(--spacing);
+        cursor: pointer;
+        transition: var(--transition);
+        font-size: 0.9em;
+      }
+
+      .channel-context-menu > div:hover {
+        background: var(--background-alt);
+      }
+
+      #channel-add {
+        padding: var(--spacing-sm);
+        border-top: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+
+      #channel-add-btn {
+        width: 100%;
+        padding: var(--spacing-xs);
+        background: transparent;
+        border: 1px dashed var(--border);
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-xs);
+        font-size: 0.85em;
+        color: var(--text-muted);
+        font-family: inherit;
+      }
+
+      #channel-add-btn:hover {
+        background: var(--background);
+        border-color: var(--links);
+        color: var(--links);
+      }
+
+      #channel-add-btn span:first-child {
+        font-size: 1.2em;
+        font-weight: bold;
+      }
+
+      @media (max-width: 600px) {
+        #channel-panel {
+          display: none;
+        }
       }
 
       /* Thread Panel Styles */
@@ -1556,6 +1591,18 @@
         </div>
       </div>
 
+      <!-- Channel Panel -->
+      <div id="channel-panel">
+        <div id="channel-header">Channels</div>
+        <div id="channel-list"></div>
+        <div id="channel-add">
+          <button id="channel-add-btn" title="Create a new channel">
+            <span>+</span>
+            <span>New Channel</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Chatroom -->
       <div id="chatroom">
         <div id="chatlog">
@@ -1603,19 +1650,7 @@
           <h3><span>👥</span><span>Online Members</span></h3>
           <div id="roster"></div>
         </div>
-        <div id="hashtag-container">
-          <h3><span>📌</span><span>Hashtags</span></h3>
-          <div id="hashtag-list"></div>
-        </div>
       </div>
-    </div>
-
-    <!-- Hashtag Filter Banner (inside main-container for proper positioning) -->
-    <div id="hashtag-filter-banner">
-      <span>Filtering by: <strong id="active-hashtag"></strong></span>
-      <button class="filter-clear-btn" onclick="clearHashtagFilter()">
-        Clear Filter ✕
-      </button>
     </div>
 
     <div id="mobile-top-bar">

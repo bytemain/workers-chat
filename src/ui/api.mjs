@@ -14,11 +14,11 @@ class ChatAPI {
     return await response.text();
   }
 
-  // Get hashtags for a room
-  async getHashtags(roomName) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/hashtags`);
+  // Get channels for a room
+  async getChannels(roomName) {
+    const response = await fetch(`${this.baseUrl}/room/${roomName}/channels`);
     if (!response.ok) {
-      throw new Error('Failed to load hashtags');
+      throw new Error('Failed to load channels');
     }
     return await response.json();
   }
