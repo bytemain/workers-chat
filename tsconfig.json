@@ -1,8 +1,11 @@
 {
-    "compilerOptions": {
-        "checkJs": false
-    },
-    "include": [
-        "./src"
-    ]
+  "compilerOptions": {
+    "checkJs": false,
+    "allowJs": true,
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "target": "ESNext",
+    "noEmit": true
+  },
+  "include": ["./src/**/*.js", "./src/**/*.mjs", "./src/**/*.ts"]
 }
