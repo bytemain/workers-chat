@@ -5,14 +5,22 @@
       name="viewport"
       content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, user-scalable=0"
     />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.min.css">
     <style type="text/css">
+      :root {
+        --border-radius: 5px;
+        --spacing: 1rem;
+        --spacing-sm: 0.5rem;
+        --spacing-xs: 0.25rem;
+        --transition: 0.2s ease;
+      }
+
       * {
         box-sizing: border-box;
         -webkit-tap-highlight-color: transparent;
       }
 
       body {
-        font-family: Arial, Helvetica, sans-serif;
         margin: 0;
         padding: 0;
         overflow: hidden;
@@ -27,11 +35,9 @@
         left: 0;
         right: 200px;
         overflow-y: auto;
-        padding: 8px;
+        padding: var(--spacing);
         overflow-wrap: break-word;
-        transition:
-          right 0.3s ease,
-          bottom 0.1s ease;
+        transition: right 0.3s ease, bottom 0.1s ease;
       }
 
       #chatlog.thread-open {
@@ -122,6 +128,37 @@
 
       chat-message .username {
         font-weight: bold;
+        color: var(--text-main);
+      }
+
+      chat-message .msg-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+        gap: 8px;
+      }
+
+      chat-message .msg-time-container {
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+
+      chat-message .msg-time {
+        color: #888;
+        font-size: 0.85em;
+        white-space: nowrap;
+      }
+
+      chat-message .msg-content {
+        padding-left: 0;
+        word-wrap: break-word;
+        line-height: 1.4;
+      }
+
+      /* Compact mode for consecutive messages from same user */
+      .message-wrapper + .message-wrapper {
+        margin-top: 2px;
       }
 
       #spacer {
@@ -135,10 +172,9 @@
         bottom: 32px;
         width: 200px;
         display: none;
-        /* Hidden by default, shown in startChat() */
         flex-direction: column;
-        border-left: 1px solid #ddd;
-        background: white;
+        border-left: 1px solid var(--border);
+        background: var(--background);
         transition: bottom 0.1s ease;
       }
 
@@ -148,26 +184,33 @@
 
       #room-info {
         flex-shrink: 0;
-        border-bottom: 1px solid #ddd;
-        background: #fafafa;
-        padding: 8px;
+        border-bottom: 1px solid var(--border);
+        background: var(--background-alt);
+        padding: var(--spacing);
         font-size: 0.9em;
       }
 
       #room-info h3 {
-        margin: 0 0 8px 0;
+        margin: 0 0 var(--spacing-sm) 0;
         font-size: 1em;
-        color: #333;
         position: relative;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--spacing-xs);
+      }
+
+      #room-info h3 > span:first-child {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
       }
 
       #connection-status {
         display: none;
-        position: absolute;
-        right: 0;
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: 0.8em;
+        margin-left: var(--spacing-xs);
+        font-size: 0.75em;
         padding: 2px 6px;
         border-radius: 10px;
         font-weight: normal;
@@ -207,14 +250,14 @@
       }
 
       #encryption-status {
-        margin: 8px 0;
-        padding: 8px;
-        border-radius: 4px;
+        margin: var(--spacing-sm) 0;
+        padding: var(--spacing-sm);
+        border-radius: var(--border-radius);
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: var(--spacing-xs);
         font-size: 0.85em;
-        transition: all 0.3s ease;
+        transition: var(--transition);
       }
 
       #encryption-status.encrypted {
@@ -253,127 +296,87 @@
 
       #room-name-display {
         font-weight: bold;
-        color: #1da1f2;
-        margin-bottom: 12px;
+        color: var(--links);
+        margin-bottom: var(--spacing-sm);
         word-break: break-all;
         cursor: pointer;
-        padding: 4px;
-        border-radius: 3px;
-        transition: background-color 0.2s;
+        padding: var(--spacing-xs);
+        border-radius: var(--border-radius);
+        transition: var(--transition);
       }
 
       #room-name-display:hover {
-        background-color: #f0f8ff;
+        background-color: var(--background-alt);
       }
 
       #room-name-input {
         width: 100%;
         font-weight: bold;
-        color: #1da1f2;
-        padding: 4px;
-        border: 1px solid #1da1f2;
-        border-radius: 3px;
-        font-family: Arial, sans-serif;
-        font-size: max(16px, 0.9em);
-        margin-bottom: 12px;
+        color: var(--links);
+        padding: var(--spacing-xs);
+        margin-bottom: var(--spacing-sm);
         display: none;
       }
 
-      #room-name-input:focus {
-        outline: none;
-        border-color: #0d8dd9;
-      }
-
       #room-description-label {
-        color: #666;
+        color: var(--text-muted);
         font-size: 0.85em;
-        margin-bottom: 4px;
+        margin-bottom: var(--spacing-xs);
         cursor: pointer;
-        padding: 2px;
-        border-radius: 3px;
-        transition: background-color 0.2s;
+        padding: var(--spacing-xs);
+        border-radius: var(--border-radius);
+        transition: var(--transition);
       }
 
       #room-description-label:hover {
-        background-color: #f0f8ff;
+        background-color: var(--background-alt);
       }
 
       #room-note {
         width: 100%;
         min-height: 60px;
-        padding: 6px;
-        border: 1px solid #ddd;
-        border-radius: 3px;
-        font-family: Arial, sans-serif;
-        font-size: max(16px, 0.9em);
         resize: vertical;
-        background: white;
         display: none;
-        margin-top: 4px;
-      }
-
-      #room-note:focus {
-        outline: none;
-        border-color: #1da1f2;
+        margin-top: var(--spacing-xs);
       }
 
       #room-note.visible {
         display: block;
       }
 
-      #btn-change-encryption-key:hover {
-        background-color: #f0f8ff;
-        text-decoration: underline;
-      }
-
       /* Room destruction styles */
       #room-destruction-container {
-        margin-top: 12px;
-        padding-top: 12px;
-        border-top: 1px solid #eee;
+        margin-top: var(--spacing-sm);
+        padding-top: var(--spacing-sm);
+        border-top: 1px solid var(--border);
       }
 
       #room-destruction-container h4 {
-        margin: 0 0 8px 0;
+        margin: 0 0 var(--spacing-sm) 0;
         font-size: 0.9em;
-        color: #666;
+        color: var(--text-muted);
       }
 
       .destruction-controls {
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: var(--spacing-sm);
       }
 
-      .destruction-timer-select {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 8px;
-      }
-
-      .destruction-timer-select label {
+      .btn-destroy,
+      .btn-cancel-destroy,
+      .btn-export {
+        padding: var(--spacing-xs) var(--spacing-sm);
+        border-radius: var(--border-radius);
+        border: none;
+        cursor: pointer;
         font-size: 0.85em;
-        color: #666;
-      }
-
-      .destruction-timer-select select {
-        flex: 1;
-        padding: 4px;
-        border: 1px solid #ddd;
-        border-radius: 3px;
-        font-size: max(16px, 0.85em);
+        transition: var(--transition);
       }
 
       .btn-destroy {
         background: #dc3545;
         color: white;
-        border: none;
-        padding: 8px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.85em;
-        transition: background 0.2s;
       }
 
       .btn-destroy:hover {
@@ -383,12 +386,6 @@
       .btn-cancel-destroy {
         background: #ffc107;
         color: #333;
-        border: none;
-        padding: 8px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.85em;
-        transition: background 0.2s;
       }
 
       .btn-cancel-destroy:hover {
@@ -398,12 +395,6 @@
       .btn-export {
         background: #28a745;
         color: white;
-        border: none;
-        padding: 8px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.85em;
-        transition: background 0.2s;
       }
 
       .btn-export:hover {
@@ -413,9 +404,9 @@
       .destruction-countdown {
         background: #fff3cd;
         border: 1px solid #ffc107;
-        border-radius: 4px;
-        padding: 8px;
-        margin-bottom: 8px;
+        border-radius: var(--border-radius);
+        padding: var(--spacing-sm);
+        margin-bottom: var(--spacing-sm);
         display: none;
       }
 
@@ -426,7 +417,7 @@
       .countdown-text {
         font-size: 0.85em;
         color: #856404;
-        margin: 0 0 4px 0;
+        margin: 0 0 var(--spacing-xs) 0;
         font-weight: bold;
       }
 
@@ -437,39 +428,86 @@
         font-family: monospace;
       }
 
-      #roster-container {
-        padding: 8px;
-        flex-shrink: 0;
-        border-bottom: 1px solid #ddd;
-        background: white;
+      .destruction-timer-select {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
       }
 
-      #roster-container h3 {
-        margin: 0 0 8px 0;
-        font-size: 1em;
-        color: #333;
-        font-weight: bold;
+      .destruction-timer-select label {
+        font-size: 0.85em;
+        color: var(--text-muted);
+      }
+
+      .destruction-timer-select select {
+        flex: 1;
+        padding: var(--spacing-xs);
+        border-radius: var(--border-radius);
+        font-size: 0.85em;
+      }
+
+      #roster-container,
+      #hashtag-container {
+        padding: var(--spacing);
+        background: var(--background);
+      }
+
+      #roster-container {
+        flex-shrink: 0;
+        border-bottom: 1px solid var(--border);
       }
 
       #hashtag-container {
-        padding: 8px;
         flex: 1;
         overflow-y: auto;
-        background: white;
       }
 
+      #roster-container h3,
       #hashtag-container h3 {
-        margin: 0 0 8px 0;
-        font-size: 1em;
-        color: #333;
-        font-weight: bold;
+        margin: 0 0 var(--spacing-sm) 0;
+        font-size: 0.85em;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      #roster-container h3 span:first-child,
+      #hashtag-container h3 span:first-child {
+        font-size: 1.2em;
+        line-height: 1;
+      }
+
+      #roster-container h3 span:last-child,
+      #hashtag-container h3 span:last-child {
+        font-size: 0.9em;
       }
 
       #roster .user-item {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 4px;
+        margin-bottom: var(--spacing-xs);
+        padding: var(--spacing-xs);
+        border-radius: var(--border-radius);
+        transition: var(--transition);
+        gap: var(--spacing-xs);
+        font-size: 0.9em;
+      }
+
+      #roster .user-item:hover {
+        background: var(--background-alt);
+      }
+
+      #roster .user-item > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        min-width: 0;
       }
 
       #roster .user-item.current-user > span {
@@ -478,34 +516,25 @@
 
       #roster .logout-btn {
         background: transparent;
-        color: #999;
-        border: 1px solid #ddd;
-        border-radius: 3px;
-        padding: 1px 6px;
+        color: var(--text-muted);
+        border: 1px solid var(--border);
+        border-radius: var(--border-radius);
+        padding: 2px var(--spacing-xs);
         cursor: pointer;
-        font-size: 11px;
-        margin-left: 8px;
+        font-size: 0.85em;
+        margin-left: var(--spacing-sm);
+        transition: var(--transition);
+        flex-shrink: 0;
       }
 
       #roster .logout-btn:hover {
-        background: #f5f5f5;
-        color: #666;
-        border-color: #ccc;
-      }
-
-      p {
-        margin-top: 0;
-        margin-bottom: 8px;
-      }
-
-      p:last-of-type {
-        margin: 0;
+        background: var(--background-alt);
+        color: var(--text-main);
       }
 
       #roster {
         flex: 1;
         overflow-y: auto;
-        background: white;
       }
 
       ::-webkit-scrollbar {
@@ -706,14 +735,14 @@
         left: 0;
         bottom: 35px;
         width: 100%;
-        background: #f0f7ff;
-        border-top: 1px solid #1da1f2;
-        padding: 8px 12px;
+        background: var(--background-alt);
+        border-top: 2px solid var(--links);
+        padding: var(--spacing-sm);
         display: flex;
         align-items: center;
         justify-content: space-between;
         font-size: 0.9em;
-        color: #666;
+        color: var(--text-muted);
         z-index: 100;
       }
 
@@ -727,12 +756,15 @@
         border: none;
         cursor: pointer;
         font-size: 1.2em;
-        color: #999;
-        padding: 0 8px;
+        color: var(--text-muted);
+        padding: 0 var(--spacing-sm);
+        transition: var(--transition);
+        border-radius: var(--border-radius);
       }
 
       #reply-indicator .reply-indicator-close:hover {
-        color: #333;
+        color: var(--text-main);
+        background: var(--background-body);
       }
 
       #main-chat-input-container {
@@ -740,8 +772,8 @@
         bottom: 0;
         left: 0;
         right: 0;
-        background: white;
-        border-top: 1px solid #ddd;
+        background: var(--background);
+        border-top: 1px solid var(--border);
         transition: bottom 0.1s ease;
       }
 
@@ -763,77 +795,30 @@
         -webkit-overflow-scrolling: touch;
       }
 
-      /* Username input in room form */
-      #room-form #name-input {
-        width: 100%;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        transition: border-color 0.2s;
-        font-size: max(16px, 0.7em);
-      }
-
-      #room-form #name-input:focus {
-        outline: none;
-        border-color: #1da1f2;
-        box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.1);
-      }
-
-      #room-form #name-input::placeholder {
-        color: #999;
-        opacity: 1;
-      }
-
-      #room-form > p {
-        margin: 1em 0;
-        font-size: 0.7em;
-        color: #666;
-      }
-
       #room-name {
         width: 100%;
-        border: 1px solid #ddd;
-        border-radius: 6px;
         padding: 0.6em 1em;
         font-size: 0.7em;
         text-align: center;
-        transition: border-color 0.2s;
-        -webkit-appearance: none;
-        appearance: none;
-        box-sizing: border-box;
+        border-radius: var(--border-radius);
       }
 
-      #room-name:focus {
-        outline: none;
-        border-color: #1da1f2;
-        box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.1);
-      }
-
-      #room-name::placeholder {
-        color: #999;
-        opacity: 1;
+      /* Username input in room form */
+      #room-form #name-input {
+        width: 100%;
+        border-radius: var(--border-radius);
+        font-size: max(16px, 0.7em);
       }
 
       #room-form button {
-        border: 1px solid #ddd;
-        background-color: #f5f5f5;
+        border: none;
         padding: 0.6em 1em;
-        border-radius: 6px;
+        border-radius: var(--border-radius);
         cursor: pointer;
         font-size: 0.7em;
-        transition: background-color 0.2s;
-        -webkit-appearance: none;
-        appearance: none;
+        transition: var(--transition);
         touch-action: manipulation;
         user-select: none;
-        box-sizing: border-box;
-      }
-
-      #room-form button:hover {
-        background-color: #e8e8e8;
-      }
-
-      #room-form button:active {
-        background-color: #d8d8d8;
       }
 
       #go-public {
@@ -913,77 +898,72 @@
         margin-top: 3em;
         font-size: 0.5em;
         width: 100%;
-        max-width: 600px;
+        max-width: 650px;
         padding: 0 20px;
       }
 
       #room-history h3 {
-        margin: 0 0 1em 0;
-        color: #666;
-        font-weight: normal;
+        margin: 0 0 1.2em 0;
+        font-weight: 600;
+        font-size: 1.3em;
+        text-align: center;
       }
 
       #room-history-list {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.5em;
+        gap: var(--spacing-sm);
         justify-content: center;
-        max-width: 600px;
+        max-width: 650px;
         margin: 0 auto;
       }
 
       .room-history-item {
-        background: #f0f0f0;
-        border: 2px solid #ddd;
-        border-radius: 8px;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--border-radius);
         padding: 0.8em 1.2em;
         cursor: pointer;
-        transition: all 0.2s;
+        transition: var(--transition);
         display: flex;
         align-items: center;
-        gap: 0.5em;
+        gap: var(--spacing-sm);
         min-height: 44px;
         touch-action: manipulation;
         user-select: none;
       }
 
       .room-history-item:hover {
-        background: #e0e0e0;
-        border-color: #1da1f2;
+        border-color: var(--links);
         transform: translateY(-2px);
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
       }
 
-      .room-history-item:active {
-        transform: translateY(0);
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-      }
-
       .room-history-item .room-name {
-        font-weight: bold;
-        color: #333;
+        font-weight: 600;
+        flex: 1;
       }
 
       .room-history-item .remove-btn {
-        background: transparent;
+        background: rgba(220, 53, 69, 0.1);
         border: none;
         color: #999;
         cursor: pointer;
-        font-size: 1.2em;
-        padding: 0.2em 0.4em;
+        font-size: 1.1em;
+        padding: 0.3em 0.5em;
         line-height: 1;
-        border-radius: 4px;
-        transition: all 0.2s;
-        min-width: 28px;
-        min-height: 28px;
+        border-radius: var(--border-radius);
+        transition: var(--transition);
+        min-width: 30px;
+        min-height: 30px;
         display: flex;
         align-items: center;
         justify-content: center;
       }
 
       .room-history-item .remove-btn:hover {
-        color: #dc3545;
-        background: #ffe0e0;
+        color: #fff;
+        background: #dc3545;
       }
 
       /* Mobile optimization for room history */
@@ -1031,35 +1011,36 @@
       }
 
       .hashtag-item {
-        background: white;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 6px 8px;
-        margin-bottom: 6px;
-        transition: all 0.2s;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--border-radius);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        margin-bottom: var(--spacing-xs);
+        transition: var(--transition);
         display: flex;
         justify-content: space-between;
         align-items: center;
+        cursor: pointer;
       }
 
       .hashtag-item:hover {
-        background: #f0f8ff;
-        border-color: #1da1f2;
+        background: var(--background-alt);
+        border-color: var(--links);
       }
 
       .hashtag-item.active {
-        background: #e8f5fd;
-        border-color: #1da1f2;
+        background: var(--background-alt);
+        border-color: var(--links);
         font-weight: bold;
       }
 
       .hashtag-name {
-        color: #1da1f2;
+        color: var(--links);
         font-weight: 500;
       }
 
       .hashtag-count {
-        color: #999;
+        color: var(--text-muted);
         font-size: 0.85em;
       }
 
@@ -1070,7 +1051,7 @@
         right: 200px;
         background: #fff3cd;
         border-bottom: 1px solid #ffc107;
-        padding: 8px 16px;
+        padding: var(--spacing-sm);
         display: none;
         align-items: center;
         justify-content: space-between;
@@ -1090,10 +1071,11 @@
         background: #ffc107;
         color: #333;
         border: none;
-        border-radius: 3px;
-        padding: 4px 12px;
+        border-radius: var(--border-radius);
+        padding: var(--spacing-xs) var(--spacing-sm);
         cursor: pointer;
         font-size: 0.9em;
+        transition: var(--transition);
       }
 
       .filter-clear-btn:hover {
@@ -1107,8 +1089,8 @@
         top: 0;
         bottom: 32px;
         width: 400px;
-        background: white;
-        border-left: 1px solid #ddd;
+        background: var(--background);
+        border-left: 1px solid var(--border);
         display: none;
         flex-direction: column;
         z-index: 50;
@@ -1120,9 +1102,9 @@
       }
 
       #thread-header {
-        padding: 12px 16px;
-        border-bottom: 2px solid #ddd;
-        background: #fafafa;
+        padding: var(--spacing);
+        border-bottom: 2px solid var(--border);
+        background: var(--background-alt);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -1132,7 +1114,6 @@
       #thread-header h3 {
         margin: 0;
         font-size: 1em;
-        color: #333;
       }
 
       #thread-close {
@@ -1140,135 +1121,168 @@
         border: none;
         font-size: 20px;
         cursor: pointer;
-        color: #666;
+        color: var(--text-muted);
         padding: 0;
         width: 24px;
         height: 24px;
         display: flex;
         align-items: center;
         justify-content: center;
+        border-radius: var(--border-radius);
+        transition: var(--transition);
       }
 
       #thread-close:hover {
-        color: #000;
-        background: #e0e0e0;
-        border-radius: 3px;
+        color: var(--text-main);
+        background: var(--background-body);
       }
 
       #thread-original-message {
-        padding: 12px 16px;
-        border-bottom: 1px solid #eee;
-        background: #f9f9f9;
+        padding: var(--spacing);
+        border-bottom: 1px solid var(--border);
+        background: var(--background-alt);
         flex-shrink: 0;
       }
 
       #thread-replies {
         flex: 1;
         overflow-y: auto;
-        padding: 8px;
+        padding: var(--spacing-sm);
       }
 
       #thread-input-container {
-        border-top: 1px solid #ddd;
-        padding: 8px;
+        border-top: 1px solid var(--border);
+        padding: var(--spacing-sm);
         flex-shrink: 0;
       }
 
       /* Message Actions */
       .message-wrapper {
         position: relative;
-        padding: 4px 0;
-        margin: 4px 0;
-        border-radius: 4px;
+        padding: var(--spacing-xs) 0;
+        margin: var(--spacing-xs) 0;
+        border-radius: var(--border-radius);
+        transition: var(--transition);
       }
 
       .message-wrapper:hover {
-        background: #f8f8f8;
+        background: var(--background-alt);
       }
 
       .message-wrapper:hover .message-actions {
         display: flex;
       }
 
+      .message-wrapper:hover .msg-time-outside-actions {
+        display: none;
+      }
+
+      .msg-time-outside-actions {
+        display: none;
+      }
+
+      .msg-time-outside-actions[data-first-message="true"] {
+        display: flex;
+        position: absolute;
+        right: var(--spacing-sm);
+        top: var(--spacing-xs);
+        align-items: center;
+      }
+ 
       .message-actions {
         position: absolute;
-        right: 8px;
-        top: 4px;
+        right: var(--spacing-sm);
+        top: var(--spacing-xs);
         display: none;
-        gap: 4px;
-        background: white;
-        border: 1px solid #ddd;
-        border-radius: 4px;
+        gap: var(--spacing-xs);
+        align-items: center;
+      }
+
+      .message-actions-buttons {
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--border-radius);
         padding: 2px;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        display: flex;
+        gap: var(--spacing-xs);
+      }
+
+      .msg-time-in-actions {
+        display: block;
+        position: static;
+        color: #888;
+        font-size: 0.85em;
+        white-space: nowrap;
+        margin-right: 8px;
       }
 
       .message-action-btn {
         background: none;
         border: none;
-        padding: 4px 8px;
+        padding: var(--spacing-xs) var(--spacing-sm);
         cursor: pointer;
         font-size: 14px;
-        border-radius: 3px;
+        border-radius: var(--border-radius);
         display: flex;
         align-items: center;
-        gap: 4px;
-        color: #666;
+        gap: var(--spacing-xs);
+        color: var(--text-muted);
+        transition: var(--transition);
       }
 
       .message-action-btn:hover {
-        background: #f0f0f0;
-        color: #000;
+        background: var(--background-alt);
+        color: var(--text-main);
       }
 
       .thread-indicator {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
+        gap: var(--spacing-xs);
         font-size: 0.85em;
-        color: #1da1f2;
+        color: var(--links);
         cursor: pointer;
-        padding: 2px 6px;
-        border-radius: 3px;
-        margin-top: 4px;
+        padding: var(--spacing-xs) var(--spacing-xs);
+        border-radius: var(--border-radius);
+        margin-top: var(--spacing-xs);
+        transition: var(--transition);
       }
 
       .thread-indicator:hover {
-        background: #e8f5fd;
+        background: var(--background-alt);
         text-decoration: underline;
       }
 
       .reply-reference {
-        background: #f5f5f5;
-        border-left: 3px solid #1da1f2;
-        padding: 4px 10px;
-        margin: 4px 0 0 0;
-        border-radius: 3px;
+        background: var(--background-alt);
+        border-left: 3px solid var(--links);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        margin: var(--spacing-xs) 0 0 0;
+        border-radius: var(--border-radius);
         font-size: 0.85em;
-        color: #666;
+        color: var(--text-muted);
         cursor: pointer;
         font-style: italic;
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: var(--spacing-xs);
+        transition: var(--transition);
       }
 
       .reply-reference:hover {
-        background: #ebebeb;
+        background: var(--background-body);
       }
 
       .reply-reference .reply-icon {
-        color: #1da1f2;
+        color: var(--links);
         font-style: normal;
         flex-shrink: 0;
-        line-height: 1;
-        display: flex;
-        align-items: center;
       }
 
       .reply-reference .reply-author {
         font-weight: 600;
-        color: #1da1f2;
+        color: var(--links);
         font-style: normal;
         flex-shrink: 0;
       }
@@ -1279,7 +1293,7 @@
       }
 
       .reply-reference .reply-preview {
-        color: #555;
+        color: var(--text-muted);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -1289,7 +1303,7 @@
 
       /* E2EE Privacy Options */
       .privacy-option {
-        transition: all 0.2s ease;
+        transition: var(--transition);
       }
 
       .privacy-option:hover {
@@ -1304,6 +1318,126 @@
       .privacy-option:has(input[type='radio']:checked) {
         border-color: #0066cc !important;
         box-shadow: 0 0 0 1px #0066cc;
+      }
+
+      /* Room Settings Modal */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+        padding: var(--spacing);
+      }
+
+      .modal-overlay.visible {
+        display: flex;
+      }
+
+      .modal-content {
+        background: var(--background);
+        border-radius: var(--border-radius);
+        max-width: 500px;
+        width: 100%;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      }
+
+      .modal-header {
+        padding: var(--spacing);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .modal-header h3 {
+        margin: 0;
+        font-size: 1.1em;
+      }
+
+      .modal-close {
+        background: none;
+        border: none;
+        font-size: 1.5em;
+        cursor: pointer;
+        color: var(--text-muted);
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--border-radius);
+        transition: var(--transition);
+      }
+
+      .modal-close:hover {
+        background: var(--background-alt);
+        color: var(--text-main);
+      }
+
+      .modal-body {
+        padding: var(--spacing);
+      }
+
+      .modal-section {
+        margin-bottom: var(--spacing);
+      }
+
+      .modal-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .modal-section h4 {
+        margin: 0 0 var(--spacing-sm) 0;
+        font-size: 0.95em;
+        color: var(--text-main);
+      }
+
+      /* Settings button in room info header */
+      .settings-btn {
+        background: none;
+        border: none;
+        font-size: 1.1em;
+        cursor: pointer;
+        color: var(--text-muted);
+        padding: 0;
+        margin: 0;
+        border-radius: 50%;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        flex-shrink: 0;
+      }
+
+      .settings-btn:hover {
+        background: var(--background-body);
+        color: var(--text-main);
+        transform: rotate(90deg);
+      }
+
+      .settings-btn:active {
+        transform: rotate(90deg) scale(0.95);
+      }
+
+      #room-info h3 {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      #room-info h3 > span:first-child {
+        flex: 1;
       }
     </style>
   </head>
@@ -1416,8 +1550,11 @@
       <div id="right-sidebar">
         <div id="room-info">
           <h3>
-            <span>🏠 Room Info</span>
-            <span id="connection-status"></span>
+            <span>
+              <span>🏠 Room Info</span>
+              <span id="connection-status"></span>
+            </span>
+            <button class="settings-btn" id="btn-room-settings" title="Room Settings">⚙️</button>
           </h3>
           <div id="room-name-container">
             <div id="room-name-display"></div>
@@ -1436,63 +1573,13 @@
             <span id="encryption-status-icon">🔓</span>
             <span id="encryption-status-text">Not Encrypted</span>
           </div>
-          <div style="margin-top: 12px">
-            <a
-              id="btn-change-encryption-key"
-              href="#"
-              style="
-                color: #0066cc;
-                text-decoration: none;
-                font-size: 0.9em;
-                display: inline-block;
-                padding: 4px;
-                border-radius: 3px;
-                transition: background-color 0.2s;
-              "
-              >🔑 Change Local Key</a
-            >
-          </div>
-          <div id="room-destruction-container">
-            <h4>🔥 Room Management</h4>
-            <div class="destruction-countdown" id="destruction-countdown">
-              <p class="countdown-text">⚠️ Room will be destroyed in:</p>
-              <div class="countdown-time" id="countdown-time">--:--</div>
-            </div>
-            <div class="destruction-controls" id="destruction-controls">
-              <div class="destruction-timer-select">
-                <label for="destruction-timer">Destroy after:</label>
-                <select id="destruction-timer">
-                  <option value="0">Immediately</option>
-                  <option value="5" selected>5 minutes</option>
-                  <option value="10">10 minutes</option>
-                  <option value="15">15 minutes</option>
-                  <option value="30">30 minutes</option>
-                  <option value="60">1 hour</option>
-                  <option value="120">2 hours</option>
-                </select>
-              </div>
-              <button class="btn-destroy" id="btn-start-destruction">
-                🔥 Start Destruction
-              </button>
-              <button
-                class="btn-cancel-destroy"
-                id="btn-cancel-destruction"
-                style="display: none"
-              >
-                ⏹️ Cancel Destruction
-              </button>
-              <button class="btn-export" id="btn-export-records">
-                💾 Export All Records
-              </button>
-            </div>
-          </div>
         </div>
         <div id="roster-container">
-          <h3>👥 Online Members</h3>
+          <h3><span>👥</span><span>Online Members</span></h3>
           <div id="roster"></div>
         </div>
         <div id="hashtag-container">
-          <h3>📌 Hashtags</h3>
+          <h3><span>📌</span><span>Hashtags</span></h3>
           <div id="hashtag-list"></div>
         </div>
       </div>
@@ -1537,6 +1624,80 @@
       </button>
     </div>
     <div id="mobile-room-info-overlay"></div>
+
+    <!-- Room Settings Modal -->
+    <div id="room-settings-modal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>⚙️ Room Settings</h3>
+          <button class="modal-close" id="close-room-settings">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-section">
+            <h4>🔑 Encryption Key</h4>
+            <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: var(--spacing-sm);">
+              Manage your local encryption key for this room.
+            </p>
+            <button
+              id="btn-change-encryption-key"
+              style="
+                width: 100%;
+                padding: var(--spacing-sm);
+                border: 1px solid var(--border);
+                background: var(--background);
+                border-radius: var(--border-radius);
+                cursor: pointer;
+                transition: var(--transition);
+              "
+            >
+              🔑 Change Local Key
+            </button>
+          </div>
+
+          <div class="modal-section">
+            <h4>🔥 Room Management</h4>
+            <div class="destruction-countdown" id="destruction-countdown">
+              <p class="countdown-text">⚠️ Room will be destroyed in:</p>
+              <div class="countdown-time" id="countdown-time">--:--</div>
+            </div>
+            <div class="destruction-controls" id="destruction-controls">
+              <div class="destruction-timer-select">
+                <label for="destruction-timer">Destroy after:</label>
+                <select id="destruction-timer">
+                  <option value="0">Immediately</option>
+                  <option value="5" selected>5 minutes</option>
+                  <option value="10">10 minutes</option>
+                  <option value="15">15 minutes</option>
+                  <option value="30">30 minutes</option>
+                  <option value="60">1 hour</option>
+                  <option value="120">2 hours</option>
+                </select>
+              </div>
+              <button class="btn-destroy" id="btn-start-destruction">
+                🔥 Start Destruction
+              </button>
+              <button
+                class="btn-cancel-destroy"
+                id="btn-cancel-destruction"
+                style="display: none"
+              >
+                ⏹️ Cancel Destruction
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-section">
+            <h4>💾 Export</h4>
+            <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: var(--spacing-sm);">
+              Download all messages and files as a ZIP archive.
+            </p>
+            <button class="btn-export" id="btn-export-records" style="width: 100%;">
+              💾 Export All Records
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </body>
   <script type="module">
     import { startNameChooser } from './index.mjs';

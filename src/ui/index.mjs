@@ -612,47 +612,54 @@ class ChatMessage extends HTMLElement {
     // Clear existing content
     this.innerHTML = '';
 
-    // Add time if present
-    if (timestamp) {
-      const date = new Date(Number(timestamp));
-      const hh = String(date.getHours()).padStart(2, '0');
-      const mm = String(date.getMinutes()).padStart(2, '0');
-      const ss = String(date.getSeconds()).padStart(2, '0');
-      const timeSpan = document.createElement('span');
-      timeSpan.className = 'msg-time';
-      timeSpan.textContent = `[${hh}:${mm}:${ss}] `;
-      timeSpan.style.color = '#888';
-      timeSpan.style.fontSize = '0.95em';
-      this.appendChild(timeSpan);
-
-      // Add "edited" indicator if message was edited
-      if (editedAt) {
-        const editedSpan = document.createElement('span');
-        editedSpan.className = 'msg-edited';
-        editedSpan.textContent = '(edited) ';
-        editedSpan.style.color = '#999';
-        editedSpan.style.fontSize = '0.85em';
-        editedSpan.style.fontStyle = 'italic';
-        editedSpan.title =
-          'Edited at ' + new Date(Number(editedAt)).toLocaleString();
-        this.appendChild(editedSpan);
+    // Check if previous message is from the same user
+    const wrapper = this.closest('.message-wrapper');
+    let showUsername = true;
+    if (wrapper) {
+      const prevWrapper = wrapper.previousElementSibling;
+      if (prevWrapper && prevWrapper.classList.contains('message-wrapper')) {
+        const prevMessage = prevWrapper.querySelector('chat-message');
+        if (prevMessage) {
+          const prevUsername = prevMessage.getAttribute('username');
+          const prevTimestamp = prevMessage.getAttribute('timestamp');
+          // Hide username if same user and within 5 minutes
+          if (prevUsername === username && timestamp && prevTimestamp) {
+            const timeDiff = Number(timestamp) - Number(prevTimestamp);
+            if (timeDiff < 5 * 60 * 1000) {
+              // 5 minutes
+              showUsername = false;
+            }
+          }
+        }
       }
     }
 
-    // Add username if present
-    if (username) {
+    // Add username if present and should be shown
+    if (username && showUsername) {
       const usernameSpan = document.createElement('span');
       usernameSpan.className = 'username';
-      usernameSpan.textContent = username + ': ';
+      usernameSpan.textContent = username;
+      usernameSpan.style.fontWeight = 'bold';
+      usernameSpan.style.display = 'block';
+      usernameSpan.style.marginBottom = '2px';
       this.appendChild(usernameSpan);
     }
 
+    // Create message content container
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'msg-content';
+    contentDiv.style.wordWrap = 'break-word';
+    contentDiv.style.lineHeight = '1.4';
+
+    // Store reference to contentDiv for rendering methods
+    this._contentDiv = contentDiv;
+
     // Handle file messages (check inside the element)
     if (message.startsWith('FILE:')) {
-      this.renderFileMessage(message);
+      this.renderFileMessage(message, contentDiv);
     } else {
       // Handle regular text messages with link detection
-      this.renderTextMessage(message);
+      this.renderTextMessage(message, contentDiv);
     }
 
     // Add reply reference if this is a reply and not in thread view
@@ -682,12 +689,10 @@ class ChatMessage extends HTMLElement {
           // Open the thread for the referenced message
           window.openThread(replyData.messageId);
         };
-        this.appendChild(replyRef);
+        contentDiv.appendChild(replyRef);
       } catch (e) {
         console.error('Failed to parse replyTo:', e);
       }
-    } else {
-      this.appendChild(document.createElement('br'));
     }
 
     // Add hashtags at the bottom if provided by server
@@ -734,7 +739,7 @@ class ChatMessage extends HTMLElement {
             tagContainer.appendChild(tagBadge);
           });
 
-          this.appendChild(tagContainer);
+          contentDiv.appendChild(tagContainer);
         }
       } catch (e) {
         console.error('Failed to parse hashtags:', e);
@@ -752,11 +757,13 @@ class ChatMessage extends HTMLElement {
           window.openThread(messageId);
         }
       };
-      this.appendChild(threadIndicator);
+      contentDiv.appendChild(threadIndicator);
     }
+
+    this.appendChild(contentDiv);
   }
 
-  renderFileMessage(message) {
+  renderFileMessage(message, container) {
     const parts = message.substring(5).split('|');
     const fileUrl = parts[0];
     const fileName = parts[1] || 'file';
@@ -776,7 +783,7 @@ class ChatMessage extends HTMLElement {
         lazyImg.setAttribute('encrypted', 'true');
       }
 
-      this.appendChild(lazyImg);
+      container.appendChild(lazyImg);
     } else {
       // For other files, use file-message component
       const fileMessage = document.createElement('file-message');
@@ -787,20 +794,20 @@ class ChatMessage extends HTMLElement {
         fileMessage.setAttribute('encrypted', 'true');
       }
 
-      this.appendChild(fileMessage);
+      container.appendChild(fileMessage);
     }
   }
 
-  renderTextMessage(text) {
+  renderTextMessage(text, container) {
     // Helper function to add text with preserved newlines
     const addTextWithNewlines = (textContent) => {
       const lines = textContent.split('\n');
       lines.forEach((line, index) => {
         if (line) {
-          this.appendChild(document.createTextNode(line));
+          container.appendChild(document.createTextNode(line));
         }
         if (index < lines.length - 1) {
-          this.appendChild(document.createElement('br'));
+          container.appendChild(document.createElement('br'));
         }
       });
     };
@@ -833,7 +840,7 @@ class ChatMessage extends HTMLElement {
       link.textContent = url;
       link.style.color = '#0066cc';
       link.style.textDecoration = 'underline';
-      this.appendChild(link);
+      container.appendChild(link);
 
       lastIndex = urlRegex.lastIndex;
     }
@@ -1637,9 +1644,48 @@ function createMessageElement(
   p.appendChild(chatMessage);
   wrapper.appendChild(p);
 
+  // Store username and timestamp for grouping check
+  wrapper.setAttribute('data-username', data.name);
+  wrapper.setAttribute('data-timestamp', String(data.timestamp));
+
+  // Add timestamp to messages
+  const date = new Date(Number(data.timestamp));
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = String(date.getFullYear()).slice(-2);
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+
+  const outTimeSpan = document.createElement('span');
+  outTimeSpan.className = 'msg-time-outside-actions';
+  outTimeSpan.textContent = `${month}/${day}/${year}, ${hh}:${mm}`;
+  outTimeSpan.style.color = '#888';
+  outTimeSpan.style.fontSize = '0.85em';
+  outTimeSpan.style.marginRight = '8px';
+  outTimeSpan.style.whiteSpace = 'nowrap';
+  wrapper.appendChild(outTimeSpan);
+
+  // Check if this is the first message from this user (should always show time)
+  // This will be updated after the element is inserted into DOM
+  outTimeSpan.setAttribute('data-first-message', 'true');
+
   // Add message actions
   const actions = document.createElement('div');
   actions.className = 'message-actions';
+
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'msg-time-in-actions';
+  timeSpan.textContent = `${month}/${day}/${year}, ${hh}:${mm}`;
+  timeSpan.style.color = '#888';
+  timeSpan.style.fontSize = '0.85em';
+  timeSpan.style.marginRight = '8px';
+  timeSpan.style.whiteSpace = 'nowrap';
+
+  actions.appendChild(timeSpan);
+
+  // Create button container
+  const buttonsContainer = document.createElement('div');
+  buttonsContainer.className = 'message-actions-buttons';
 
   if (isInThread || isThreadOriginal) {
     // In thread panel - show Locate button
@@ -1651,7 +1697,7 @@ function createMessageElement(
       e.stopPropagation();
       locateMessageInMainChat(data.messageId);
     };
-    actions.appendChild(locateBtn);
+    buttonsContainer.appendChild(locateBtn);
   } else {
     // In main chat - show Reply button
     const replyBtn = document.createElement('button');
@@ -1663,7 +1709,7 @@ function createMessageElement(
       const preview = data.message.substring(0, 50);
       setReplyTo(data.messageId, data.name, preview, data.messageId);
     };
-    actions.appendChild(replyBtn);
+    buttonsContainer.appendChild(replyBtn);
   }
 
   // Add Delete button if user owns this message
@@ -1678,7 +1724,7 @@ function createMessageElement(
         e.stopPropagation();
         showEditDialog(data);
       };
-      actions.appendChild(editBtn);
+      buttonsContainer.appendChild(editBtn);
     }
 
     const deleteBtn = document.createElement('button');
@@ -1699,12 +1745,52 @@ function createMessageElement(
         }
       }
     };
-    actions.appendChild(deleteBtn);
+    buttonsContainer.appendChild(deleteBtn);
   }
 
+  actions.appendChild(buttonsContainer);
   wrapper.appendChild(actions);
 
   return wrapper;
+}
+
+// Update time display based on whether this is the first message in a group
+function updateTimeDisplayForMessage(messageElement) {
+  const username = messageElement.getAttribute('data-username');
+  const timestamp = messageElement.getAttribute('data-timestamp');
+  const timeSpan = messageElement.querySelector('.msg-time-outside-actions');
+
+  if (!timeSpan || !username || !timestamp) return;
+
+  // Check if previous message is from the same user
+  // Skip over date dividers and system messages
+  let prevWrapper = messageElement.previousElementSibling;
+  while (prevWrapper && !prevWrapper.classList.contains('message-wrapper')) {
+    prevWrapper = prevWrapper.previousElementSibling;
+  }
+
+  let isFirstInGroup = true;
+
+  if (prevWrapper && prevWrapper.classList.contains('message-wrapper')) {
+    const prevUsername = prevWrapper.getAttribute('data-username');
+    const prevTimestamp = prevWrapper.getAttribute('data-timestamp');
+
+    // If same user and within 5 minutes, it's not the first in group
+    if (prevUsername === username && prevTimestamp) {
+      const timeDiff = Number(timestamp) - Number(prevTimestamp);
+      if (timeDiff < 5 * 60 * 1000) {
+        // 5 minutes
+        isFirstInGroup = false;
+      }
+    }
+  }
+
+  // Update time display
+  if (isFirstInGroup) {
+    timeSpan.setAttribute('data-first-message', 'true');
+  } else {
+    timeSpan.removeAttribute('data-first-message');
+  }
 }
 
 // Locate and highlight a message in the main chat area
@@ -1911,8 +1997,10 @@ function displayRoomHistory() {
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'room-name';
-    nameSpan.innerText =
-      item.name.length === 64 ? 'Private Room' : '#' + item.name;
+    const isPrivate = item.name.length === 64;
+    const icon = isPrivate ? '🔒' : '💬';
+    const displayName = isPrivate ? 'Private Room' : '#' + item.name;
+    nameSpan.innerText = `${icon} ${displayName}`;
     nameSpan.title = 'Click to enter ' + item.name;
     div.appendChild(nameSpan);
 
@@ -2397,6 +2485,45 @@ async function startChat() {
   roomInfoNoteTextarea.addEventListener('click', (event) => {
     event.stopPropagation();
   });
+
+  // Room Settings Modal
+  const roomSettingsModal = document.querySelector('#room-settings-modal');
+  const btnRoomSettings = document.querySelector('#btn-room-settings');
+  const closeRoomSettings = document.querySelector('#close-room-settings');
+
+  // Open settings modal
+  if (btnRoomSettings) {
+    btnRoomSettings.addEventListener('click', (e) => {
+      e.preventDefault();
+      roomSettingsModal.classList.add('visible');
+    });
+  }
+
+  // Close settings modal
+  if (closeRoomSettings) {
+    closeRoomSettings.addEventListener('click', () => {
+      roomSettingsModal.classList.remove('visible');
+    });
+  }
+
+  // Close modal when clicking outside
+  if (roomSettingsModal) {
+    roomSettingsModal.addEventListener('click', (e) => {
+      if (e.target === roomSettingsModal) {
+        roomSettingsModal.classList.remove('visible');
+      }
+    });
+
+    // Close on ESC key
+    document.addEventListener('keydown', (e) => {
+      if (
+        e.key === 'Escape' &&
+        roomSettingsModal.classList.contains('visible')
+      ) {
+        roomSettingsModal.classList.remove('visible');
+      }
+    });
+  }
 
   // Encryption Key Management
   const btnChangeEncryptionKey = document.querySelector(
@@ -3787,6 +3914,9 @@ function addChatMessage(name, text, ts, msgData = {}) {
 
   // Append message to main chat
   chatlog.appendChild(messageElement);
+
+  // Update time display based on message grouping
+  updateTimeDisplayForMessage(messageElement);
 
   // If this is a reply and the thread is open, also add to thread panel
   if (msgData.replyTo) {

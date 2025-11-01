@@ -1,30 +1,30 @@
 /**
  * E2EE Crypto Worker Pool
- * 管理多个 Worker 线程，实现负载均衡和任务调度
- * 避免主线程阻塞，提升加密性能
+ * Manages multiple worker threads for load balancing and task scheduling
+ * Avoids main thread blocking and improves encryption performance
  */
 
 export class CryptoWorkerPool {
   /**
-   * 创建 Worker 线程池
+   * Create worker thread pool
    *
-   * @param {number} workerCount - Worker 数量（默认为 CPU 核心数）
+   * @param {number} workerCount - Number of workers (defaults to CPU core count)
    */
   constructor(workerCount = navigator.hardwareConcurrency || 4) {
     this.workers = [];
     this.taskQueue = [];
     this.activeTasksPerWorker = new Map();
     this.taskIdCounter = 0;
-    this.maxTasksPerWorker = 5; // 每个 Worker 最多同时处理5个任务
+    this.maxTasksPerWorker = 5; // Max 5 concurrent tasks per worker
 
-    // 创建 Worker 池
+    // Create worker pool
     for (let i = 0; i < workerCount; i++) {
       const worker = new Worker('./crypto.worker.js', { type: 'module' });
       this.workers.push(worker);
       this.activeTasksPerWorker.set(worker, 0);
       worker._activeTasks = new Map();
 
-      // 监听 Worker 响应
+      // Listen to worker responses
       worker.onmessage = (event) => {
         this.handleWorkerResponse(worker, event);
       };
@@ -40,11 +40,11 @@ export class CryptoWorkerPool {
   }
 
   /**
-   * 提交加密任务到 Worker 池
+   * Submit encryption task to worker pool
    *
-   * @param {string} type - 任务类型: 'encrypt', 'decrypt', 'derive-key', etc.
-   * @param {object} data - 任务数据
-   * @returns {Promise} 任务结果
+   * @param {string} type - Task type: 'encrypt', 'decrypt', 'derive-key', etc.
+   * @param {object} data - Task data
+   * @returns {Promise} Task result
    */
   async submitTask(type, data) {
     return new Promise((resolve, reject) => {
@@ -58,22 +58,22 @@ export class CryptoWorkerPool {
         timestamp: Date.now(),
       };
 
-      // 选择负载最低的 Worker
+      // Select worker with lowest load
       const worker = this.selectWorker();
 
       if (worker) {
         this.executeTask(worker, task);
       } else {
-        // 所有 Worker 繁忙，加入队列
+        // All workers busy, add to queue
         this.taskQueue.push(task);
       }
     });
   }
 
   /**
-   * 选择负载最低的 Worker
+   * Select worker with lowest load
    *
-   * @returns {Worker|null} Worker实例或null（所有Worker繁忙）
+   * @returns {Worker|null} Worker instance or null (all workers busy)
    */
   selectWorker() {
     let minLoad = Infinity;
@@ -86,27 +86,27 @@ export class CryptoWorkerPool {
       }
     }
 
-    // 如果所有 Worker 负载过高，返回 null
+    // If all workers have high load, return null
     return minLoad < this.maxTasksPerWorker ? selectedWorker : null;
   }
 
   /**
-   * 在 Worker 上执行任务
+   * Execute task on worker
    *
-   * @param {Worker} worker - Worker实例
-   * @param {object} task - 任务对象
+   * @param {Worker} worker - Worker instance
+   * @param {object} task - Task object
    */
   executeTask(worker, task) {
-    // 记录任务
+    // Record task
     worker._activeTasks.set(task.taskId, task);
 
-    // 更新负载
+    // Update load
     this.activeTasksPerWorker.set(
       worker,
       this.activeTasksPerWorker.get(worker) + 1,
     );
 
-    // 发送任务到 Worker
+    // Send task to worker
     worker.postMessage({
       taskId: task.taskId,
       type: task.type,
@@ -115,33 +115,33 @@ export class CryptoWorkerPool {
   }
 
   /**
-   * 处理 Worker 响应
+   * Handle worker response
    *
-   * @param {Worker} worker - Worker实例
-   * @param {MessageEvent} event - 消息事件
+   * @param {Worker} worker - Worker instance
+   * @param {MessageEvent} event - Message event
    */
   handleWorkerResponse(worker, event) {
     const { taskId, success, result, error } = event.data;
 
-    // 获取任务
+    // Get task
     const task = worker._activeTasks.get(taskId);
     if (!task) {
       console.warn(`Unknown task ${taskId}`);
       return;
     }
 
-    // 清理任务
+    // Clean up task
     worker._activeTasks.delete(taskId);
     this.activeTasksPerWorker.set(
       worker,
       this.activeTasksPerWorker.get(worker) - 1,
     );
 
-    // 解析结果
+    // Resolve result
     if (success) {
       task.resolve(result);
 
-      // 记录性能指标
+      // Log performance metrics
       const duration = Date.now() - task.timestamp;
       if (duration > 100) {
         console.warn(`Slow crypto task ${task.type}: ${duration}ms`);
@@ -150,7 +150,7 @@ export class CryptoWorkerPool {
       task.reject(new Error(error));
     }
 
-    // 处理队列中的任务
+    // Process queued tasks
     if (this.taskQueue.length > 0) {
       const nextTask = this.taskQueue.shift();
       this.executeTask(worker, nextTask);
@@ -158,10 +158,10 @@ export class CryptoWorkerPool {
   }
 
   /**
-   * 批量提交任务（并行处理）
+   * Submit batch tasks (parallel processing)
    *
-   * @param {Array<{type: string, data: object}>} tasks - 任务列表
-   * @returns {Promise<Array>} 所有任务的结果
+   * @param {Array<{type: string, data: object}>} tasks - Task list
+   * @returns {Promise<Array>} Results of all tasks
    */
   async submitBatch(tasks) {
     const promises = tasks.map(({ type, data }) => this.submitTask(type, data));
@@ -169,9 +169,9 @@ export class CryptoWorkerPool {
   }
 
   /**
-   * 获取 Worker 池状态
+   * Get worker pool status
    *
-   * @returns {object} 状态信息
+   * @returns {object} Status information
    */
   getStatus() {
     const loads = Array.from(this.activeTasksPerWorker.values());
@@ -185,7 +185,7 @@ export class CryptoWorkerPool {
   }
 
   /**
-   * 销毁 Worker 池
+   * Destroy worker pool
    */
   destroy() {
     for (const worker of this.workers) {
@@ -198,11 +198,11 @@ export class CryptoWorkerPool {
   }
 }
 
-// 创建全局单例实例（延迟初始化）
+// Create global singleton instance (lazy initialization)
 let globalCryptoPool = null;
 
 /**
- * 获取全局 Crypto Worker Pool 实例
+ * Get global Crypto Worker Pool instance
  *
  * @returns {CryptoWorkerPool}
  */
@@ -213,5 +213,5 @@ export function getCryptoPool() {
   return globalCryptoPool;
 }
 
-// 默认导出
+// Default export
 export default CryptoWorkerPool;

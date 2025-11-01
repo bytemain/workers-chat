@@ -63,6 +63,7 @@ All network request logic must be written in `src/ui/api.mjs` (`ChatAPI` class):
 
 - Uses Fetch API for REST, WebSocket API for real-time
 - Handles message sending, file uploads, room joining
+- Use Water.css for simple, clean styling
 
 ## Development Workflows
 
