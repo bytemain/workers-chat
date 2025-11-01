@@ -6,6 +6,7 @@
       content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, user-scalable=0"
     />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.min.css">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/playful-avatars/index.js"></script>
     <style type="text/css">
       :root {
         --border-radius: 5px;
@@ -139,6 +140,27 @@
         gap: 8px;
       }
 
+      chat-message .user-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 1;
+      }
+
+      chat-message playful-avatar {
+        width: 36px;
+        height: 36px;
+        flex-shrink: 0;
+      }
+
+      chat-message playful-avatar::part(svg) {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+ 
       chat-message .msg-time-container {
         opacity: 0;
         transition: opacity 0.2s ease;
@@ -151,7 +173,7 @@
       }
 
       chat-message .msg-content {
-        padding-left: 0;
+        padding-left: 46px;
         word-wrap: break-word;
         line-height: 1.4;
       }
@@ -1169,24 +1191,49 @@
         background: var(--background-alt);
       }
 
+      /* Hover time - shown at the beginning of message on hover */
+      .message-wrapper::before {
+        content: attr(data-hover-time);
+        position: absolute;
+        left: 0;
+        top: var(--spacing-xs);
+        color: #aaa;
+        font-size: 0.8em;
+        opacity: 0;
+        transition: opacity 0.2s;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+
+      .message-wrapper:hover::before {
+        opacity: 1;
+      }
+
+      /* First message in group - don't show hover time (already has time next to username) */
+      .message-wrapper:has(.msg-time-outside-actions):hover::before {
+        opacity: 0;
+      }
+
+      /* Adjust chat-message padding to make room for hover time */
+      .message-wrapper:hover chat-message {
+        padding-left: 45px;
+      }
+
+      /* First message in group - no extra padding on hover */
+      .message-wrapper:has(.msg-time-outside-actions):hover chat-message {
+        padding-left: 0;
+      }
+
       .message-wrapper:hover .message-actions {
         display: flex;
       }
 
-      .message-wrapper:hover .msg-time-outside-actions {
-        display: none;
-      }
-
+      /* Time next to username - always visible for first message */
       .msg-time-outside-actions {
-        display: none;
-      }
-
-      .msg-time-outside-actions[data-first-message="true"] {
-        display: flex;
-        position: absolute;
-        right: var(--spacing-sm);
-        top: var(--spacing-xs);
-        align-items: center;
+        color: #888;
+        font-size: 0.85em;
+        white-space: nowrap;
+        margin-left: 8px;
       }
  
       .message-actions {
@@ -1196,25 +1243,16 @@
         display: none;
         gap: var(--spacing-xs);
         align-items: center;
-      }
-
-      .message-actions-buttons {
         background: var(--background);
         border: 1px solid var(--border);
         border-radius: var(--border-radius);
         padding: 2px;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        display: flex;
-        gap: var(--spacing-xs);
       }
 
-      .msg-time-in-actions {
-        display: block;
-        position: static;
-        color: #888;
-        font-size: 0.85em;
-        white-space: nowrap;
-        margin-right: 8px;
+      .message-actions-buttons {
+        display: flex;
+        gap: var(--spacing-xs);
       }
 
       .message-action-btn {

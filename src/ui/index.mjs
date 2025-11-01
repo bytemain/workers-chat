@@ -634,15 +634,38 @@ class ChatMessage extends HTMLElement {
       }
     }
 
-    // Add username if present and should be shown
+    // Add username with avatar if present and should be shown
     if (username && showUsername) {
+      const userInfoDiv = document.createElement('div');
+      userInfoDiv.className = 'user-info';
+
+      // Add avatar
+      const avatar = document.createElement('playful-avatar');
+      avatar.setAttribute('name', username);
+      avatar.setAttribute('variant', 'beam');
+      userInfoDiv.appendChild(avatar);
+
+      // Add username
       const usernameSpan = document.createElement('span');
       usernameSpan.className = 'username';
       usernameSpan.textContent = username;
       usernameSpan.style.fontWeight = 'bold';
-      usernameSpan.style.display = 'block';
-      usernameSpan.style.marginBottom = '2px';
-      this.appendChild(usernameSpan);
+      userInfoDiv.appendChild(usernameSpan);
+
+      // Add time next to username
+      if (timestamp) {
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'msg-time-outside-actions';
+        timeSpan.textContent = formatTimestamp(timestamp);
+        timeSpan.style.color = '#888';
+        timeSpan.style.fontSize = '0.85em';
+        timeSpan.style.marginLeft = '8px';
+        timeSpan.style.whiteSpace = 'nowrap';
+        timeSpan.setAttribute('data-first-message', 'true');
+        userInfoDiv.appendChild(timeSpan);
+      }
+
+      this.appendChild(userInfoDiv);
     }
 
     // Create message content container
@@ -989,6 +1012,18 @@ function updateConnectionStatus(status) {
     default:
       connectionStatus.style.display = 'none';
   }
+}
+
+// Format timestamp to readable string (Chinese format)
+function formatTimestamp(timestamp) {
+  const date = new Date(Number(timestamp));
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+
+  return `${year}-${month}-${day} ${hh}:${mm}`;
 }
 
 // Thread state
@@ -1648,42 +1683,17 @@ function createMessageElement(
   wrapper.setAttribute('data-username', data.name);
   wrapper.setAttribute('data-timestamp', String(data.timestamp));
 
-  // Add timestamp to messages
+  // Add hover time (only show hours:minutes)
   const date = new Date(Number(data.timestamp));
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const year = String(date.getFullYear()).slice(-2);
   const hh = String(date.getHours()).padStart(2, '0');
   const mm = String(date.getMinutes()).padStart(2, '0');
-
-  const outTimeSpan = document.createElement('span');
-  outTimeSpan.className = 'msg-time-outside-actions';
-  outTimeSpan.textContent = `${month}/${day}/${year}, ${hh}:${mm}`;
-  outTimeSpan.style.color = '#888';
-  outTimeSpan.style.fontSize = '0.85em';
-  outTimeSpan.style.marginRight = '8px';
-  outTimeSpan.style.whiteSpace = 'nowrap';
-  wrapper.appendChild(outTimeSpan);
-
-  // Check if this is the first message from this user (should always show time)
-  // This will be updated after the element is inserted into DOM
-  outTimeSpan.setAttribute('data-first-message', 'true');
+  wrapper.setAttribute('data-hover-time', `${hh}:${mm}`);
 
   // Add message actions
   const actions = document.createElement('div');
   actions.className = 'message-actions';
 
-  const timeSpan = document.createElement('span');
-  timeSpan.className = 'msg-time-in-actions';
-  timeSpan.textContent = `${month}/${day}/${year}, ${hh}:${mm}`;
-  timeSpan.style.color = '#888';
-  timeSpan.style.fontSize = '0.85em';
-  timeSpan.style.marginRight = '8px';
-  timeSpan.style.whiteSpace = 'nowrap';
-
-  actions.appendChild(timeSpan);
-
-  // Create button container
+  // Create button container (removed timeSpan)
   const buttonsContainer = document.createElement('div');
   buttonsContainer.className = 'message-actions-buttons';
 
