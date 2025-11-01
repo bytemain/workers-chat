@@ -9,6 +9,7 @@ import { generateRandomUsername } from './utils/random.mjs';
 import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
 import tooltip from './tooltip.js';
 import { applyCSSConstants } from './constants.mjs';
+import { updateRoomList } from './room-list.mjs';
 
 // Apply CSS constants on load
 applyCSSConstants();
@@ -1997,16 +1998,36 @@ function locateMessageInMainChat(messageId) {
 
 // Channel functionality
 window.filterByChannel = function (channel) {
-  currentChannelFilter = channel;
+  // Normalize DM channel names before storing
+  let normalizedChannel = channel;
+  const lowerChannel = channel.toLowerCase();
 
-  // Update URL with channel filter
+  if (lowerChannel.startsWith('dm-')) {
+    const dmUsernameFromChannel = channel.substring(3);
+
+    // Check if this matches current user (case-insensitive)
+    if (
+      username &&
+      dmUsernameFromChannel.toLowerCase() === username.toLowerCase()
+    ) {
+      // Normalize to use actual username case
+      normalizedChannel = `dm-${username}`;
+    }
+  }
+
+  currentChannelFilter = normalizedChannel;
+
+  // Update URL with channel filter (use normalized channel)
   const url = new URL(window.location);
-  url.searchParams.set('channel', channel);
+  url.searchParams.set('channel', normalizedChannel);
   window.history.pushState({}, '', url);
 
   // Update active state in channel list
   document.querySelectorAll('.channel-item').forEach((item) => {
-    if (item.dataset.channel === channel) {
+    if (
+      item.dataset.channel &&
+      item.dataset.channel.toLowerCase() === normalizedChannel.toLowerCase()
+    ) {
       item.classList.add('active');
     } else {
       item.classList.remove('active');
@@ -2025,7 +2046,9 @@ window.filterByChannel = function (channel) {
     if (chatMessage) {
       const msgChannel = chatMessage.getAttribute('channel') || 'general';
       wrapper.style.display =
-        msgChannel.toLowerCase() === channel.toLowerCase() ? 'block' : 'none';
+        msgChannel.toLowerCase() === normalizedChannel.toLowerCase()
+          ? 'block'
+          : 'none';
     }
   });
 
@@ -2102,14 +2125,16 @@ function renderChannelList() {
 
   channelList.innerHTML = '';
 
-  // Filter out hidden channels
+  // Filter out hidden channels AND DM channels (dm- prefix)
   const visibleChannels = allChannels.filter(
-    (item) => !hiddenChannels.includes(item.channel),
+    (item) =>
+      !hiddenChannels.includes(item.channel) &&
+      !item.channel.toLowerCase().startsWith('dm-'),
   );
 
   if (visibleChannels.length === 0) {
     channelList.innerHTML =
-      '<div style="color:var(--text-muted);font-size:0.85em;padding:8px;text-align:center;">暂无频道</div>';
+      '<div style="color:var(--text-muted);font-size:0.85em;padding:8px;text-align:center;">No channels yet</div>';
     return;
   }
 
@@ -2159,37 +2184,89 @@ function renderChannelList() {
 
 // Switch to a channel (sets it as current for sending messages)
 function switchToChannel(channel) {
-  currentChannel = channel;
+  // Normalize DM channel names: if it's a DM, ensure username case matches
+  let normalizedChannel = channel;
+  const lowerChannel = channel.toLowerCase();
+
+  if (lowerChannel.startsWith('dm-')) {
+    const dmUsernameFromChannel = channel.substring(3); // Remove 'dm-' prefix
+
+    // Check if this matches current user (case-insensitive)
+    if (
+      username &&
+      dmUsernameFromChannel.toLowerCase() === username.toLowerCase()
+    ) {
+      // Normalize to use actual username case
+      normalizedChannel = `dm-${username}`;
+    }
+    // Note: For DMs with other users, we'd need to look up their actual username
+    // For now, this handles the self-DM case which is the reported bug
+  }
+
+  currentChannel = normalizedChannel;
 
   // Update channel info bar
   const channelNameDisplay = document.getElementById('channel-name-display');
+  const channelHash = document.querySelector('.channel-hash');
+  const isDM = normalizedChannel.startsWith('dm-');
+
   if (channelNameDisplay) {
-    channelNameDisplay.textContent = channel;
+    // Check if it's a DM channel
+    if (isDM) {
+      const dmUsername = normalizedChannel.replace('dm-', '');
+      channelNameDisplay.textContent =
+        dmUsername === username ? `${dmUsername} (you)` : dmUsername;
+    } else {
+      channelNameDisplay.textContent = normalizedChannel;
+    }
+  }
+
+  // Update icon for DM vs Channel
+  if (channelHash) {
+    if (isDM) {
+      channelHash.innerHTML = '<i class="ri-user-3-line"></i>';
+    } else {
+      channelHash.textContent = '#';
+    }
   }
 
   // Check if this channel exists in the current channel list
   const channelExists = allChannels.some(
-    (c) => c.channel.toLowerCase() === channel.toLowerCase(),
+    (c) => c.channel.toLowerCase() === normalizedChannel.toLowerCase(),
   );
 
   // If channel doesn't exist in the list, add it temporarily (frontend only)
   // It will be created on backend when first message is sent
-  if (!channelExists) {
+  if (!channelExists && !normalizedChannel.startsWith('dm-')) {
     // Add to temporary channels set
-    temporaryChannels.add(channel);
+    temporaryChannels.add(normalizedChannel);
 
     // Add to allChannels array for immediate display
     allChannels.push({
-      channel: channel,
+      channel: normalizedChannel,
       count: 0,
       lastUsed: Date.now(),
     });
     renderChannelList();
   }
 
-  // Update visual state
+  // Update visual state for both channels and DMs
   document.querySelectorAll('.channel-item').forEach((item) => {
-    if (item.dataset.channel === channel) {
+    const itemChannel = item.dataset.channel;
+    const itemUser = item.dataset.user;
+
+    // For DM items, compare usernames case-insensitively
+    const isDMItem = itemUser !== undefined;
+    let isMatch = false;
+
+    if (isDMItem && isDM) {
+      const dmUser = normalizedChannel.replace('dm-', '');
+      isMatch = itemUser.toLowerCase() === dmUser.toLowerCase();
+    } else if (itemChannel) {
+      isMatch = itemChannel.toLowerCase() === normalizedChannel.toLowerCase();
+    }
+
+    if (isMatch) {
       item.classList.add('current');
     } else {
       item.classList.remove('current');
@@ -2197,7 +2274,7 @@ function switchToChannel(channel) {
   });
 
   // Also filter messages by this channel
-  window.filterByChannel(channel);
+  window.filterByChannel(normalizedChannel);
 }
 
 // Expose switchToChannel to window for use in click handlers
@@ -2373,11 +2450,20 @@ function initChannelPanel() {
     });
   });
 
-  // Update room name in header
+  // Update room name in header (text only, arrow is in CSS)
   const roomNameLarge = document.getElementById('room-name-large');
   if (roomNameLarge && documentTitlePrefix) {
-    roomNameLarge.textContent = documentTitlePrefix;
+    // Remove any existing text nodes and set clean room name
+    const textNode = roomNameLarge.childNodes[0];
+    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+      textNode.textContent = documentTitlePrefix;
+    } else {
+      roomNameLarge.textContent = documentTitlePrefix;
+    }
   }
+
+  // Render DM list with self
+  renderDMList();
 
   // DM add button (placeholder)
   const dmAddBtn = document.getElementById('dm-add-btn');
@@ -2387,6 +2473,40 @@ function initChannelPanel() {
       // TODO: Implement DM functionality
     });
   }
+}
+
+// Render DM list
+function renderDMList() {
+  const dmList = document.getElementById('dm-list');
+  if (!dmList || !username) return;
+
+  dmList.innerHTML = '';
+
+  // Add self DM
+  const selfDM = document.createElement('div');
+  selfDM.className = 'channel-item dm-item';
+  selfDM.dataset.user = username;
+
+  // Avatar icon
+  const icon = document.createElement('span');
+  icon.className = 'channel-icon';
+  icon.innerHTML = '<i class="ri-user-3-line"></i>';
+
+  // User name
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'channel-name';
+  nameSpan.textContent = `${username} (you)`;
+
+  selfDM.appendChild(icon);
+  selfDM.appendChild(nameSpan);
+
+  selfDM.onclick = () => {
+    // Switch to self DM channel
+    const selfChannelName = `dm-${username}`;
+    switchToChannel(selfChannelName);
+  };
+
+  dmList.appendChild(selfDM);
 }
 
 // Room history management
@@ -4376,91 +4496,95 @@ function clearUnreadCount(roomName) {
   setUnreadCount(roomName, 0);
 }
 
-// Update room list UI
+// Update room list UI - Now using isolated room-list component
 function updateRoomListUI() {
-  const roomListContainer = document.querySelector('#room-list-container');
-  if (!roomListContainer) return;
+  const roomDropdown = document.querySelector('#room-dropdown');
+  if (!roomDropdown) return;
 
   const history = getRoomHistory();
 
-  // Clear existing room items (keep add button separate)
-  const existingItems = roomListContainer.querySelectorAll(
-    '.room-item:not(.room-item-add)',
-  );
-  existingItems.forEach((item) => item.remove());
-
-  // Create add button if it doesn't exist
-  let addButton = roomListContainer.querySelector('.room-item-add');
-  if (!addButton) {
-    addButton = document.createElement('div');
-    addButton.className = 'room-item room-item-add';
-    addButton.innerHTML = '+';
-    addButton.title = 'Add Room';
-    addButton.onclick = () => {
-      // Show room form
-      const roomForm = document.querySelector('#room-form');
-      const leftSidebar = document.querySelector('#left-sidebar');
-      if (roomForm) roomForm.style.display = 'flex';
-      if (leftSidebar) leftSidebar.style.display = 'none';
-    };
-    roomListContainer.appendChild(addButton);
-
-    // Attach tooltip to add button
-    tooltip.attach(addButton, 'Add Room', 'right');
-  }
-
-  // Add room items before the add button
-  history.forEach((item) => {
-    const roomItem = document.createElement('div');
-    roomItem.className = 'room-item';
-    roomItem.dataset.roomName = item.name;
-
-    // Check if this is the current room
-    if (roomname && item.name === roomname) {
-      roomItem.classList.add('active');
-    }
-
-    // Room icon (first letter or emoji)
+  // Prepare room data for the component
+  const rooms = history.map((item) => {
     const isPrivate = item.name.length === 64;
-    const icon = isPrivate ? '🔒' : (item.name[0] || '#').toUpperCase();
-    const displayName = isPrivate ? 'Private Room' : item.name;
+    return {
+      name: item.name,
+      displayName: isPrivate ? 'Private Room' : item.name,
+      isPrivate: isPrivate,
+      unreadCount: getUnreadCount(item.name),
+    };
+  });
 
-    // Create icon span
-    const iconSpan = document.createElement('span');
-    iconSpan.textContent = icon;
-    iconSpan.style.position = 'relative';
-    iconSpan.style.zIndex = '1';
-    roomItem.appendChild(iconSpan);
-
-    // Attach tooltip to show room name on hover
-    tooltip.attach(roomItem, displayName, 'right');
-
-    // Add unread badge
-    const unreadCount = getUnreadCount(item.name);
-    if (unreadCount > 0) {
-      const badge = document.createElement('div');
-      badge.className = 'room-unread-badge visible';
-      badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
-      roomItem.appendChild(badge);
-    }
-
-    // Left click handler to switch rooms
-    roomItem.onclick = () => {
-      if (item.name !== roomname) {
-        window.location.hash = '#' + item.name;
+  // Callbacks for room list component
+  const callbacks = {
+    onRoomClick: (roomName) => {
+      if (roomName !== roomname) {
+        window.location.hash = '#' + roomName;
         window.location.reload();
       }
-    };
+      // Close dropdown
+      roomDropdown.classList.remove('visible');
+      document
+        .querySelector('#room-info-header')
+        ?.classList.remove('dropdown-open');
+    },
+    onCreateRoom: () => {
+      // Show room form
+      const roomForm = document.querySelector('#room-form');
+      if (roomForm) roomForm.style.display = 'flex';
+      // Close dropdown
+      roomDropdown.classList.remove('visible');
+      document
+        .querySelector('#room-info-header')
+        ?.classList.remove('dropdown-open');
+    },
+    onRoomContextMenu: (e, roomName) => {
+      showRoomContextMenu(e, roomName);
+    },
+  };
 
-    // Right click handler for context menu
-    roomItem.oncontextmenu = (e) => {
-      e.preventDefault();
-      showRoomContextMenu(e, item.name);
-    };
+  // Use the isolated room-list component
+  updateRoomList(roomDropdown, rooms, roomname, callbacks);
+}
 
-    // Insert before the add button
-    roomListContainer.insertBefore(roomItem, addButton);
+// Initialize room dropdown toggle
+function initRoomDropdown() {
+  const roomHeader = document.querySelector('#room-info-header');
+  const roomDropdown = document.querySelector('#room-dropdown');
+  const roomMenuBtn = document.querySelector('#room-menu-btn');
+
+  if (!roomHeader || !roomDropdown) return;
+
+  // Toggle dropdown on header click (but not on menu button)
+  roomHeader.addEventListener('click', (e) => {
+    // Don't toggle if clicking menu button
+    if (e.target.closest('#room-menu-btn')) return;
+
+    const isOpen = roomDropdown.classList.contains('visible');
+    if (isOpen) {
+      roomDropdown.classList.remove('visible');
+      roomHeader.classList.remove('dropdown-open');
+    } else {
+      roomDropdown.classList.add('visible');
+      roomHeader.classList.add('dropdown-open');
+      updateRoomListUI(); // Update list when opening
+    }
   });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!roomHeader.contains(e.target) && !roomDropdown.contains(e.target)) {
+      roomDropdown.classList.remove('visible');
+      roomHeader.classList.remove('dropdown-open');
+    }
+  });
+
+  // Prevent menu button from toggling dropdown
+  if (roomMenuBtn) {
+    roomMenuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // TODO: Show room settings menu
+    });
+  }
 } // Show room context menu
 function showRoomContextMenu(event, targetRoomName) {
   const contextMenu = document.querySelector('#room-context-menu');
@@ -4542,25 +4666,17 @@ function initUserActionButtons() {
   }
 }
 
-// Initialize left sidebar when chat starts
+// Initialize room dropdown and user info when chat starts
 function initializeLeftSidebar() {
+  initRoomDropdown();
   updateRoomListUI();
   updateUserInfoCard();
   initUserActionButtons();
-
-  // Show left sidebar when in a room
-  const leftSidebar = document.querySelector('#left-sidebar');
-  if (leftSidebar) {
-    leftSidebar.style.display = 'flex';
-  }
 }
 
-// Hide left sidebar when showing room form
+// Hide left sidebar when showing room form (no longer needed, but keep for compatibility)
 function hideLeftSidebar() {
-  const leftSidebar = document.querySelector('#left-sidebar');
-  if (leftSidebar) {
-    leftSidebar.style.display = 'none';
-  }
+  // Left sidebar is hidden by CSS now
 }
 
 // Export functions for use in other parts of the code

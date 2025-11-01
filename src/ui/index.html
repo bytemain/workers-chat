@@ -829,7 +829,7 @@
         overflow: hidden;
       }
 
-      /* Room Info Header */
+      /* Room Info Header - Now with dropdown */
       #room-info-header {
         height: var(--header-height);
         display: flex;
@@ -839,6 +839,13 @@
         border-bottom: 2px solid var(--border);
         background: var(--background-alt);
         flex-shrink: 0;
+        position: relative;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      #room-info-header:hover {
+        background: var(--background-body);
       }
 
       #room-name-large {
@@ -849,6 +856,21 @@
         text-overflow: ellipsis;
         white-space: nowrap;
         flex: 1;
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+      }
+
+      #room-name-large::after {
+        content: '\ea4e'; /* ri-arrow-down-s-line */
+        font-family: 'remixicon';
+        font-size: 1.2em;
+        color: var(--text-muted);
+        transition: transform 0.2s ease;
+      }
+
+      #room-info-header.dropdown-open #room-name-large::after {
+        transform: rotate(180deg);
       }
 
       #room-menu-btn {
@@ -870,6 +892,26 @@
       #room-menu-btn:hover {
         background: var(--background-body);
         color: var(--text-main);
+      }
+
+      /* Room Dropdown Menu - Minimal container styles only */
+      #room-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-top: none;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+        display: none;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      #room-dropdown.visible {
+        display: block;
       }
 
       /* Scrollable Content */
@@ -918,6 +960,9 @@
         transform: rotate(-90deg);
       }
 
+      .section-toggle-btn:hover {
+        background: unset;
+      }
       .section-title {
         font-size: 0.75em;
         font-weight: 600;
@@ -994,6 +1039,16 @@
         font-size: 0.75em;
         font-weight: 600;
         flex-shrink: 0;
+      }
+
+      /* DM Items */
+      .dm-item .channel-name {
+        color: var(--text-main);
+        font-weight: 400;
+      }
+
+      .dm-item.current .channel-name {
+        font-weight: 600;
       }
 
       /* Add Button */
@@ -1422,124 +1477,33 @@
         flex: 1;
       }
 
-      /* Left Sidebar Styles */
+      /* Left Sidebar - Hidden, we use dropdown now */
       #left-sidebar {
-        flex-shrink: 0;
-        width: var(--left-sidebar-width);
-        background: var(--background-alt);
-        display: flex;
-        flex-direction: column;
-        border-right: 1px solid var(--border);
-        overflow-y: auto;
-        overflow-x: hidden;
-        position: relative;
-        z-index: 100;
-      }
-
-      #room-list-container {
-        flex: 1;
-        overflow-y: auto;
-        padding: var(--spacing-sm) 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: var(--spacing-sm);
-      }
-
-      .room-item {
-        position: relative;
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        background: var(--background);
-        border: 2px solid var(--border);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: var(--transition);
-        font-size: 24px;
-        flex-shrink: 0;
-      }
-
-      .room-item:hover {
-        border-radius: 35%;
-        background: var(--background-body);
-        border-color: var(--links);
-        transform: translateY(-2px);
-      }
-
-      .room-item.active {
-        border-radius: 35%;
-        border-color: var(--links);
-        background: var(--links);
-        color: white;
-      }
-
-      .room-item .room-unread-badge {
-        position: absolute;
-        bottom: -4px;
-        right: -4px;
-        background: #dc3545;
-        color: white;
-        border-radius: 10px;
-        padding: 2px 6px;
-        font-size: 11px;
-        font-weight: bold;
-        min-width: 18px;
-        text-align: center;
         display: none;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
       }
 
-      .room-item .room-unread-badge.visible {
-        display: block;
-      }
-
-      .room-item-add {
-        background: var(--links);
-        color: white;
-        font-size: 28px;
-        border: 2px dashed var(--links);
-      }
-
-      .room-item-add:hover {
-        background: var(--links);
-        opacity: 0.8;
-        border-style: solid;
-      }
-
-      /* User Info Card at Bottom */
+      /* User Info Card - Now at bottom of channel panel */
       #user-info-card {
-        position: fixed;
-        bottom: 0;
-        left: 0;
         height: var(--footer-height);
-        padding: 0 var(--spacing-sm);
+        padding: 0 var(--spacing);
         background: var(--background-body);
         border-top: 1px solid var(--border);
-        border-right: 1px solid var(--border);
         display: flex;
         flex-direction: row;
         align-items: center;
         gap: var(--spacing-sm);
         cursor: pointer;
         transition:
-          width 0.2s ease,
           background 0.2s ease,
-          box-shadow 0.2s ease,
-          border-radius 0.2s ease;
-        width: 72px;
-        z-index: 9999;
+          box-shadow 0.2s ease;
+        width: 100%;
         box-sizing: border-box;
-        overflow: hidden;
+        flex-shrink: 0;
       }
 
       #user-info-card:hover {
-        width: 280px;
         background: var(--background-alt);
-        box-shadow: 2px -4px 12px rgba(0, 0, 0, 0.2);
-        border-radius: 0 var(--border-radius) 0 0;
+        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
       }
 
       #user-info-card .user-avatar-container {
@@ -1547,7 +1511,6 @@
         width: 40px;
         height: 40px;
         flex-shrink: 0;
-        margin-left: 8px;
       }
 
       #user-info-card playful-avatar {
@@ -1574,15 +1537,11 @@
       }
 
       #user-info-card .user-info-text {
-        display: none;
+        display: flex;
         flex-direction: column;
         gap: 2px;
         min-width: 0;
         flex: 1;
-      }
-
-      #user-info-card:hover .user-info-text {
-        display: flex;
       }
 
       #user-info-card .user-name {
@@ -1603,12 +1562,8 @@
       }
 
       #user-info-card .user-actions {
-        display: none;
-        gap: var(--spacing-xs);
-      }
-
-      #user-info-card:hover .user-actions {
         display: flex;
+        gap: var(--spacing-xs);
       }
 
       #user-info-card .user-action-btn {
@@ -1670,53 +1625,17 @@
         background: rgba(220, 53, 69, 0.1);
       }
 
-      /* Mobile adjustments for left sidebar */
+      /* Mobile adjustments */
       @media (max-width: 600px) {
-        #left-sidebar {
-          width: 100%;
-          height: var(--mobile-top-bar-height);
-          top: 0;
-          bottom: auto;
-          flex-direction: row;
-          border-right: none;
-          border-bottom: 1px solid var(--border);
-        }
-
-        #room-list-container {
-          flex-direction: row;
-          padding: 0 var(--spacing-sm);
-          overflow-x: auto;
-          overflow-y: hidden;
+        #channel-panel {
+          display: none;
         }
 
         #user-info-card {
-          position: static;
-          flex-direction: row;
-          border-top: none;
-          border-right: none;
-          border-left: 1px solid var(--border);
-          padding: var(--spacing-xs) var(--spacing-sm);
-          width: auto;
-          order: 2;
-        }
-
-        #user-info-card:hover {
-          width: auto;
-          box-shadow: none;
-          border-radius: 0;
-        }
-
-        #room-list-container {
-          order: 1;
-        }
-
-        #user-info-card .user-info-text,
-        #user-info-card .user-actions {
           display: none;
         }
 
         #chatroom {
-          top: var(--mobile-top-bar-height);
           left: 0;
         }
 
@@ -1727,14 +1646,6 @@
         #main-chat-input-container {
           left: 0;
           margin: 0;
-        }
-
-        #mobile-top-bar {
-          top: var(--mobile-top-bar-height);
-        }
-
-        #mobile-top-bar + #chatroom {
-          top: calc(var(--mobile-top-bar-height) * 2);
         }
       }
     </style>
@@ -1841,42 +1752,18 @@
 
     <!-- Main Container with Flex Layout -->
     <div id="main-container">
-      <!-- Left Sidebar for Room Navigation -->
-      <div id="left-sidebar">
-        <div id="room-list-container">
-          <!-- Room items will be dynamically added here -->
-        </div>
-      </div>
-
-      <!-- User Info Card (Fixed at bottom-left) -->
-      <div id="user-info-card">
-        <div class="user-avatar-container">
-          <playful-avatar id="user-avatar" name="User"></playful-avatar>
-          <div class="user-status-indicator"></div>
-        </div>
-        <div class="user-info-text">
-          <div class="user-name" id="user-name-display">User</div>
-          <div class="user-status">Online</div>
-        </div>
-        <div class="user-actions">
-          <button
-            class="user-action-btn"
-            title="Settings"
-            id="user-settings-btn"
-          >
-            <i class="ri-settings-2-line"></i>
-          </button>
-        </div>
-      </div>
-
       <!-- Channel Panel -->
       <div id="channel-panel">
-        <!-- Room Info Header -->
+        <!-- Room Info Header with Dropdown -->
         <div id="room-info-header">
           <div id="room-name-large">Room Name</div>
           <button id="room-menu-btn" class="icon-btn" title="Room menu">
             <i class="ri-more-fill"></i>
           </button>
+          <!-- Room Dropdown -->
+          <div id="room-dropdown">
+            <!-- Room list will be dynamically added here -->
+          </div>
         </div>
 
         <!-- Scrollable Content -->
@@ -1887,12 +1774,12 @@
               <button class="section-toggle-btn">
                 <i class="ri-arrow-down-s-line"></i>
               </button>
-              <span class="section-title">频道</span>
+              <span class="section-title">Channels</span>
             </div>
             <div class="channel-section-list" id="channel-list"></div>
             <button class="section-add-btn" id="channel-add-btn">
               <i class="ri-add-line"></i>
-              <span>添加频道</span>
+              <span>Add Channel</span>
             </button>
           </div>
 
@@ -1902,14 +1789,35 @@
               <button class="section-toggle-btn">
                 <i class="ri-arrow-down-s-line"></i>
               </button>
-              <span class="section-title">私信</span>
+              <span class="section-title">Direct Messages</span>
             </div>
             <div class="channel-section-list" id="dm-list">
               <!-- DM items will be added here -->
             </div>
             <button class="section-add-btn" id="dm-add-btn">
               <i class="ri-add-line"></i>
-              <span>邀请人员</span>
+              <span>Add Teammate</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- User Info Card at Bottom -->
+        <div id="user-info-card">
+          <div class="user-avatar-container">
+            <playful-avatar id="user-avatar" name="User"></playful-avatar>
+            <div class="user-status-indicator"></div>
+          </div>
+          <div class="user-info-text">
+            <div class="user-name" id="user-name-display">User</div>
+            <div class="user-status">Online</div>
+          </div>
+          <div class="user-actions">
+            <button
+              class="user-action-btn"
+              title="Settings"
+              id="user-settings-btn"
+            >
+              <i class="ri-settings-2-line"></i>
             </button>
           </div>
         </div>
