@@ -9,6 +9,10 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.min.css"
     />
+    <link
+      href="https://cdn.jsdelivr.net/npm/remixicon@4.7.0/fonts/remixicon.css"
+      rel="stylesheet"
+    />
     <script
       type="module"
       src="https://cdn.jsdelivr.net/npm/playful-avatars/index.js"
@@ -34,26 +38,13 @@
         overflow: hidden;
         height: 100vh;
         width: 100vw;
-      }
-
-      #chatroom {
-        position: fixed;
-        top: 36px;
-        bottom: 0;
-        left: var(--left-sidebar-width);
-        right: 200px;
         display: flex;
         flex-direction: column;
-        transition:
-          right 0.3s ease,
-          left 0.3s ease;
+        max-width: 100vw;
       }
 
       #titlebar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
+        flex-shrink: 0;
         height: 36px;
         display: flex;
         align-items: center;
@@ -95,6 +86,19 @@
         font-size: 0.9em;
       }
 
+      #main-container {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
+
+      #chatroom {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
       #chatlog {
         flex: 1;
         overflow-y: auto;
@@ -102,10 +106,6 @@
         overflow-wrap: break-word;
         display: flex;
         flex-direction: column;
-      }
-
-      #chatroom.thread-open {
-        right: 600px;
       }
 
       /* Mobile-specific styles */
@@ -248,16 +248,12 @@
       }
 
       #right-sidebar {
-        position: fixed;
-        right: 0;
-        top: 36px;
-        bottom: 0;
+        flex-shrink: 0;
         width: 200px;
         display: none;
         flex-direction: column;
         border-left: 1px solid var(--border);
         background: var(--background);
-        transition: none;
       }
 
       #right-sidebar.visible {
@@ -722,25 +718,18 @@
           display: none;
         }
 
-        #chatroom {
-          top: 48px !important;
+        body:has(#mobile-top-bar) {
+          padding-top: 0;
         }
 
-        /* When forms exist, chatroom should not have top spacing */
-        body:has(#room-form) #chatroom {
-          top: 0 !important;
+        #main-container {
+          flex-direction: column;
         }
 
         #hashtag-filter-banner {
-          top: 48px !important;
+          left: 0 !important;
           right: 0 !important;
-          z-index: 99;
-        }
-
-        /* When filter banner is visible on mobile, adjust chatroom */
-        body:has(#hashtag-filter-banner.visible) #chatroom {
-          top: 89px !important;
-          /* 48px (top bar) + 41px (filter banner) */
+          top: 60px !important;
         }
 
         #right-sidebar {
@@ -780,16 +769,17 @@
           display: block;
         }
 
-        #chatroom {
-          right: 0;
-        }
-
         /* Mobile thread panel - full screen overlay */
         #thread-panel {
+          position: fixed !important;
+          left: 0 !important;
           right: 0 !important;
+          top: 60px !important;
+          bottom: 0 !important;
+          width: auto !important;
           left: 0;
           top: 0;
-          width: 100% !important;
+          width: auto !important;
           z-index: 200;
         }
 
@@ -798,7 +788,7 @@
         }
 
         /* Hide main chat when thread is open on mobile */
-        #chatroom.thread-open {
+        body.thread-open #chatroom {
           display: none;
         }
 
@@ -807,9 +797,37 @@
           display: none;
         }
 
-        /* Adjust chatroom when thread is open */
-        body.thread-open #chatroom {
+        /* Hide left sidebar on mobile when thread is open */
+        body.thread-open #left-sidebar {
+          display: none;
+        }
+
+        #left-sidebar {
+          width: 100%;
+          height: 60px;
           top: 0;
+          bottom: auto;
+          flex-direction: row;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+
+        #room-list-container {
+          flex-direction: row;
+          padding: 0 var(--spacing-sm);
+          overflow-x: auto;
+          overflow-y: hidden;
+        }
+
+        #user-info-card {
+          flex-direction: row;
+          border-top: none;
+          border-left: 1px solid var(--border);
+          padding: var(--spacing-xs) var(--spacing-sm);
+        }
+
+        #main-container {
+          padding-top: 60px;
         }
       }
 
@@ -849,9 +867,8 @@
 
       #main-chat-input-container {
         flex-shrink: 0;
-        background: var(--background);
-        border-top: 1px solid var(--border);
         padding: 0;
+        margin: 8px;
         z-index: 10;
       }
 
@@ -908,6 +925,10 @@
       #go-private {
         width: 100%;
         max-width: 100%;
+      }
+
+      .chat-input-textarea {
+        margin-bottom: 0 !important;
       }
 
       @media (max-width: 660px) {
@@ -1038,9 +1059,9 @@
       }
 
       #hashtag-filter-banner {
-        position: fixed;
-        top: 36px;
-        left: 0;
+        position: absolute;
+        top: 0;
+        left: var(--left-sidebar-width);
         right: 200px;
         background: #fff3cd;
         border-bottom: 1px solid #ffc107;
@@ -1055,10 +1076,8 @@
         display: flex;
       }
 
-      /* When filter banner is visible, adjust chatroom top position */
-      body:has(#hashtag-filter-banner.visible) #chatroom {
-        top: 77px;
-        /* 36px (titlebar) + 41px (filter banner) */
+      #main-container {
+        position: relative;
       }
 
       .filter-clear-btn {
@@ -1078,17 +1097,12 @@
 
       /* Thread Panel Styles */
       #thread-panel {
-        position: fixed;
-        right: 200px;
-        top: 36px;
-        bottom: 0;
+        flex-shrink: 0;
         width: 400px;
         background: var(--background);
         border-left: 1px solid var(--border);
         display: none;
         flex-direction: column;
-        z-index: 50;
-        transition: none;
       }
 
       #thread-panel.visible {
@@ -1096,7 +1110,8 @@
       }
 
       #thread-header {
-        padding: var(--spacing);
+        padding: var(--spacing-xs);
+        padding-left: var(--spacing);
         border-bottom: 2px solid var(--border);
         background: var(--background-alt);
         display: flex;
@@ -1453,16 +1468,12 @@
 
       /* Left Sidebar Styles */
       #left-sidebar {
-        position: fixed;
-        left: 0;
-        top: 36px;
-        bottom: 0;
+        flex-shrink: 0;
         width: var(--left-sidebar-width);
         background: var(--background-alt);
         display: flex;
         flex-direction: column;
         border-right: 1px solid var(--border);
-        z-index: 100;
         overflow-y: auto;
         overflow-x: hidden;
       }
@@ -1686,24 +1697,122 @@
   <body>
     <!-- Global Titlebar -->
     <div id="titlebar">
-      <div id="titlebar-room-name" contenteditable="true" spellcheck="false"></div>
+      <div
+        id="titlebar-room-name"
+        contenteditable="true"
+        spellcheck="false"
+      ></div>
     </div>
 
-    <!-- Left Sidebar for Room Navigation -->
-    <div id="left-sidebar">
-      <div id="room-list-container">
-        <!-- Room items will be dynamically added here -->
-      </div>
-      <div id="user-info-card">
-        <div class="user-avatar-container">
-          <playful-avatar id="user-avatar" name="User"></playful-avatar>
-          <div class="user-status-indicator"></div>
+    <!-- Main Container with Flex Layout -->
+    <div id="main-container">
+      <!-- Left Sidebar for Room Navigation -->
+      <div id="left-sidebar">
+        <div id="room-list-container">
+          <!-- Room items will be dynamically added here -->
         </div>
-        <div class="user-name" id="user-name-display">User</div>
+        <div id="user-info-card">
+          <div class="user-avatar-container">
+            <playful-avatar id="user-avatar" name="User"></playful-avatar>
+            <div class="user-status-indicator"></div>
+          </div>
+          <div class="user-name" id="user-name-display">User</div>
+        </div>
+      </div>
+
+      <!-- Chatroom -->
+      <div id="chatroom">
+        <div id="chatlog">
+          <div id="spacer"></div>
+        </div>
+        <div id="reply-indicator" style="display: none">
+          <button type="button" class="reply-indicator-close">✕</button>
+          <span class="reply-indicator-text"></span>
+        </div>
+        <div id="main-chat-input-container">
+          <chat-input-component
+            id="chat-input"
+            placeholder="Type a message..."
+            rows="1"
+            min-height="32px"
+            max-height="150px"
+            show-file-upload="true"
+          ></chat-input-component>
+        </div>
+      </div>
+
+      <!-- Thread Panel -->
+      <div id="thread-panel">
+        <div id="thread-header">
+          <h3>💬 Thread</h3>
+          <button id="thread-close" title="Close thread">✕</button>
+        </div>
+        <div id="thread-original-message"></div>
+        <div id="thread-replies"></div>
+        <div id="thread-input-container">
+          <chat-input-component
+            id="thread-input"
+            placeholder="Reply in thread..."
+            rows="3"
+            min-height="60px"
+            max-height="120px"
+            show-file-upload="true"
+          ></chat-input-component>
+        </div>
+      </div>
+
+      <!-- Right Sidebar -->
+      <div id="right-sidebar">
+        <div id="room-info">
+          <h3>
+            <span>
+              <span>🏠 Room Info</span>
+              <span id="connection-status"></span>
+            </span>
+            <button
+              class="settings-btn"
+              id="btn-room-settings"
+              title="Room Settings"
+            >
+              ⚙️
+            </button>
+          </h3>
+          <div id="room-name-container">
+            <div id="room-name-display"></div>
+            <input type="text" id="room-name-input" />
+          </div>
+          <div id="room-description-container">
+            <div id="room-description-label">📝 Description (click to edit)</div>
+            <textarea
+              id="room-note"
+              placeholder="Add room description..."
+            ></textarea>
+          </div>
+          <div id="encryption-status" class="not-encrypted">
+            <span id="encryption-status-icon">🔓</span>
+            <span id="encryption-status-text">Not Encrypted</span>
+          </div>
+        </div>
+        <div id="roster-container">
+          <h3><span>👥</span><span>Online Members</span></h3>
+          <div id="roster"></div>
+        </div>
+        <div id="hashtag-container">
+          <h3><span>📌</span><span>Hashtags</span></h3>
+          <div id="hashtag-list"></div>
+        </div>
       </div>
     </div>
 
-    <form id="room-form" action="/fake-form-action">
+    <!-- Hashtag Filter Banner (inside main-container for proper positioning) -->
+    <div id="hashtag-filter-banner">
+      <span>Filtering by: <strong id="active-hashtag"></strong></span>
+      <button class="filter-clear-btn" onclick="clearHashtagFilter()">
+        Clear Filter ✕
+      </button>
+    </div>
+
+    <div id="mobile-top-bar">
       <div style="width: 100%; max-width: 500px">
         <div style="margin-bottom: 1.5em">
           <label
@@ -1790,84 +1899,7 @@
         </button>
       </div>
     </form>
-    <div id="thread-panel">
-      <div id="thread-header">
-        <h3>💬 Thread</h3>
-        <button id="thread-close" title="Close thread">✕</button>
-      </div>
-      <div id="thread-original-message"></div>
-      <div id="thread-replies"></div>
-      <div id="thread-input-container">
-        <chat-input-component
-          id="thread-input"
-          placeholder="Reply in thread..."
-          rows="3"
-          min-height="60px"
-          max-height="120px"
-          show-file-upload="true"
-        ></chat-input-component>
-      </div>
-    </div>
-    <div id="chatroom">
-      <div id="chatlog">
-        <div id="spacer"></div>
-      </div>
-      <div id="reply-indicator" style="display: none">
-        <button type="button" class="reply-indicator-close">✕</button>
-        <span class="reply-indicator-text"></span>
-      </div>
-      <div id="main-chat-input-container">
-        <chat-input-component
-          id="chat-input"
-          placeholder="Type a message..."
-          rows="1"
-          min-height="32px"
-          max-height="150px"
-          show-file-upload="true"
-          show-prefix="true"
-        ></chat-input-component>
-      </div>
-    </div>
-    <div id="right-sidebar">
-      <div id="room-info">
-        <h3>
-          <span>
-            <span>🏠 Room Info</span>
-            <span id="connection-status"></span>
-          </span>
-          <button
-            class="settings-btn"
-            id="btn-room-settings"
-            title="Room Settings"
-          >
-            ⚙️
-          </button>
-        </h3>
-        <div id="room-name-container">
-          <div id="room-name-display"></div>
-          <input type="text" id="room-name-input" />
-        </div>
-        <div id="room-description-container">
-          <div id="room-description-label">📝 Description (click to edit)</div>
-          <textarea
-            id="room-note"
-            placeholder="Add room description..."
-          ></textarea>
-        </div>
-        <div id="encryption-status" class="not-encrypted">
-          <span id="encryption-status-icon">🔓</span>
-          <span id="encryption-status-text">Not Encrypted</span>
-        </div>
-      </div>
-      <div id="roster-container">
-        <h3><span>👥</span><span>Online Members</span></h3>
-        <div id="roster"></div>
-      </div>
-      <div id="hashtag-container">
-        <h3><span>📌</span><span>Hashtags</span></h3>
-        <div id="hashtag-list"></div>
-      </div>
-    </div>
+
     <div id="mobile-top-bar">
       <div id="mobile-top-bar-content">
         <span id="mobile-top-bar-icon">🏠</span>
@@ -1875,12 +1907,6 @@
         <span id="mobile-top-bar-encryption" title="Encryption Status"></span>
         <span id="mobile-top-bar-arrow">▼</span>
       </div>
-    </div>
-    <div id="hashtag-filter-banner">
-      <span>Filtering by: <strong id="active-hashtag"></strong></span>
-      <button class="filter-clear-btn" onclick="clearHashtagFilter()">
-        Clear Filter ✕
-      </button>
     </div>
     <div id="mobile-room-info-overlay"></div>
 

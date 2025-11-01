@@ -31,7 +31,6 @@ class ChatInputComponent extends HTMLElement {
     const maxHeight = this.getAttribute('max-height') || '150px';
     const rows = this.getAttribute('rows') || '1';
     const showFileUpload = this.getAttribute('show-file-upload') === 'true';
-    const showPrefix = this.getAttribute('show-prefix') === 'true';
 
     this.innerHTML = `
         <div class="chat-input-wrapper" style="
@@ -40,19 +39,6 @@ class ChatInputComponent extends HTMLElement {
           position: relative;
           width: 100%;
         ">
-          ${
-            showPrefix
-              ? `<span class="chat-input-prefix" style="
-            position: absolute;
-            left: 8px;
-            bottom: 8px;
-            font-weight: bold;
-            color: #888;
-            z-index: 1;
-            pointer-events: none;
-          ">&gt;</span>`
-              : ''
-          }
           <textarea 
             class="chat-input-textarea" 
             rows="${rows}" 
@@ -62,7 +48,6 @@ class ChatInputComponent extends HTMLElement {
               min-height: ${minHeight};
               max-height: ${maxHeight};
               padding: 8px;
-              ${showPrefix ? 'padding-left: 24px;' : ''}
               ${showFileUpload ? 'padding-right: 40px;' : ''}
               border: 1px solid #ddd;
               border-radius: 4px;
@@ -81,30 +66,78 @@ class ChatInputComponent extends HTMLElement {
             <input 
               type="file" 
               class="chat-input-file" 
+              accept="*/*"
+              multiple
               style="display: none;"
             >
-            <button 
-              type="button" 
-              class="chat-input-file-btn" 
-              title="Upload file"
+            <input 
+              type="file" 
+              class="chat-input-media" 
+              accept="image/*,video/*"
+              multiple
+              style="display: none;"
+            >
+            <i 
+              class="ri-add-circle-line chat-input-add-btn" 
+              title="Add attachment"
               style="
                 position: absolute;
-                right: 0;
-                bottom: 0;
-                width: 40px;
-                height: 40px;
-                min-height: 40px;
-                border: none;
-                background: #f0f0f0;
+                right: 8px;
+                bottom: 6px;
+                width: 24px;
+                height: 24px;
                 cursor: pointer;
-                font-size: 20px;
+                font-size: 24px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                border-radius: 0 4px 4px 0;
-                transition: background 0.2s;
+                transition: color 0.2s;
+                color: #666;
               "
-            >📎</button>
+            ></i>
+            <div class="chat-input-menu" style="
+              display: none;
+              position: absolute;
+              right: 0;
+              bottom: 45px;
+              background: white;
+              border: 1px solid #ddd;
+              border-radius: 8px;
+              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+              overflow: hidden;
+              z-index: 1000;
+              min-width: 180px;
+            ">
+              <div class="menu-item upload-file" style="
+                width: 100%;
+                padding: 12px 16px;
+                cursor: pointer;
+                text-align: left;
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                transition: background 0.2s;
+              ">
+                <i class="ri-attachment-line" style="font-size: 18px; color: #666;"></i>
+                <span>Upload File</span>
+              </div>
+              <div class="menu-item upload-media" style="
+                width: 100%;
+                padding: 12px 16px;
+                cursor: pointer;
+                text-align: left;
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                transition: background 0.2s;
+                border-top: 1px solid #f0f0f0;
+              ">
+                <i class="ri-image-line" style="font-size: 18px; color: #666;"></i>
+                <span>Image/Video</span>
+              </div>
+            </div>
           `
               : ''
           }
@@ -113,7 +146,9 @@ class ChatInputComponent extends HTMLElement {
 
     this.textarea = this.querySelector('.chat-input-textarea');
     this.fileInput = this.querySelector('.chat-input-file');
-    this.fileBtn = this.querySelector('.chat-input-file-btn');
+    this.mediaInput = this.querySelector('.chat-input-media');
+    this.addBtn = this.querySelector('.chat-input-add-btn');
+    this.menu = this.querySelector('.chat-input-menu');
   }
 
   setupEventListeners() {
@@ -141,24 +176,65 @@ class ChatInputComponent extends HTMLElement {
       this.autoResize();
     });
 
-    // File upload button click
-    if (this.fileBtn) {
-      this.fileBtn.addEventListener('click', () => {
-        if (this.fileInput) {
-          this.fileInput.click();
-        }
+    // Add button click - toggle menu
+    if (this.addBtn && this.menu) {
+      this.addBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = this.menu.style.display === 'block';
+        this.menu.style.display = isVisible ? 'none' : 'block';
       });
 
       // Add hover effect
-      this.fileBtn.addEventListener('mouseenter', () => {
-        this.fileBtn.style.background = '#e0e0e0';
+      this.addBtn.addEventListener('mouseenter', () => {
+        this.addBtn.style.color = '#333';
       });
-      this.fileBtn.addEventListener('mouseleave', () => {
-        this.fileBtn.style.background = '#f0f0f0';
+      this.addBtn.addEventListener('mouseleave', () => {
+        this.addBtn.style.color = '#666';
       });
+
+      // Close menu when clicking outside
+      document.addEventListener('click', (e) => {
+        if (this.menu && !this.contains(e.target)) {
+          this.menu.style.display = 'none';
+        }
+      });
+
+      // Menu item: Upload File
+      const uploadFileBtn = this.menu.querySelector('.upload-file');
+      if (uploadFileBtn) {
+        uploadFileBtn.addEventListener('click', () => {
+          if (this.fileInput) {
+            this.fileInput.click();
+          }
+          this.menu.style.display = 'none';
+        });
+        uploadFileBtn.addEventListener('mouseenter', () => {
+          uploadFileBtn.style.background = '#f5f5f5';
+        });
+        uploadFileBtn.addEventListener('mouseleave', () => {
+          uploadFileBtn.style.background = 'white';
+        });
+      }
+
+      // Menu item: Upload Media
+      const uploadMediaBtn = this.menu.querySelector('.upload-media');
+      if (uploadMediaBtn) {
+        uploadMediaBtn.addEventListener('click', () => {
+          if (this.mediaInput) {
+            this.mediaInput.click();
+          }
+          this.menu.style.display = 'none';
+        });
+        uploadMediaBtn.addEventListener('mouseenter', () => {
+          uploadMediaBtn.style.background = '#f5f5f5';
+        });
+        uploadMediaBtn.addEventListener('mouseleave', () => {
+          uploadMediaBtn.style.background = 'white';
+        });
+      }
     }
 
-    // File input change
+    // File input change (all files)
     if (this.fileInput) {
       this.fileInput.addEventListener('change', async (event) => {
         if (!event.target.files || event.target.files.length === 0) return;
@@ -174,6 +250,23 @@ class ChatInputComponent extends HTMLElement {
         this.fileInput.value = '';
       });
     }
+
+    // Media input change (images/videos)
+    if (this.mediaInput) {
+      this.mediaInput.addEventListener('change', async (event) => {
+        if (!event.target.files || event.target.files.length === 0) return;
+
+        await Promise.all(
+          Array.from(event.target.files).map(async (file) => {
+            if (this.onFileUpload) {
+              await this.onFileUpload(file);
+            }
+          }),
+        );
+
+        this.mediaInput.value = '';
+      });
+    }
   }
 
   autoResize() {
@@ -185,11 +278,7 @@ class ChatInputComponent extends HTMLElement {
     let newHeight = Math.min(this.textarea.scrollHeight, maxHeight);
     this.textarea.style.height = newHeight + 'px';
 
-    // Update file button height if it exists
-    if (this.fileBtn) {
-      this.fileBtn.style.height = newHeight + 'px';
-      this.fileBtn.style.minHeight = newHeight + 'px';
-    }
+    // Icon doesn't need height adjustment - it stays fixed
 
     // Notify parent about resize
     if (this.onResize) {
@@ -2306,7 +2395,9 @@ async function tryDecryptMessage(data) {
 }
 
 async function startChat() {
-  roomForm.remove();
+  if (roomForm && roomForm.parentElement) {
+    roomForm.remove();
+  }
 
   // Reset encryption initialization flag for new room
   encryptionState.initialized = false;
@@ -2362,7 +2453,7 @@ async function startChat() {
   subscribeRoomInfo((property, newValue, oldValue) => {
     if (property === 'name') {
       roomInfoNameDisplay.textContent = newValue;
-      
+
       // Update titlebar
       if (titlebarRoomName) {
         titlebarRoomName.textContent = newValue;
@@ -2513,7 +2604,7 @@ async function startChat() {
   if (titlebarRoomName) {
     // Store original content when focusing
     let originalContent = '';
-    
+
     titlebarRoomName.addEventListener('focus', () => {
       originalContent = titlebarRoomName.textContent;
       // Select all text when focused
@@ -2554,7 +2645,9 @@ async function startChat() {
     // Prevent line breaks in contenteditable
     titlebarRoomName.addEventListener('paste', (event) => {
       event.preventDefault();
-      const text = (event.clipboardData || window.clipboardData).getData('text/plain');
+      const text = (event.clipboardData || window.clipboardData).getData(
+        'text/plain',
+      );
       // Remove line breaks and insert as plain text
       const cleanText = text.replace(/[\r\n]+/g, ' ');
       document.execCommand('insertText', false, cleanText);
