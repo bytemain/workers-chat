@@ -2091,7 +2091,20 @@ function renderChannelList() {
     return;
   }
 
-  visibleChannels.forEach((item) => {
+  // Sort channels: 'general' at the top, others by lastUsed descending
+  const sortedChannels = [...visibleChannels].sort((a, b) => {
+    const aIsGeneral = a.channel.toLowerCase() === 'general';
+    const bIsGeneral = b.channel.toLowerCase() === 'general';
+
+    // If one is 'general', it comes first
+    if (aIsGeneral && !bIsGeneral) return -1;
+    if (!aIsGeneral && bIsGeneral) return 1;
+
+    // Both are general or neither is general, sort by lastUsed
+    return (b.lastUsed || 0) - (a.lastUsed || 0);
+  });
+
+  sortedChannels.forEach((item) => {
     const div = document.createElement('div');
     div.className = 'channel-item';
     div.dataset.channel = item.channel;
@@ -4762,14 +4775,27 @@ function updateMobileChannelList() {
       !item.channel.toLowerCase().startsWith('dm-'),
   );
 
-  if (visibleChannels.length === 0) {
+  // Sort channels: 'general' at the top, others by lastUsed descending
+  const sortedChannels = [...visibleChannels].sort((a, b) => {
+    const aIsGeneral = a.channel.toLowerCase() === 'general';
+    const bIsGeneral = b.channel.toLowerCase() === 'general';
+
+    // If one is 'general', it comes first
+    if (aIsGeneral && !bIsGeneral) return -1;
+    if (!aIsGeneral && bIsGeneral) return 1;
+
+    // Both are general or neither is general, sort by lastUsed
+    return (b.lastUsed || 0) - (a.lastUsed || 0);
+  });
+
+  if (sortedChannels.length === 0) {
     channelsContainer.innerHTML = `
       <div style="padding: var(--spacing); text-align: center; color: var(--text-muted);">
         No channels yet
       </div>
     `;
   } else {
-    visibleChannels.forEach((item) => {
+    sortedChannels.forEach((item) => {
       const div = document.createElement('div');
       div.className = 'mobile-channel-item';
 
