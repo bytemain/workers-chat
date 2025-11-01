@@ -2236,12 +2236,6 @@ function startRoomChooser() {
 // Room info state variables (declared at module level for WebSocket access)
 let urlRoomHash = ''; // Store the room hash from URL
 let titlebarRoomName = document.querySelector('#titlebar-room-name');
-let roomInfoNameDisplay = document.querySelector('#room-name-display');
-let roomInfoNameInput = document.querySelector('#room-name-input');
-let roomInfoNoteTextarea = document.querySelector('#room-note');
-let roomInfoDescriptionLabel = document.querySelector(
-  '#room-description-label',
-);
 
 let documentTitlePrefix = '';
 const { state: roomInfo, subscribe: subscribeRoomInfo } = createReactiveState({
@@ -2452,8 +2446,6 @@ async function startChat() {
   // Set up reactive listener for document title updates
   subscribeRoomInfo((property, newValue, oldValue) => {
     if (property === 'name') {
-      roomInfoNameDisplay.textContent = newValue;
-
       // Update titlebar
       if (titlebarRoomName) {
         titlebarRoomName.textContent = newValue;
@@ -2471,20 +2463,10 @@ async function startChat() {
       }
       documentTitlePrefix = title;
       document.title = documentTitlePrefix + ' - Workers Chat';
-    } else if (property === 'description') {
-      roomInfoNoteTextarea.value = newValue;
-
-      // Show or hide textarea based on content
-      if (newValue.trim()) {
-        roomInfoNoteTextarea.classList.add('visible');
-      } else {
-        roomInfoNoteTextarea.classList.remove('visible');
-      }
     }
   });
 
   // Set initial display
-  roomInfoNameDisplay.textContent = roomInfo.name;
   if (titlebarRoomName) {
     titlebarRoomName.textContent = roomInfo.name;
   }
@@ -2522,83 +2504,6 @@ async function startChat() {
   }
 
   loadRoomInfo();
-
-  // Room name editing
-  roomInfoNameDisplay.addEventListener('click', (event) => {
-    event.stopPropagation();
-    roomInfoNameDisplay.style.display = 'none';
-    roomInfoNameInput.style.display = 'block';
-    roomInfoNameInput.value = roomInfo.name;
-    roomInfoNameInput.focus();
-    roomInfoNameInput.select();
-  });
-
-  roomInfoNameInput.addEventListener('blur', () => {
-    const newName = roomInfoNameInput.value.trim();
-    if (newName && newName !== roomInfo.name) {
-      roomInfo.isLocalUpdate = true;
-      roomInfo.name = newName;
-      saveRoomInfo();
-      // Reset flag after a short delay
-      setTimeout(() => {
-        roomInfo.isLocalUpdate = false;
-      }, 500);
-    }
-    roomInfoNameInput.style.display = 'none';
-    roomInfoNameDisplay.style.display = 'block';
-  });
-
-  roomInfoNameInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      roomInfoNameInput.blur();
-    } else if (event.key === 'Escape') {
-      roomInfoNameInput.value = roomInfo.name;
-      roomInfoNameInput.blur();
-    }
-  });
-
-  roomInfoNameInput.addEventListener('click', (event) => {
-    event.stopPropagation();
-  });
-
-  // Room description editing
-  roomInfoDescriptionLabel.addEventListener('click', (event) => {
-    event.stopPropagation();
-    roomInfoNoteTextarea.classList.add('visible');
-    roomInfoNoteTextarea.focus();
-  });
-
-  // Save room note on change (debounced)
-  let saveNoteTimeout;
-  roomInfoNoteTextarea.addEventListener('input', () => {
-    clearTimeout(saveNoteTimeout);
-    saveNoteTimeout = setTimeout(() => {
-      roomInfo.isLocalUpdate = true;
-      roomInfo.description = roomInfoNoteTextarea.value;
-      saveRoomInfo();
-      // Reset flag after a short delay
-      setTimeout(() => {
-        roomInfo.isLocalUpdate = false;
-      }, 500);
-    }, 1000);
-  });
-
-  roomInfoNoteTextarea.addEventListener('blur', () => {
-    // Hide textarea if empty
-    if (!roomInfoNoteTextarea.value.trim()) {
-      roomInfoNoteTextarea.classList.remove('visible');
-    }
-  });
-
-  // Prevent the room note textarea from losing focus
-  roomInfoNoteTextarea.addEventListener('mousedown', (event) => {
-    event.stopPropagation();
-  });
-
-  roomInfoNoteTextarea.addEventListener('click', (event) => {
-    event.stopPropagation();
-  });
 
   // Titlebar room name editing
   if (titlebarRoomName) {
@@ -2651,45 +2556,6 @@ async function startChat() {
       // Remove line breaks and insert as plain text
       const cleanText = text.replace(/[\r\n]+/g, ' ');
       document.execCommand('insertText', false, cleanText);
-    });
-  }
-
-  // Room Settings Modal
-  const roomSettingsModal = document.querySelector('#room-settings-modal');
-  const btnRoomSettings = document.querySelector('#btn-room-settings');
-  const closeRoomSettings = document.querySelector('#close-room-settings');
-
-  // Open settings modal
-  if (btnRoomSettings) {
-    btnRoomSettings.addEventListener('click', (e) => {
-      e.preventDefault();
-      roomSettingsModal.classList.add('visible');
-    });
-  }
-
-  // Close settings modal
-  if (closeRoomSettings) {
-    closeRoomSettings.addEventListener('click', () => {
-      roomSettingsModal.classList.remove('visible');
-    });
-  }
-
-  // Close modal when clicking outside
-  if (roomSettingsModal) {
-    roomSettingsModal.addEventListener('click', (e) => {
-      if (e.target === roomSettingsModal) {
-        roomSettingsModal.classList.remove('visible');
-      }
-    });
-
-    // Close on ESC key
-    document.addEventListener('keydown', (e) => {
-      if (
-        e.key === 'Escape' &&
-        roomSettingsModal.classList.contains('visible')
-      ) {
-        roomSettingsModal.classList.remove('visible');
-      }
     });
   }
 

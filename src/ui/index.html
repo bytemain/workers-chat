@@ -32,6 +32,11 @@
         -webkit-tap-highlight-color: transparent;
       }
 
+      p {
+        margin-block-start: 0;
+        margin-block-end: 0;
+      }
+
       body {
         margin: 0;
         padding: 0;
@@ -258,270 +263,6 @@
 
       #right-sidebar.visible {
         display: flex;
-      }
-
-      #room-info {
-        flex-shrink: 0;
-        border-bottom: 1px solid var(--border);
-        background: var(--background-alt);
-        padding: var(--spacing);
-        font-size: 0.9em;
-      }
-
-      #room-info h3 {
-        margin: 0 0 var(--spacing-sm) 0;
-        font-size: 1em;
-        position: relative;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: var(--spacing-xs);
-      }
-
-      #room-info h3 > span:first-child {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        gap: var(--spacing-xs);
-      }
-
-      #connection-status {
-        display: none;
-        margin-left: var(--spacing-xs);
-        font-size: 0.75em;
-        padding: 2px 6px;
-        border-radius: 10px;
-        font-weight: normal;
-        white-space: nowrap;
-        animation: pulse 1.5s ease-in-out infinite;
-      }
-
-      #connection-status.connected {
-        display: inline-block;
-        background: #d4edda;
-        color: #155724;
-        animation: none;
-      }
-
-      #connection-status.reconnecting {
-        display: inline-block;
-        background: #fff3cd;
-        color: #856404;
-      }
-
-      #connection-status.error {
-        display: inline-block;
-        background: #f8d7da;
-        color: #721c24;
-        animation: none;
-      }
-
-      @keyframes pulse {
-        0%,
-        100% {
-          opacity: 1;
-        }
-
-        50% {
-          opacity: 0.5;
-        }
-      }
-
-      #encryption-status {
-        margin: var(--spacing-sm) 0;
-        padding: var(--spacing-sm);
-        border-radius: var(--border-radius);
-        display: flex;
-        align-items: center;
-        gap: var(--spacing-xs);
-        font-size: 0.85em;
-        transition: var(--transition);
-      }
-
-      #encryption-status.encrypted {
-        background: #d4edda;
-        border: 1px solid #28a745;
-        color: #155724;
-      }
-
-      #encryption-status.not-encrypted {
-        background: #fff3cd;
-        border: 1px solid #ffc107;
-        color: #856404;
-      }
-
-      #encryption-status-icon {
-        font-size: 1.2em;
-        flex-shrink: 0;
-      }
-
-      #encryption-status-text {
-        flex: 1;
-        line-height: 1.2;
-      }
-
-      /* Mobile optimization for encryption status */
-      @media (max-width: 600px) {
-        #encryption-status {
-          padding: 10px;
-          font-size: 0.9em;
-        }
-
-        #encryption-status-icon {
-          font-size: 1.4em;
-        }
-      }
-
-      #room-name-display {
-        font-weight: bold;
-        color: var(--links);
-        margin-bottom: var(--spacing-sm);
-        word-break: break-all;
-        cursor: pointer;
-        padding: var(--spacing-xs);
-        border-radius: var(--border-radius);
-        transition: var(--transition);
-      }
-
-      #room-name-display:hover {
-        background-color: var(--background-alt);
-      }
-
-      #room-name-input {
-        width: 100%;
-        font-weight: bold;
-        color: var(--links);
-        padding: var(--spacing-xs);
-        margin-bottom: var(--spacing-sm);
-        display: none;
-      }
-
-      #room-description-label {
-        color: var(--text-muted);
-        font-size: 0.85em;
-        margin-bottom: var(--spacing-xs);
-        cursor: pointer;
-        padding: var(--spacing-xs);
-        border-radius: var(--border-radius);
-        transition: var(--transition);
-      }
-
-      #room-description-label:hover {
-        background-color: var(--background-alt);
-      }
-
-      #room-note {
-        width: 100%;
-        min-height: 60px;
-        resize: vertical;
-        display: none;
-        margin-top: var(--spacing-xs);
-      }
-
-      #room-note.visible {
-        display: block;
-      }
-
-      /* Room destruction styles */
-      #room-destruction-container {
-        margin-top: var(--spacing-sm);
-        padding-top: var(--spacing-sm);
-        border-top: 1px solid var(--border);
-      }
-
-      #room-destruction-container h4 {
-        margin: 0 0 var(--spacing-sm) 0;
-        font-size: 0.9em;
-        color: var(--text-muted);
-      }
-
-      .destruction-controls {
-        display: flex;
-        flex-direction: column;
-        gap: var(--spacing-sm);
-      }
-
-      .btn-destroy,
-      .btn-cancel-destroy,
-      .btn-export {
-        padding: var(--spacing-xs) var(--spacing-sm);
-        border-radius: var(--border-radius);
-        border: none;
-        cursor: pointer;
-        font-size: 0.85em;
-        transition: var(--transition);
-      }
-
-      .btn-destroy {
-        background: #dc3545;
-        color: white;
-      }
-
-      .btn-destroy:hover {
-        background: #c82333;
-      }
-
-      .btn-cancel-destroy {
-        background: #ffc107;
-        color: #333;
-      }
-
-      .btn-cancel-destroy:hover {
-        background: #e0a800;
-      }
-
-      .btn-export {
-        background: #28a745;
-        color: white;
-      }
-
-      .btn-export:hover {
-        background: #218838;
-      }
-
-      .destruction-countdown {
-        background: #fff3cd;
-        border: 1px solid #ffc107;
-        border-radius: var(--border-radius);
-        padding: var(--spacing-sm);
-        margin-bottom: var(--spacing-sm);
-        display: none;
-      }
-
-      .destruction-countdown.active {
-        display: block;
-      }
-
-      .countdown-text {
-        font-size: 0.85em;
-        color: #856404;
-        margin: 0 0 var(--spacing-xs) 0;
-        font-weight: bold;
-      }
-
-      .countdown-time {
-        font-size: 1.2em;
-        color: #dc3545;
-        font-weight: bold;
-        font-family: monospace;
-      }
-
-      .destruction-timer-select {
-        display: flex;
-        align-items: center;
-        gap: var(--spacing-sm);
-      }
-
-      .destruction-timer-select label {
-        font-size: 0.85em;
-        color: var(--text-muted);
-      }
-
-      .destruction-timer-select select {
-        flex: 1;
-        padding: var(--spacing-xs);
-        border-radius: var(--border-radius);
-        font-size: 0.85em;
       }
 
       #roster-container,
@@ -888,6 +629,12 @@
         padding: 20px;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
+      }
+
+      /* Hide titlebar and main container when room form is present */
+      body:has(#room-form) #titlebar,
+      body:has(#room-form) #main-container {
+        display: none;
       }
 
       #room-name {
@@ -1695,124 +1442,8 @@
   </head>
 
   <body>
-    <!-- Global Titlebar -->
-    <div id="titlebar">
-      <div
-        id="titlebar-room-name"
-        contenteditable="true"
-        spellcheck="false"
-      ></div>
-    </div>
-
-    <!-- Main Container with Flex Layout -->
-    <div id="main-container">
-      <!-- Left Sidebar for Room Navigation -->
-      <div id="left-sidebar">
-        <div id="room-list-container">
-          <!-- Room items will be dynamically added here -->
-        </div>
-        <div id="user-info-card">
-          <div class="user-avatar-container">
-            <playful-avatar id="user-avatar" name="User"></playful-avatar>
-            <div class="user-status-indicator"></div>
-          </div>
-          <div class="user-name" id="user-name-display">User</div>
-        </div>
-      </div>
-
-      <!-- Chatroom -->
-      <div id="chatroom">
-        <div id="chatlog">
-          <div id="spacer"></div>
-        </div>
-        <div id="reply-indicator" style="display: none">
-          <button type="button" class="reply-indicator-close">✕</button>
-          <span class="reply-indicator-text"></span>
-        </div>
-        <div id="main-chat-input-container">
-          <chat-input-component
-            id="chat-input"
-            placeholder="Type a message..."
-            rows="1"
-            min-height="32px"
-            max-height="150px"
-            show-file-upload="true"
-          ></chat-input-component>
-        </div>
-      </div>
-
-      <!-- Thread Panel -->
-      <div id="thread-panel">
-        <div id="thread-header">
-          <h3>💬 Thread</h3>
-          <button id="thread-close" title="Close thread">✕</button>
-        </div>
-        <div id="thread-original-message"></div>
-        <div id="thread-replies"></div>
-        <div id="thread-input-container">
-          <chat-input-component
-            id="thread-input"
-            placeholder="Reply in thread..."
-            rows="3"
-            min-height="60px"
-            max-height="120px"
-            show-file-upload="true"
-          ></chat-input-component>
-        </div>
-      </div>
-
-      <!-- Right Sidebar -->
-      <div id="right-sidebar">
-        <div id="room-info">
-          <h3>
-            <span>
-              <span>🏠 Room Info</span>
-              <span id="connection-status"></span>
-            </span>
-            <button
-              class="settings-btn"
-              id="btn-room-settings"
-              title="Room Settings"
-            >
-              ⚙️
-            </button>
-          </h3>
-          <div id="room-name-container">
-            <div id="room-name-display"></div>
-            <input type="text" id="room-name-input" />
-          </div>
-          <div id="room-description-container">
-            <div id="room-description-label">📝 Description (click to edit)</div>
-            <textarea
-              id="room-note"
-              placeholder="Add room description..."
-            ></textarea>
-          </div>
-          <div id="encryption-status" class="not-encrypted">
-            <span id="encryption-status-icon">🔓</span>
-            <span id="encryption-status-text">Not Encrypted</span>
-          </div>
-        </div>
-        <div id="roster-container">
-          <h3><span>👥</span><span>Online Members</span></h3>
-          <div id="roster"></div>
-        </div>
-        <div id="hashtag-container">
-          <h3><span>📌</span><span>Hashtags</span></h3>
-          <div id="hashtag-list"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Hashtag Filter Banner (inside main-container for proper positioning) -->
-    <div id="hashtag-filter-banner">
-      <span>Filtering by: <strong id="active-hashtag"></strong></span>
-      <button class="filter-clear-btn" onclick="clearHashtagFilter()">
-        Clear Filter ✕
-      </button>
-    </div>
-
-    <div id="mobile-top-bar">
+    <!-- Room Entry Form (shown before joining) -->
+    <form id="room-form" action="javascript:void(0)">
       <div style="width: 100%; max-width: 500px">
         <div style="margin-bottom: 1.5em">
           <label
@@ -1899,6 +1530,93 @@
         </button>
       </div>
     </form>
+
+    <!-- Global Titlebar -->
+    <div id="titlebar">
+      <div
+        id="titlebar-room-name"
+        contenteditable="true"
+        spellcheck="false"
+      ></div>
+    </div>
+
+    <!-- Main Container with Flex Layout -->
+    <div id="main-container">
+      <!-- Left Sidebar for Room Navigation -->
+      <div id="left-sidebar">
+        <div id="room-list-container">
+          <!-- Room items will be dynamically added here -->
+        </div>
+        <div id="user-info-card">
+          <div class="user-avatar-container">
+            <playful-avatar id="user-avatar" name="User"></playful-avatar>
+            <div class="user-status-indicator"></div>
+          </div>
+          <div class="user-name" id="user-name-display">User</div>
+        </div>
+      </div>
+
+      <!-- Chatroom -->
+      <div id="chatroom">
+        <div id="chatlog">
+          <div id="spacer"></div>
+        </div>
+        <div id="reply-indicator" style="display: none">
+          <button type="button" class="reply-indicator-close">✕</button>
+          <span class="reply-indicator-text"></span>
+        </div>
+        <div id="main-chat-input-container">
+          <chat-input-component
+            id="chat-input"
+            placeholder="Type a message..."
+            rows="1"
+            min-height="32px"
+            max-height="150px"
+            show-file-upload="true"
+          ></chat-input-component>
+        </div>
+      </div>
+
+      <!-- Thread Panel -->
+      <div id="thread-panel">
+        <div id="thread-header">
+          <h3>💬 Thread</h3>
+          <button id="thread-close" title="Close thread">✕</button>
+        </div>
+        <div id="thread-original-message"></div>
+        <div id="thread-replies"></div>
+        <div id="thread-input-container">
+          <chat-input-component
+            id="thread-input"
+            placeholder="Reply in thread..."
+            rows="3"
+            min-height="60px"
+            max-height="120px"
+            show-file-upload="true"
+          ></chat-input-component>
+        </div>
+      </div>
+
+      <!-- Right Sidebar -->
+      <div id="right-sidebar">
+        <div id="roster-container">
+          <h3><span>👥</span><span>Online Members</span></h3>
+          <div id="roster"></div>
+        </div>
+        <div id="hashtag-container">
+          <h3><span>📌</span><span>Hashtags</span></h3>
+          <div id="hashtag-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hashtag Filter Banner (inside main-container for proper positioning) -->
+    <div id="hashtag-filter-banner">
+      <span>Filtering by: <strong id="active-hashtag"></strong></span>
+      <button class="filter-clear-btn" onclick="clearHashtagFilter()">
+        Clear Filter ✕
+      </button>
+    </div>
 
     <div id="mobile-top-bar">
       <div id="mobile-top-bar-content">
