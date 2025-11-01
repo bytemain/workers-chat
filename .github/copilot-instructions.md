@@ -10,6 +10,8 @@ You must make the UI looks like simple and efficient as possible, while also bei
 And ui need to be responsive so it works well on both desktop and mobile devices.
 Something like title do not need to be bold or big font size, just compact, conscious.
 
+All icons must use [Remix Icon](https://remixicon.com/) library. You can use `remix-icon` mcp to get icons info.
+
 ## Core Architecture
 
 ### 1. Durable Objects Pattern (Critical)

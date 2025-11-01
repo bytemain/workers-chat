@@ -2156,6 +2156,12 @@ function renderChannelList() {
 function switchToChannel(channel) {
   currentChannel = channel;
 
+  // Update channel info bar
+  const channelNameDisplay = document.getElementById('channel-name-display');
+  if (channelNameDisplay) {
+    channelNameDisplay.textContent = channel;
+  }
+
   // Check if this channel exists in the current channel list
   const channelExists = allChannels.some(
     (c) => c.channel.toLowerCase() === channel.toLowerCase(),
@@ -2317,6 +2323,39 @@ function initChannelAddButton() {
   const addBtn = document.getElementById('channel-add-btn');
   if (addBtn) {
     addBtn.addEventListener('click', createNewChannel);
+  }
+}
+
+// Initialize channel info bar buttons
+function initChannelInfoBar() {
+  // Toggle members panel
+  const btnToggleMembers = document.getElementById('btn-toggle-members');
+  if (btnToggleMembers) {
+    btnToggleMembers.addEventListener('click', () => {
+      const rightSidebar = document.getElementById('right-sidebar');
+      if (rightSidebar) {
+        rightSidebar.classList.toggle('visible');
+        btnToggleMembers.classList.toggle('active');
+      }
+    });
+  }
+
+  // Show pinned messages (TODO: implement later)
+  const btnShowPins = document.getElementById('btn-show-pins');
+  if (btnShowPins) {
+    btnShowPins.addEventListener('click', () => {
+      console.log('Show pinned messages - to be implemented');
+      // TODO: Implement pinned messages modal
+    });
+  }
+
+  // Search messages (TODO: implement later)
+  const btnSearchMessages = document.getElementById('btn-search-messages');
+  if (btnSearchMessages) {
+    btnSearchMessages.addEventListener('click', () => {
+      console.log('Search messages - to be implemented');
+      // TODO: Implement search modal
+    });
   }
 }
 
@@ -2626,12 +2665,6 @@ async function startChat() {
   encryptionState.initialized = false;
   encryptionState.roomKey = null;
   encryptionState.isEncrypted = false;
-
-  // Show right sidebar
-  const rightSidebar = document.querySelector('#right-sidebar');
-  if (rightSidebar) {
-    rightSidebar.classList.add('visible');
-  }
 
   // Normalize the room name a bit.
   roomname = roomname
@@ -3803,6 +3836,8 @@ function join() {
         loadChannels().then(() => {
           // Initialize channel add button
           initChannelAddButton();
+          // Initialize channel info bar
+          initChannelInfoBar();
 
           // Check if there's a channel filter in the URL
           const urlParams = new URLSearchParams(window.location.search);
