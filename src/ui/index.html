@@ -818,10 +818,10 @@
         }
       }
 
-      /* Channel link styles */
+      /* Channel Panel Styles */
       #channel-panel {
         flex-shrink: 0;
-        width: 180px;
+        width: 240px;
         background: var(--background);
         border-right: 1px solid var(--border);
         display: flex;
@@ -829,55 +829,132 @@
         overflow: hidden;
       }
 
-      #channel-header {
+      /* Room Info Header */
+      #room-info-header {
         height: var(--header-height);
         display: flex;
         align-items: center;
+        justify-content: space-between;
         padding: 0 var(--spacing);
         border-bottom: 2px solid var(--border);
         background: var(--background-alt);
-        font-size: 0.9em;
-        font-weight: 600;
-        color: var(--text-main);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
         flex-shrink: 0;
       }
 
-      #channel-list {
+      #room-name-large {
+        font-size: 1.1em;
+        font-weight: 700;
+        color: var(--text-main);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+      }
+
+      #room-menu-btn {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        transition: var(--transition);
+        font-size: 1.2em;
+        color: var(--text-muted);
+        flex-shrink: 0;
+      }
+
+      #room-menu-btn:hover {
+        background: var(--background-body);
+        color: var(--text-main);
+      }
+
+      /* Scrollable Content */
+      #channel-panel-content {
         flex: 1;
         overflow-y: auto;
-        padding: var(--spacing-sm);
+        overflow-x: hidden;
+        padding: var(--spacing-sm) 0;
+      }
+
+      /* Channel Section */
+      .channel-section {
+        margin-bottom: var(--spacing);
+      }
+
+      .channel-section-header {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        cursor: pointer;
+        user-select: none;
+        transition: var(--transition);
+      }
+
+      .channel-section-header:hover {
+        background: var(--background-alt);
+      }
+
+      .section-toggle-btn {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+        font-size: 1em;
+        color: var(--text-muted);
+        padding: 0;
+      }
+
+      .channel-section-header.collapsed .section-toggle-btn {
+        transform: rotate(-90deg);
+      }
+
+      .section-title {
+        font-size: 0.75em;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        flex: 1;
+      }
+
+      /* Channel List */
+      .channel-section-list {
+        padding: 0 var(--spacing-xs);
+      }
+
+      .channel-section-header.collapsed + .channel-section-list {
+        display: none;
       }
 
       .channel-item {
-        background: var(--background);
-        border: 1px solid var(--border);
-        border-radius: var(--border-radius);
-        padding: var(--spacing-xs) var(--spacing-sm);
-        margin-bottom: var(--spacing-xs);
-        transition: var(--transition);
         display: flex;
-        justify-content: space-between;
         align-items: center;
+        gap: var(--spacing-xs);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        margin: 1px 0;
+        border-radius: var(--border-radius);
         cursor: pointer;
+        transition: var(--transition);
         position: relative;
       }
 
       .channel-item:hover {
         background: var(--background-alt);
-        border-color: var(--links);
-      }
-
-      .channel-item.active {
-        background: rgba(29, 161, 242, 0.1);
-        border-color: var(--links);
       }
 
       .channel-item.current {
-        font-weight: bold;
         background: var(--background-alt);
-        border-color: var(--links);
+        font-weight: 600;
       }
 
       .channel-item.current::before {
@@ -892,9 +969,19 @@
         border-radius: 0 2px 2px 0;
       }
 
+      .channel-item .channel-icon {
+        font-size: 1em;
+        color: var(--text-muted);
+        flex-shrink: 0;
+      }
+
+      .channel-item.current .channel-icon {
+        color: var(--text-main);
+      }
+
       .channel-name {
-        color: var(--links);
-        font-weight: 500;
+        color: var(--text-main);
+        font-size: 0.9em;
         flex: 1;
         min-width: 0;
         overflow: hidden;
@@ -904,9 +991,36 @@
 
       .channel-count {
         color: var(--text-muted);
-        font-size: 0.85em;
+        font-size: 0.75em;
+        font-weight: 600;
         flex-shrink: 0;
-        margin-left: var(--spacing-xs);
+      }
+
+      /* Add Button */
+      .section-add-btn {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        margin: var(--spacing-xs) var(--spacing-xs);
+        background: transparent;
+        border: none;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        transition: var(--transition);
+        font-size: 0.85em;
+        color: var(--text-muted);
+        font-family: inherit;
+        width: calc(100% - var(--spacing));
+      }
+
+      .section-add-btn:hover {
+        background: var(--background-alt);
+        color: var(--text-main);
+      }
+
+      .section-add-btn i {
+        font-size: 1.1em;
       }
 
       .channel-context-menu {
@@ -929,43 +1043,6 @@
 
       .channel-context-menu > div:hover {
         background: var(--background-alt);
-      }
-
-      #channel-add {
-        height: var(--footer-height);
-        display: flex;
-        align-items: center;
-        padding: 0 var(--spacing-sm);
-        border-top: 1px solid var(--border);
-        flex-shrink: 0;
-      }
-
-      #channel-add-btn {
-        width: 100%;
-        padding: var(--spacing-xs);
-        background: transparent;
-        border: 1px dashed var(--border);
-        border-radius: var(--border-radius);
-        cursor: pointer;
-        transition: var(--transition);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: var(--spacing-xs);
-        font-size: 0.85em;
-        color: var(--text-muted);
-        font-family: inherit;
-      }
-
-      #channel-add-btn:hover {
-        background: var(--background);
-        border-color: var(--links);
-        color: var(--links);
-      }
-
-      #channel-add-btn span:first-child {
-        font-size: 1.2em;
-        font-weight: bold;
       }
 
       @media (max-width: 600px) {
@@ -1794,13 +1871,47 @@
 
       <!-- Channel Panel -->
       <div id="channel-panel">
-        <div id="channel-header">Channels</div>
-        <div id="channel-list"></div>
-        <div id="channel-add">
-          <button id="channel-add-btn" title="Create a new channel">
-            <span>+</span>
-            <span>New Channel</span>
+        <!-- Room Info Header -->
+        <div id="room-info-header">
+          <div id="room-name-large">Room Name</div>
+          <button id="room-menu-btn" class="icon-btn" title="Room menu">
+            <i class="ri-more-fill"></i>
           </button>
+        </div>
+
+        <!-- Scrollable Content -->
+        <div id="channel-panel-content">
+          <!-- Channels Section -->
+          <div class="channel-section">
+            <div class="channel-section-header" data-section="channels">
+              <button class="section-toggle-btn">
+                <i class="ri-arrow-down-s-line"></i>
+              </button>
+              <span class="section-title">频道</span>
+            </div>
+            <div class="channel-section-list" id="channel-list"></div>
+            <button class="section-add-btn" id="channel-add-btn">
+              <i class="ri-add-line"></i>
+              <span>添加频道</span>
+            </button>
+          </div>
+
+          <!-- Direct Messages Section -->
+          <div class="channel-section">
+            <div class="channel-section-header" data-section="dms">
+              <button class="section-toggle-btn">
+                <i class="ri-arrow-down-s-line"></i>
+              </button>
+              <span class="section-title">私信</span>
+            </div>
+            <div class="channel-section-list" id="dm-list">
+              <!-- DM items will be added here -->
+            </div>
+            <button class="section-add-btn" id="dm-add-btn">
+              <i class="ri-add-line"></i>
+              <span>邀请人员</span>
+            </button>
+          </div>
         </div>
       </div>
 

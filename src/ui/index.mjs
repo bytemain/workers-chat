@@ -2109,7 +2109,7 @@ function renderChannelList() {
 
   if (visibleChannels.length === 0) {
     channelList.innerHTML =
-      '<div style="color:#999;font-size:0.85em;padding:8px;">No channels yet.</div>';
+      '<div style="color:var(--text-muted);font-size:0.85em;padding:8px;text-align:center;">暂无频道</div>';
     return;
   }
 
@@ -2124,24 +2124,26 @@ function renderChannelList() {
       div.classList.add('current');
     }
 
-    const contentWrapper = document.createElement('div');
-    contentWrapper.style.display = 'flex';
-    contentWrapper.style.alignItems = 'center';
-    contentWrapper.style.gap = '8px';
-    contentWrapper.style.flex = '1';
-    contentWrapper.style.cursor = 'pointer';
+    // Channel icon
+    const icon = document.createElement('span');
+    icon.className = 'channel-icon';
+    icon.innerHTML = '<i class="ri-hashtag"></i>';
 
+    // Channel name
     const nameSpan = document.createElement('span');
     nameSpan.className = 'channel-name';
-    nameSpan.textContent = '#' + item.channel;
-    contentWrapper.appendChild(nameSpan);
+    nameSpan.textContent = item.channel;
 
+    // Channel count
     const countSpan = document.createElement('span');
     countSpan.className = 'channel-count';
     countSpan.textContent = item.count || 0;
-    contentWrapper.appendChild(countSpan);
 
-    contentWrapper.onclick = () => {
+    div.appendChild(icon);
+    div.appendChild(nameSpan);
+    div.appendChild(countSpan);
+
+    div.onclick = () => {
       switchToChannel(item.channel);
     };
 
@@ -2151,7 +2153,6 @@ function renderChannelList() {
       showChannelContextMenu(e, item.channel);
     });
 
-    div.appendChild(contentWrapper);
     channelList.appendChild(div);
   });
 }
@@ -2359,6 +2360,31 @@ function initChannelInfoBar() {
     btnSearchMessages.addEventListener('click', () => {
       console.log('Search messages - to be implemented');
       // TODO: Implement search modal
+    });
+  }
+}
+
+// Initialize channel panel features
+function initChannelPanel() {
+  // Toggle section collapse
+  document.querySelectorAll('.channel-section-header').forEach((header) => {
+    header.addEventListener('click', () => {
+      header.classList.toggle('collapsed');
+    });
+  });
+
+  // Update room name in header
+  const roomNameLarge = document.getElementById('room-name-large');
+  if (roomNameLarge && documentTitlePrefix) {
+    roomNameLarge.textContent = documentTitlePrefix;
+  }
+
+  // DM add button (placeholder)
+  const dmAddBtn = document.getElementById('dm-add-btn');
+  if (dmAddBtn) {
+    dmAddBtn.addEventListener('click', () => {
+      console.log('Invite people - to be implemented');
+      // TODO: Implement DM functionality
     });
   }
 }
@@ -3842,6 +3868,8 @@ function join() {
           initChannelAddButton();
           // Initialize channel info bar
           initChannelInfoBar();
+          // Initialize channel panel features
+          initChannelPanel();
 
           // Check if there's a channel filter in the URL
           const urlParams = new URLSearchParams(window.location.search);
