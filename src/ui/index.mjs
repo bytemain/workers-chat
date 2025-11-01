@@ -1076,7 +1076,6 @@ let isAtBottom = true;
 
 let username;
 let roomname;
-let currentChannelFilter = null; // Current active channel filter
 let currentChannel = 'general'; // Current channel for sending messages
 let allChannels = []; // Cache of all channels
 let temporaryChannels = new Set(); // Track frontend-only temporary channels
@@ -1985,92 +1984,52 @@ function locateMessageInMainChat(messageId) {
   }
 }
 
-// Channel functionality
-window.filterByChannel = function (channel) {
-  // Normalize DM channel names before storing
-  let normalizedChannel = channel;
-  const lowerChannel = channel.toLowerCase();
+// Load messages for a specific channel from backend
+async function loadChannelMessages(channel) {
+  console.log('Loading messages for channel:', channel);
+  try {
+    // Show loading indicator
+    chatlog.innerHTML =
+      '<p style="text-align:center;color:#999;padding:20px;">Loading messages...</p>';
 
-  if (lowerChannel.startsWith('dm-')) {
-    const dmUsernameFromChannel = channel.substring(3);
+    // Fetch messages from backend
+    const data = await api.getChannelMessages(roomname, channel);
+    const messages = data.messages || [];
 
-    // Check if this matches current user (case-insensitive)
-    if (
-      username &&
-      dmUsernameFromChannel.toLowerCase() === username.toLowerCase()
-    ) {
-      // Normalize to use actual username case
-      normalizedChannel = `dm-${username}`;
+    // Clear chatlog and reset date tracker
+    chatlog.innerHTML = '';
+    lastMsgDateStr = null;
+
+    // Process and render all messages using addChatMessage for consistency
+    for (const msg of messages) {
+      // Decrypt message if encrypted
+      const decryptedMessage = await tryDecryptMessage(msg);
+
+      // Use addChatMessage to render (this will also cache and handle date separators)
+      addChatMessage(
+        msg.name,
+        decryptedMessage,
+        msg.timestamp,
+        {
+          messageId: msg.messageId,
+          replyTo: msg.replyTo,
+          threadInfo: msg.threadInfo,
+          channel: msg.channel || 'general',
+          editedAt: msg.editedAt || null,
+        },
+        { updateChannels: false },
+      );
     }
+
+    // Scroll to bottom
+    chatlog.scrollTop = chatlog.scrollHeight;
+    isAtBottom = true;
+  } catch (err) {
+    console.error('Failed to load channel messages:', err);
+    chatlog.innerHTML =
+      '<p style="text-align:center;color:#dc3545;padding:20px;">Failed to load messages</p>';
   }
-
-  currentChannelFilter = normalizedChannel;
-
-  // Update URL with channel filter (use normalized channel)
-  const url = new URL(window.location);
-  url.searchParams.set('channel', normalizedChannel);
-  window.history.pushState({}, '', url);
-
-  // Update active state in channel list
-  document.querySelectorAll('.channel-item').forEach((item) => {
-    if (
-      item.dataset.channel &&
-      item.dataset.channel.toLowerCase() === normalizedChannel.toLowerCase()
-    ) {
-      item.classList.add('active');
-    } else {
-      item.classList.remove('active');
-    }
-  });
-
-  // Filter messages in chatlog
-  const elements = chatlog.querySelectorAll('p.system-message');
-  elements.forEach((elem) => {
-    elem.style.display = 'none';
-  });
-
-  const messageWrappers = chatlog.querySelectorAll('div.message-wrapper');
-  messageWrappers.forEach((wrapper) => {
-    const chatMessage = wrapper.querySelector('chat-message');
-    if (chatMessage) {
-      const msgChannel = chatMessage.getAttribute('channel') || 'general';
-      wrapper.style.display =
-        msgChannel.toLowerCase() === normalizedChannel.toLowerCase()
-          ? 'block'
-          : 'none';
-    }
-  });
-
-  // Scroll to bottom
-  chatlog.scrollBy(0, 1e8);
-};
-
-window.clearChannelFilter = function () {
-  currentChannelFilter = null;
-
-  // Remove channel from URL
-  const url = new URL(window.location);
-  url.searchParams.delete('channel');
-  window.history.pushState({}, '', url);
-
-  // Clear active state
-  document.querySelectorAll('.channel-item').forEach((item) => {
-    item.classList.remove('active');
-  });
-
-  // Show all messages
-  const messages = chatlog.querySelectorAll('p.system-message');
-  messages.forEach((msg) => {
-    msg.style.display = 'block';
-  });
-  const messageWrappers = chatlog.querySelectorAll('div.message-wrapper');
-  messageWrappers.forEach((wrapper) => {
-    wrapper.style.display = 'block';
-  });
-
-  // Scroll to bottom
-  chatlog.scrollBy(0, 1e8);
-};
+}
 
 async function loadChannels() {
   try {
@@ -2136,9 +2095,7 @@ function renderChannelList() {
     const div = document.createElement('div');
     div.className = 'channel-item';
     div.dataset.channel = item.channel;
-    if (currentChannelFilter === item.channel) {
-      div.classList.add('active');
-    }
+
     if (currentChannel === item.channel) {
       div.classList.add('current');
     }
@@ -2177,7 +2134,7 @@ function renderChannelList() {
 }
 
 // Switch to a channel (sets it as current for sending messages)
-function switchToChannel(channel) {
+async function switchToChannel(channel) {
   // Normalize DM channel names: if it's a DM, ensure username case matches
   let normalizedChannel = channel;
   const lowerChannel = channel.toLowerCase();
@@ -2272,8 +2229,8 @@ function switchToChannel(channel) {
     }
   });
 
-  // Also filter messages by this channel
-  window.filterByChannel(normalizedChannel);
+  // Load channel messages from backend instead of just filtering
+  await loadChannelMessages(normalizedChannel);
 
   // Update mobile chat title if on mobile
   if (isMobile()) {
@@ -3714,14 +3671,19 @@ async function startChat() {
 let lastSeenTimestamp = 0;
 let wroteWelcomeMessages = false;
 let isReconnecting = false; // Track if this is a reconnection
-let pendingMessages = []; // Queue for messages during initial load
+let pendingMessages = []; // Queue for messages during initial load (legacy, may not be used)
 let isInitialLoad = true; // Flag to distinguish initial load from real-time messages
 
-// Process pending messages in order by timestamp (used during initial load)
+// Process pending messages in order by timestamp (legacy support)
+// Note: Server no longer sends backlog, so this is mainly for edge cases
 async function processPendingMessages() {
   if (pendingMessages.length === 0) {
     return;
   }
+
+  console.log(
+    `Processing ${pendingMessages.length} pending messages (legacy backlog)`,
+  );
 
   // Sort messages by timestamp to ensure correct order
   pendingMessages.sort((a, b) => a.timestamp - b.timestamp);
@@ -3729,16 +3691,21 @@ async function processPendingMessages() {
   // Process all pending messages
   for (const data of pendingMessages) {
     if (data.timestamp > lastSeenTimestamp) {
-      // Decrypt message if encrypted
-      let messageText = await tryDecryptMessage(data);
+      const messageChannel = data.channel || 'general';
 
-      addChatMessage(data.name, messageText, data.timestamp, {
-        messageId: data.messageId,
-        replyTo: data.replyTo,
-        threadInfo: data.threadInfo,
-        channel: data.channel || 'general', // Add channel support
-        editedAt: data.editedAt || null,
-      });
+      // Only add if it's for the current channel
+      if (messageChannel.toLowerCase() === currentChannel.toLowerCase()) {
+        // Decrypt message if encrypted
+        let messageText = await tryDecryptMessage(data);
+
+        addChatMessage(data.name, messageText, data.timestamp, {
+          messageId: data.messageId,
+          replyTo: data.replyTo,
+          threadInfo: data.threadInfo,
+          channel: messageChannel,
+          editedAt: data.editedAt || null,
+        });
+      }
       lastSeenTimestamp = data.timestamp;
     }
   }
@@ -3991,7 +3958,7 @@ function join() {
       addSystemMessage(`* ${data.quit} has left the room`);
     } else if (data.ready) {
       // All pre-join messages have been delivered.
-      // Process any pending messages in correct order (from initial load)
+      // Note: Server no longer sends backlog, we load channel messages via REST API
       await processPendingMessages();
 
       // Mark initial load as complete - subsequent messages will be processed immediately
@@ -4016,7 +3983,7 @@ function join() {
           addSystemMessage('* Welcome to ' + documentTitlePrefix + '. Say hi!');
         }
 
-        loadChannels().then(() => {
+        loadChannels().then(async () => {
           // Initialize channel add button
           initChannelAddButton();
           // Initialize channel info bar
@@ -4028,8 +3995,11 @@ function join() {
           const urlParams = new URLSearchParams(window.location.search);
           const channelParam = urlParams.get('channel');
           if (channelParam) {
-            // Switch to the channel from URL
-            switchToChannel(channelParam);
+            // Switch to the channel from URL (will load messages)
+            await switchToChannel(channelParam);
+          } else {
+            // No channel specified, load messages for default channel
+            await loadChannelMessages(currentChannel);
           }
 
           // Check if there's a thread ID in the URL
@@ -4043,6 +4013,11 @@ function join() {
         updateConnectionStatus('connected');
         // Reset reconnecting flag (status already updated in 'open' event)
         isReconnecting = false;
+
+        // Reload current channel messages after reconnection
+        if (currentChannel) {
+          await loadChannelMessages(currentChannel);
+        }
       }
     } else {
       // A regular chat message.
@@ -4052,22 +4027,37 @@ function join() {
       } else {
         // After initial load, process real-time messages immediately
         if (data.timestamp > lastSeenTimestamp) {
-          // Decrypt message if encrypted
-          let messageText = await tryDecryptMessage(data);
+          const messageChannel = data.channel || 'general';
 
-          addChatMessage(data.name, messageText, data.timestamp, {
-            messageId: data.messageId,
-            replyTo: data.replyTo,
-            threadInfo: data.threadInfo,
-            channel: data.channel || 'general', // Extract channel from message data
-            editedAt: data.editedAt || null,
-          });
+          // Only display message if it belongs to the current channel
+          if (messageChannel.toLowerCase() === currentChannel.toLowerCase()) {
+            // Decrypt message if encrypted
+            let messageText = await tryDecryptMessage(data);
+
+            addChatMessage(data.name, messageText, data.timestamp, {
+              messageId: data.messageId,
+              replyTo: data.replyTo,
+              threadInfo: data.threadInfo,
+              channel: messageChannel,
+              editedAt: data.editedAt || null,
+            });
+
+            // Scroll to bottom if we were at bottom (includes our own messages)
+            if (isAtBottom) {
+              chatlog.scrollBy(0, 1e8);
+            }
+          } else {
+            // Message is for a different channel, just update channel list
+            // (the count will be updated when we reload the channel list)
+            console.log(
+              `Message for #${messageChannel}, not displaying in current channel #${currentChannel}`,
+            );
+          }
+
           lastSeenTimestamp = data.timestamp;
 
-          // Scroll to bottom if we were at bottom (includes our own messages)
-          if (isAtBottom) {
-            chatlog.scrollBy(0, 1e8);
-          }
+          // Update channel list to reflect new message count
+          setTimeout(() => loadChannels(), 500);
         }
       }
     }
@@ -4351,12 +4341,16 @@ function showEditDialog(messageData) {
   document.addEventListener('keydown', escHandler);
 }
 
-function addChatMessage(name, text, ts, msgData = {}) {
+function addChatMessage(name, text, ts, msgData = {}, options = {}) {
   // ts: message timestamp (ms)
+  // options: { updateChannels: true } - whether to update channel list
   let timestamp = ts;
   if (typeof timestamp !== 'number') {
     timestamp = Date.now();
   }
+
+  // Default options
+  const updateChannels = options.updateChannels !== false;
 
   // Generate or use existing messageId
   const messageId =
@@ -4400,14 +4394,6 @@ function addChatMessage(name, text, ts, msgData = {}) {
 
   // Create message element using new function
   const messageElement = createMessageElement(messageData, false);
-
-  // Check if message should be hidden based on current channel filter
-  if (currentChannelFilter) {
-    const msgChannel = messageData.channel || 'general';
-    if (msgChannel.toLowerCase() !== currentChannelFilter.toLowerCase()) {
-      messageElement.style.display = 'none';
-    }
-  }
 
   // Append message to main chat
   chatlog.appendChild(messageElement);
@@ -4465,8 +4451,10 @@ function addChatMessage(name, text, ts, msgData = {}) {
     chatlog.scrollBy(0, 1e8);
   }
 
-  // Update channels list with the new message's channel
-  updateChannelsOnNewMessage(messageData.channel || 'general');
+  // Update channels list with the new message's channel (only if requested)
+  if (updateChannels) {
+    updateChannelsOnNewMessage(messageData.channel || 'general');
+  }
 }
 
 // Listen for hash changes to switch rooms

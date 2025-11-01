@@ -74,6 +74,17 @@ class ChatAPI {
     return await response.json();
   }
 
+  // Get messages for a specific channel
+  async getChannelMessages(roomName, channelName, limit = 100) {
+    const response = await fetch(
+      `${this.baseUrl}/room/${roomName}/channel/${channelName}/messages?limit=${limit}`,
+    );
+    if (!response.ok) {
+      throw new Error('Failed to load channel messages');
+    }
+    return await response.json();
+  }
+
   // Get WebSocket URL
   getWebSocketUrl(roomName) {
     const wss = window.location.protocol === 'http:' ? 'ws://' : 'wss://';

@@ -397,17 +397,19 @@ export class ChatRoom {
         return c.json({ channels });
       });
 
-      app.get('/channel', async (c) => {
-        const channel = c.req.query('channel');
-        if (!channel) {
-          return c.json({ error: "Missing 'channel' parameter" }, 400);
+      app.get('/channel/:channelName/messages', async (c) => {
+        const channelName = c.req.param('channelName');
+        const limit = parseInt(c.req.query('limit') || '100');
+
+        if (!channelName) {
+          return c.json({ error: "Missing 'channelName' parameter" }, 400);
         }
 
         const messages = await this.channelManager.getMessagesForChannel(
-          channel,
-          100,
+          channelName,
+          limit,
         );
-        return c.json({ channel, messages });
+        return c.json({ channel: channelName, messages });
       });
 
       app.get('/channel/search', async (c) => {
@@ -860,46 +862,6 @@ export class ChatRoom {
         );
       }
     }
-
-    // Load the last 100 messages from the chat history stored on disk, and send them to the
-    // client.
-    let storage = await this.storage.list({ reverse: true, limit: 100 });
-    // Convert to array and sort by message timestamp to ensure consistent ordering
-    let backlog = [...storage.values()];
-
-    // Parse messages and sort by timestamp
-    backlog = backlog
-      .map((value) => {
-        try {
-          const msg = typeof value === 'string' ? JSON.parse(value) : value;
-          let modified = false;
-
-          if (!msg.messageId && msg.timestamp && msg.name) {
-            // Generate legacy messageId for old messages
-            msg.messageId = `${msg.timestamp}-${msg.name}`;
-            modified = true;
-          }
-
-          // Set default channel for old messages if not present
-          if (!msg.channel) {
-            msg.channel = 'general';
-            modified = true;
-          }
-
-          return {
-            timestamp: msg.timestamp || 0,
-            value: modified ? JSON.stringify(msg) : value,
-          };
-        } catch (e) {
-          // If parsing fails, use original value with timestamp 0
-          return { timestamp: 0, value };
-        }
-      })
-      .sort((a, b) => a.timestamp - b.timestamp);
-
-    backlog.forEach((item) => {
-      session.blockedMessages.push(item.value);
-    });
   }
 
   async webSocketMessage(webSocket, msg) {
