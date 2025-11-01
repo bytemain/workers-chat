@@ -8,6 +8,10 @@ import { api } from './api.mjs';
 import { generateRandomUsername } from './utils/random.mjs';
 import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
 import tooltip from './tooltip.js';
+import { applyCSSConstants } from './constants.mjs';
+
+// Apply CSS constants on load
+applyCSSConstants();
 
 const cryptoPool = getCryptoPool();
 
