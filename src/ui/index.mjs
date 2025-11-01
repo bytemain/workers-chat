@@ -2123,6 +2123,15 @@ function renderChannelList() {
     nameSpan.className = 'channel-name';
     nameSpan.textContent = item.channel;
 
+    // Unread badge (only show if not current channel and has unread)
+    const unreadCount = getChannelUnreadCount(item.channel);
+    let unreadBadge = null;
+    if (unreadCount > 0 && currentChannel !== item.channel) {
+      unreadBadge = document.createElement('span');
+      unreadBadge.className = 'channel-unread-badge';
+      unreadBadge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+    }
+
     // Channel count
     const countSpan = document.createElement('span');
     countSpan.className = 'channel-count';
@@ -2130,6 +2139,9 @@ function renderChannelList() {
 
     div.appendChild(icon);
     div.appendChild(nameSpan);
+    if (unreadBadge) {
+      div.appendChild(unreadBadge);
+    }
     div.appendChild(countSpan);
 
     div.onclick = () => {
@@ -2168,6 +2180,9 @@ async function switchToChannel(channel) {
   }
 
   currentChannel = normalizedChannel;
+
+  // Clear unread count for this channel
+  clearChannelUnreadCount(normalizedChannel);
 
   // Update URL with channel parameter
   const url = new URL(window.location);
@@ -4056,8 +4071,8 @@ function join() {
               chatlog.scrollBy(0, 1e8);
             }
           } else {
-            // Message is for a different channel, just update channel list
-            // (the count will be updated when we reload the channel list)
+            // Message is for a different channel, increment unread count
+            incrementChannelUnreadCount(messageChannel);
             console.log(
               `Message for #${messageChannel}, not displaying in current channel #${currentChannel}`,
             );
@@ -4526,6 +4541,39 @@ function clearUnreadCount(roomName) {
   setUnreadCount(roomName, 0);
 }
 
+// Track unread counts for channels (within current room)
+const channelUnreadCounts = new Map();
+
+// Get unread count for a channel
+function getChannelUnreadCount(channelName) {
+  return channelUnreadCounts.get(channelName.toLowerCase()) || 0;
+}
+
+// Set unread count for a channel
+function setChannelUnreadCount(channelName, count) {
+  const key = channelName.toLowerCase();
+  if (count <= 0) {
+    channelUnreadCounts.delete(key);
+  } else {
+    channelUnreadCounts.set(key, count);
+  }
+  renderChannelList();
+  if (isMobile()) {
+    updateMobileChannelList();
+  }
+}
+
+// Increment unread count for a channel
+function incrementChannelUnreadCount(channelName) {
+  const current = getChannelUnreadCount(channelName);
+  setChannelUnreadCount(channelName, current + 1);
+}
+
+// Clear unread count for a channel
+function clearChannelUnreadCount(channelName) {
+  setChannelUnreadCount(channelName, 0);
+}
+
 // Update room list UI - Now using isolated room-list component
 function updateRoomListUI() {
   const roomDropdown = document.querySelector('#room-dropdown');
@@ -4799,12 +4847,18 @@ function updateMobileChannelList() {
       const div = document.createElement('div');
       div.className = 'mobile-channel-item';
 
+      const unreadCount = getChannelUnreadCount(item.channel);
+      const unreadBadgeHTML =
+        unreadCount > 0
+          ? `<span class="channel-unread-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>`
+          : '';
+
       div.innerHTML = `
         <div class="mobile-channel-item-icon">
           <i class="ri-hashtag"></i>
         </div>
         <div class="mobile-channel-item-content">
-          <div class="mobile-channel-item-name">${item.channel}</div>
+          <div class="mobile-channel-item-name">${item.channel}${unreadBadgeHTML}</div>
           <div class="mobile-channel-item-count">${item.count || 0} messages</div>
         </div>
         <div class="mobile-channel-item-arrow">
