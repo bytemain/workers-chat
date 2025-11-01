@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "github-mcp": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp"
+    },
+    "remix-icon": {
+      "command": "npx",
+      "args": ["-y", "remixicon-mcp"]
+    }
+  }
+}
