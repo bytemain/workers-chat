@@ -2675,7 +2675,7 @@ function hideRoomSelector() {
 
 // Room info state variables (declared at module level for WebSocket access)
 let urlRoomHash = ''; // Store the room hash from URL
-let titlebarRoomName = document.querySelector('#titlebar-room-name');
+let roomNameLarge = document.querySelector('#room-name-large');
 
 let documentTitlePrefix = '';
 const { state: roomInfo, subscribe: subscribeRoomInfo } = createReactiveState({
@@ -2871,6 +2871,7 @@ async function startChat() {
   addToRoomHistory(roomname);
 
   // Initialize reactive room info state
+  // Use a temporary default name, will be replaced by server data
   const initialRoomName =
     roomname.length === 64 ? 'Private Room' : '#' + roomname;
   urlRoomHash = roomname.length === 64 ? '' : '#' + roomname;
@@ -2879,24 +2880,21 @@ async function startChat() {
   // Set up reactive listener for document title updates
   subscribeRoomInfo((property, newValue, oldValue) => {
     if (property === 'name') {
-      // Update titlebar
-      if (titlebarRoomName) {
-        titlebarRoomName.textContent = newValue;
+      // Update room name display
+      if (roomNameLarge) {
+        roomNameLarge.textContent = newValue;
       }
 
-      // Update document title
+      // Update document title (don't append hash if already included)
       let title = newValue;
-      if (newValue && newValue !== roomname && urlRoomHash) {
-        title = newValue + ' ' + urlRoomHash;
-      }
       documentTitlePrefix = title;
       document.title = documentTitlePrefix + ' - Workers Chat';
     }
   });
 
   // Set initial display
-  if (titlebarRoomName) {
-    titlebarRoomName.textContent = roomInfo.name;
+  if (roomNameLarge) {
+    roomNameLarge.textContent = roomInfo.name;
   }
 
   documentTitlePrefix = roomInfo.name;
@@ -2906,7 +2904,8 @@ async function startChat() {
   async function loadRoomInfo() {
     try {
       const data = await api.getRoomInfo(roomname);
-      if (data.name) {
+      // Only update if server has a custom name, otherwise keep the default
+      if (data.name && data.name !== '') {
         roomInfo.name = data.name;
       }
       if (data.note) {
@@ -2931,23 +2930,23 @@ async function startChat() {
 
   loadRoomInfo();
 
-  // Titlebar room name editing
-  if (titlebarRoomName) {
+  // Room name editing (room-name-large in left sidebar)
+  if (roomNameLarge) {
     // Store original content when focusing
     let originalContent = '';
 
-    titlebarRoomName.addEventListener('focus', () => {
-      originalContent = titlebarRoomName.textContent;
+    roomNameLarge.addEventListener('focus', () => {
+      originalContent = roomNameLarge.textContent;
       // Select all text when focused
       const range = document.createRange();
-      range.selectNodeContents(titlebarRoomName);
+      range.selectNodeContents(roomNameLarge);
       const selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
     });
 
-    titlebarRoomName.addEventListener('blur', () => {
-      const newName = titlebarRoomName.textContent.trim();
+    roomNameLarge.addEventListener('blur', () => {
+      const newName = roomNameLarge.textContent.trim();
       if (newName && newName !== roomInfo.name) {
         roomInfo.isLocalUpdate = true;
         roomInfo.name = newName;
@@ -2958,23 +2957,23 @@ async function startChat() {
         }, 500);
       } else if (!newName) {
         // Restore original content if empty
-        titlebarRoomName.textContent = originalContent || roomInfo.name;
+        roomNameLarge.textContent = originalContent || roomInfo.name;
       }
     });
 
-    titlebarRoomName.addEventListener('keydown', (event) => {
+    roomNameLarge.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        titlebarRoomName.blur();
+        roomNameLarge.blur();
       } else if (event.key === 'Escape') {
         event.preventDefault();
-        titlebarRoomName.textContent = originalContent || roomInfo.name;
-        titlebarRoomName.blur();
+        roomNameLarge.textContent = originalContent || roomInfo.name;
+        roomNameLarge.blur();
       }
     });
 
     // Prevent line breaks in contenteditable
-    titlebarRoomName.addEventListener('paste', (event) => {
+    roomNameLarge.addEventListener('paste', (event) => {
       event.preventDefault();
       const text = (event.clipboardData || window.clipboardData).getData(
         'text/plain',
@@ -3811,25 +3810,22 @@ function join() {
       }
     } else if (data.roomInfoUpdate) {
       // Room info has been updated, refresh the display
-      // Skip if this is our own update to avoid flickering
-      if (!roomInfo.isLocalUpdate) {
-        const info = data.roomInfoUpdate;
-        let updated = false;
+      const info = data.roomInfoUpdate;
+      let updated = false;
 
-        if (info.name !== undefined && info.name !== roomInfo.name) {
-          roomInfo.name = info.name;
-          updated = true;
-        }
+      if (info.name !== undefined && info.name !== roomInfo.name) {
+        roomInfo.name = info.name;
+        updated = true;
+      }
 
-        if (info.note !== undefined && info.note !== roomInfo.description) {
-          roomInfo.description = info.note;
-          updated = true;
-        }
+      if (info.note !== undefined && info.note !== roomInfo.description) {
+        roomInfo.description = info.note;
+        updated = true;
+      }
 
-        // Show a notification that room info was updated
-        if (updated) {
-          addSystemMessage('* Room info has been updated');
-        }
+      // Show a notification that room info was updated (only if not from local edit)
+      if (updated && !roomInfo.isLocalUpdate) {
+        addSystemMessage('* Room info has been updated');
       }
     } else if (data.destructionUpdate) {
       // Handle room destruction updates

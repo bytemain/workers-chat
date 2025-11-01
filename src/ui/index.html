@@ -55,49 +55,6 @@
         max-width: 100vw;
       }
 
-      #titlebar {
-        flex-shrink: 0;
-        height: var(--header-height);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--background);
-        border-bottom: 1px solid var(--border);
-        padding: 0 var(--spacing);
-        z-index: 100;
-      }
-
-      #titlebar-room-name {
-        font-size: 0.95em;
-        font-weight: 500;
-        color: var(--text-main);
-        padding: 4px 10px;
-        border-radius: var(--border-radius);
-        outline: none;
-        cursor: text;
-        transition: background-color 0.2s ease;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 500px;
-      }
-
-      #titlebar-room-name:hover {
-        background: var(--background-alt);
-      }
-
-      #titlebar-room-name:focus {
-        background: var(--background-body);
-        box-shadow: 0 0 0 2px var(--links);
-      }
-
-      #titlebar-room-name:empty::before {
-        content: 'Click to set room name';
-        color: var(--text-muted);
-        font-style: italic;
-        font-size: 0.9em;
-      }
-
       #main-container {
         flex: 1;
         display: flex;
@@ -735,10 +692,6 @@
         }
 
         /* Chat Page - hide desktop elements */
-        #mobile-chat-page.active ~ #titlebar {
-          display: none !important;
-        }
-
         body:has(#mobile-chat-page.active) #channel-panel {
           display: none !important;
         }
@@ -779,18 +732,12 @@
         }
 
         /* Hide channel list page content on desktop */
-        body:has(#mobile-channel-list-page.active) #titlebar,
         body:has(#mobile-channel-list-page.active) #main-container {
           display: none !important;
         }
 
         /* Hide channel info bar on mobile */
         #channel-info-bar {
-          display: none;
-        }
-
-        /* Hide titlebar on mobile (use mobile-top-bar instead) */
-        #titlebar {
           display: none;
         }
 
@@ -975,6 +922,27 @@
         display: flex;
         align-items: center;
         gap: var(--spacing-xs);
+        padding: 4px 8px;
+        border-radius: var(--border-radius);
+        outline: none;
+        cursor: text;
+        transition: background-color 0.2s ease;
+      }
+
+      #room-name-large:hover {
+        background: var(--background-alt);
+      }
+
+      #room-name-large:focus {
+        background: var(--background-body);
+        box-shadow: 0 0 0 2px var(--links);
+      }
+
+      #room-name-large:empty::before {
+        content: 'Click to set room name';
+        color: var(--text-muted);
+        font-style: italic;
+        font-size: 0.9em;
       }
 
       #room-name-large::after {
@@ -1765,22 +1733,15 @@
   </head>
 
   <body>
-    <!-- Global Titlebar -->
-    <div id="titlebar">
-      <div
-        id="titlebar-room-name"
-        contenteditable="true"
-        spellcheck="false"
-      ></div>
-    </div>
-
     <!-- Main Container with Flex Layout -->
     <div id="main-container">
       <!-- Channel Panel -->
       <div id="channel-panel">
         <!-- Room Info Header with Dropdown -->
         <div id="room-info-header">
-          <div id="room-name-large">Select a Room</div>
+          <div id="room-name-large" contenteditable="true" spellcheck="false">
+            Select a Room
+          </div>
           <button id="room-menu-btn" class="icon-btn" title="Room menu">
             <i class="ri-more-fill"></i>
           </button>
