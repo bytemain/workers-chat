@@ -1258,6 +1258,8 @@
         border-right: 1px solid var(--border);
         overflow-y: auto;
         overflow-x: hidden;
+        position: relative;
+        z-index: 100;
       }
 
       #room-list-container {
@@ -1335,21 +1337,42 @@
 
       /* User Info Card at Bottom */
       #user-info-card {
-        position: relative;
+        position: fixed;
+        bottom: 0;
+        left: 0;
         padding: var(--spacing-sm);
         background: var(--background-body);
         border-top: 1px solid var(--border);
+        border-right: 1px solid var(--border);
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         align-items: center;
-        gap: var(--spacing-xs);
-        flex-shrink: 0;
+        justify-content: center;
+        gap: var(--spacing-sm);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        width: 72px;
+        z-index: 9999;
+        box-sizing: border-box;
+      }
+
+      #user-info-card:hover {
+        width: 280px;
+        background: var(--background-alt);
+        box-shadow: 2px -4px 12px rgba(0, 0, 0, 0.2);
+        border-radius: 0 var(--border-radius) 0 0;
+        justify-content: flex-start;
       }
 
       #user-info-card .user-avatar-container {
         position: relative;
         width: 40px;
         height: 40px;
+        flex-shrink: 0;
+      }
+
+      #user-info-card:hover .user-avatar-container {
+        margin-left: 10px;
       }
 
       #user-info-card playful-avatar {
@@ -1375,15 +1398,62 @@
         border-radius: 50%;
       }
 
+      #user-info-card .user-info-text {
+        display: none;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+        flex: 1;
+      }
+
+      #user-info-card:hover .user-info-text {
+        display: flex;
+      }
+
       #user-info-card .user-name {
-        font-size: 0.75em;
+        font-size: 0.9em;
         font-weight: 600;
         color: var(--text-main);
-        text-align: center;
-        max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      #user-info-card .user-status {
+        font-size: 0.75em;
+        color: var(--text-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #user-info-card .user-actions {
+        display: none;
+        gap: var(--spacing-xs);
+      }
+
+      #user-info-card:hover .user-actions {
+        display: flex;
+      }
+
+      #user-info-card .user-action-btn {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        transition: var(--transition);
+        font-size: 1.2em;
+        color: var(--text-muted);
+      }
+
+      #user-info-card .user-action-btn:hover {
+        background: var(--background);
+        color: var(--text-main);
       }
 
       /* Room Context Menu */
@@ -1445,10 +1515,29 @@
         }
 
         #user-info-card {
+          position: static;
           flex-direction: row;
           border-top: none;
+          border-right: none;
           border-left: 1px solid var(--border);
           padding: var(--spacing-xs) var(--spacing-sm);
+          width: auto;
+          order: 2;
+        }
+
+        #user-info-card:hover {
+          width: auto;
+          box-shadow: none;
+          border-radius: 0;
+        }
+
+        #room-list-container {
+          order: 1;
+        }
+
+        #user-info-card .user-info-text,
+        #user-info-card .user-actions {
+          display: none;
         }
 
         #chatroom {
@@ -1582,12 +1671,26 @@
         <div id="room-list-container">
           <!-- Room items will be dynamically added here -->
         </div>
-        <div id="user-info-card">
-          <div class="user-avatar-container">
-            <playful-avatar id="user-avatar" name="User"></playful-avatar>
-            <div class="user-status-indicator"></div>
-          </div>
+      </div>
+
+      <!-- User Info Card (Fixed at bottom-left) -->
+      <div id="user-info-card">
+        <div class="user-avatar-container">
+          <playful-avatar id="user-avatar" name="User"></playful-avatar>
+          <div class="user-status-indicator"></div>
+        </div>
+        <div class="user-info-text">
           <div class="user-name" id="user-name-display">User</div>
+          <div class="user-status">Online</div>
+        </div>
+        <div class="user-actions">
+          <button
+            class="user-action-btn"
+            title="Settings"
+            id="user-settings-btn"
+          >
+            <i class="ri-settings-2-line"></i>
+          </button>
         </div>
       </div>
 

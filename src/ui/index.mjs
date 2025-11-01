@@ -1144,6 +1144,9 @@ function updateConnectionStatus(status) {
     clearTimeout(connectionStatusTimeout);
     connectionStatusTimeout = null;
   }
+  if (!connectionStatus) {
+    return;
+  }
 
   // Remove all status classes
   connectionStatus.classList.remove('connected', 'reconnecting', 'error');
@@ -4444,10 +4447,39 @@ function updateUserInfoCard() {
   }
 }
 
+// Initialize user action buttons
+function initUserActionButtons() {
+  const settingsBtn = document.querySelector('#user-settings-btn');
+  const muteBtn = document.querySelector('#user-mute-btn');
+
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Open room settings modal
+      const modal = document.querySelector('#room-settings-modal');
+      if (modal) {
+        modal.style.display = 'flex';
+      }
+    });
+  }
+
+  if (muteBtn) {
+    let isMuted = false;
+    muteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isMuted = !isMuted;
+      muteBtn.textContent = isMuted ? '🔊' : '🔇';
+      muteBtn.title = isMuted ? 'Unmute' : 'Mute';
+      // TODO: Implement actual mute functionality
+    });
+  }
+}
+
 // Initialize left sidebar when chat starts
 function initializeLeftSidebar() {
   updateRoomListUI();
   updateUserInfoCard();
+  initUserActionButtons();
 
   // Show left sidebar when in a room
   const leftSidebar = document.querySelector('#left-sidebar');
