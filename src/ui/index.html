@@ -38,7 +38,7 @@
 
       #chatroom {
         position: fixed;
-        top: 0;
+        top: 36px;
         bottom: 0;
         left: var(--left-sidebar-width);
         right: 200px;
@@ -47,6 +47,52 @@
         transition:
           right 0.3s ease,
           left 0.3s ease;
+      }
+
+      #titlebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--background);
+        border-bottom: 1px solid var(--border);
+        padding: 0 var(--spacing);
+        z-index: 100;
+      }
+
+      #titlebar-room-name {
+        font-size: 0.95em;
+        font-weight: 500;
+        color: var(--text-main);
+        padding: 4px 10px;
+        border-radius: var(--border-radius);
+        outline: none;
+        cursor: text;
+        transition: background-color 0.2s ease;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 500px;
+      }
+
+      #titlebar-room-name:hover {
+        background: var(--background-alt);
+      }
+
+      #titlebar-room-name:focus {
+        background: var(--background-body);
+        box-shadow: 0 0 0 2px var(--links);
+      }
+
+      #titlebar-room-name:empty::before {
+        content: 'Click to set room name';
+        color: var(--text-muted);
+        font-style: italic;
+        font-size: 0.9em;
       }
 
       #chatlog {
@@ -204,7 +250,7 @@
       #right-sidebar {
         position: fixed;
         right: 0;
-        top: 0;
+        top: 36px;
         bottom: 0;
         width: 200px;
         display: none;
@@ -671,6 +717,11 @@
           display: none !important;
         }
 
+        /* Hide titlebar on mobile (use mobile-top-bar instead) */
+        #titlebar {
+          display: none;
+        }
+
         #chatroom {
           top: 48px !important;
         }
@@ -988,7 +1039,7 @@
 
       #hashtag-filter-banner {
         position: fixed;
-        top: 0;
+        top: 36px;
         left: 0;
         right: 200px;
         background: #fff3cd;
@@ -1006,7 +1057,8 @@
 
       /* When filter banner is visible, adjust chatroom top position */
       body:has(#hashtag-filter-banner.visible) #chatroom {
-        top: 41px;
+        top: 77px;
+        /* 36px (titlebar) + 41px (filter banner) */
       }
 
       .filter-clear-btn {
@@ -1028,7 +1080,7 @@
       #thread-panel {
         position: fixed;
         right: 200px;
-        top: 0;
+        top: 36px;
         bottom: 0;
         width: 400px;
         background: var(--background);
@@ -1403,7 +1455,7 @@
       #left-sidebar {
         position: fixed;
         left: 0;
-        top: 0;
+        top: 36px;
         bottom: 0;
         width: var(--left-sidebar-width);
         background: var(--background-alt);
@@ -1585,6 +1637,7 @@
         #left-sidebar {
           width: 100%;
           height: 60px;
+          top: 0;
           bottom: auto;
           flex-direction: row;
           border-right: none;
@@ -1631,6 +1684,11 @@
   </head>
 
   <body>
+    <!-- Global Titlebar -->
+    <div id="titlebar">
+      <div id="titlebar-room-name" contenteditable="true" spellcheck="false"></div>
+    </div>
+
     <!-- Left Sidebar for Room Navigation -->
     <div id="left-sidebar">
       <div id="room-list-container">

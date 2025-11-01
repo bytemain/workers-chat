@@ -2146,6 +2146,7 @@ function startRoomChooser() {
 
 // Room info state variables (declared at module level for WebSocket access)
 let urlRoomHash = ''; // Store the room hash from URL
+let titlebarRoomName = document.querySelector('#titlebar-room-name');
 let roomInfoNameDisplay = document.querySelector('#room-name-display');
 let roomInfoNameInput = document.querySelector('#room-name-input');
 let roomInfoNoteTextarea = document.querySelector('#room-note');
@@ -2361,6 +2362,11 @@ async function startChat() {
   subscribeRoomInfo((property, newValue, oldValue) => {
     if (property === 'name') {
       roomInfoNameDisplay.textContent = newValue;
+      
+      // Update titlebar
+      if (titlebarRoomName) {
+        titlebarRoomName.textContent = newValue;
+      }
 
       // Update mobile top bar title
       if (mobileTopBarTitle) {
@@ -2388,6 +2394,9 @@ async function startChat() {
 
   // Set initial display
   roomInfoNameDisplay.textContent = roomInfo.name;
+  if (titlebarRoomName) {
+    titlebarRoomName.textContent = roomInfo.name;
+  }
   if (mobileTopBarTitle) {
     mobileTopBarTitle.textContent = roomInfo.name;
   }
@@ -2499,6 +2508,58 @@ async function startChat() {
   roomInfoNoteTextarea.addEventListener('click', (event) => {
     event.stopPropagation();
   });
+
+  // Titlebar room name editing
+  if (titlebarRoomName) {
+    // Store original content when focusing
+    let originalContent = '';
+    
+    titlebarRoomName.addEventListener('focus', () => {
+      originalContent = titlebarRoomName.textContent;
+      // Select all text when focused
+      const range = document.createRange();
+      range.selectNodeContents(titlebarRoomName);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+
+    titlebarRoomName.addEventListener('blur', () => {
+      const newName = titlebarRoomName.textContent.trim();
+      if (newName && newName !== roomInfo.name) {
+        roomInfo.isLocalUpdate = true;
+        roomInfo.name = newName;
+        saveRoomInfo();
+        // Reset flag after a short delay
+        setTimeout(() => {
+          roomInfo.isLocalUpdate = false;
+        }, 500);
+      } else if (!newName) {
+        // Restore original content if empty
+        titlebarRoomName.textContent = originalContent || roomInfo.name;
+      }
+    });
+
+    titlebarRoomName.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        titlebarRoomName.blur();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        titlebarRoomName.textContent = originalContent || roomInfo.name;
+        titlebarRoomName.blur();
+      }
+    });
+
+    // Prevent line breaks in contenteditable
+    titlebarRoomName.addEventListener('paste', (event) => {
+      event.preventDefault();
+      const text = (event.clipboardData || window.clipboardData).getData('text/plain');
+      // Remove line breaks and insert as plain text
+      const cleanText = text.replace(/[\r\n]+/g, ' ');
+      document.execCommand('insertText', false, cleanText);
+    });
+  }
 
   // Room Settings Modal
   const roomSettingsModal = document.querySelector('#room-settings-modal');
