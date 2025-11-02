@@ -2103,17 +2103,19 @@
             show-file-upload="true"
           ></chat-input-component>
           <div
-            id="markdown-hint"
             style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              padding: 4px 8px;
               font-size: 0.75em;
               color: var(--text-muted);
-              padding: 4px 8px;
-              display: none;
-              opacity: 0.7;
             "
-            title="**bold** *italic* `code` [link](url) > quote"
           >
-            💡 Markdown: **bold** *italic* `code`
+            <div
+              id="char-count"
+              style="text-align: right; color: #666; display: none"
+            ></div>
           </div>
         </div>
       </div>
@@ -2135,6 +2137,16 @@
             max-height="120px"
             show-file-upload="true"
           ></chat-input-component>
+          <div
+            id="thread-char-count"
+            style="
+              text-align: right;
+              color: #666;
+              font-size: 0.75em;
+              padding: 4px 8px;
+              display: none;
+            "
+          ></div>
         </div>
       </div>
 

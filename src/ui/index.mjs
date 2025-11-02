@@ -3597,11 +3597,41 @@ async function startChat() {
 
   // Setup main chat input
   if (chatInputComponent) {
+    // Setup character count display
+    const charCountElement = document.getElementById('char-count');
+    if (charCountElement && chatInputComponent.textarea) {
+      const updateCharCount = () => {
+        const length = chatInputComponent.textarea.value.length;
+        
+        // Only show character count when over 20000 characters
+        if (length > 20000) {
+          charCountElement.textContent = `${length} / ${MAX_MESSAGE_LENGTH}`;
+          charCountElement.style.color =
+            length > MAX_MESSAGE_LENGTH ? '#dc3545' : '#666';
+          charCountElement.style.display = 'block';
+        } else {
+          charCountElement.style.display = 'none';
+        }
+      };
+
+      // Update on input
+      chatInputComponent.textarea.addEventListener('input', updateCharCount);
+
+      // Initial update
+      updateCharCount();
+    }
+
     // Handle submit events from the component
     chatInputComponent.addEventListener('submit', (event) => {
       const message = event.detail.message;
 
       if (message.length > 0) {
+        // Check message length before sending
+        if (message.length > MAX_MESSAGE_LENGTH) {
+          alert(`Message is too long (max ${MAX_MESSAGE_LENGTH} characters)`);
+          return;
+        }
+
         // Send message using userApi
         const sent = userApi.sendMessage(message, currentReplyTo);
 
@@ -3730,6 +3760,33 @@ async function startChat() {
 
   // Setup thread input component
   if (threadInputComponent) {
+    // Setup character count display for thread input
+    const threadCharCountElement = document.getElementById('thread-char-count');
+    if (threadCharCountElement && threadInputComponent.textarea) {
+      const updateThreadCharCount = () => {
+        const length = threadInputComponent.textarea.value.length;
+        
+        // Only show character count when over 20000 characters
+        if (length > 20000) {
+          threadCharCountElement.textContent = `${length} / ${MAX_MESSAGE_LENGTH}`;
+          threadCharCountElement.style.color =
+            length > MAX_MESSAGE_LENGTH ? '#dc3545' : '#666';
+          threadCharCountElement.style.display = 'block';
+        } else {
+          threadCharCountElement.style.display = 'none';
+        }
+      };
+
+      // Update on input
+      threadInputComponent.textarea.addEventListener(
+        'input',
+        updateThreadCharCount,
+      );
+
+      // Initial update
+      updateThreadCharCount();
+    }
+
     threadInputComponent.addEventListener('submit', (event) => {
       sendThreadReply();
     });
@@ -3821,6 +3878,12 @@ async function startChat() {
 
     const message = threadInputComponent.getValue().trim();
     if (!message) return;
+
+    // Check message length before sending
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      alert(`Message is too long (max ${MAX_MESSAGE_LENGTH} characters)`);
+      return;
+    }
 
     const originalMessage = messagesCache.get(currentThreadId);
     if (!originalMessage) return;
