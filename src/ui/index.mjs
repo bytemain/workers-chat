@@ -12,9 +12,18 @@ import tooltip from './tooltip.js';
 import { applyCSSConstants } from './constants.mjs';
 import { updateRoomList } from './room-list.mjs';
 import * as MobileUI from './mobile.mjs';
+import { initCryptoCompatCheck } from '../common/crypto-compat.js';
 
 // Apply CSS constants on load
 applyCSSConstants();
+
+// Check Crypto API compatibility early
+const cryptoSupported = initCryptoCompatCheck();
+if (!cryptoSupported) {
+  console.warn(
+    '⚠️ Crypto API not supported, encryption features will be disabled',
+  );
+}
 
 const cryptoPool = getCryptoPool();
 
@@ -1362,6 +1371,17 @@ function showPasswordDialog(roomData, currentPassword = null) {
  * @returns {Promise<boolean>} Whether initialization succeeded
  */
 async function initializeRoomEncryption(roomId) {
+  // Check if Crypto API is supported first
+  if (!cryptoSupported) {
+    console.warn(
+      '⚠️ Crypto API not supported, skipping encryption initialization',
+    );
+    encryptionState.roomKey = null;
+    encryptionState.isEncrypted = false;
+    encryptionState.initialized = true;
+    return true;
+  }
+
   // If already initialized in this session, reuse the current state
   if (encryptionState.initialized) {
     console.log('🔐 Encryption already initialized, reusing current state');
@@ -1515,8 +1535,8 @@ class UserMessageAPI {
 
     let messageToSend = message;
 
-    // Encrypt message if room is encrypted
-    if (isRoomEncrypted && currentRoomKey) {
+    // Encrypt message if room is encrypted AND crypto is supported
+    if (isRoomEncrypted && currentRoomKey && cryptoSupported) {
       try {
         console.log('🔒 Encrypting message via worker pool...');
 
@@ -1538,6 +1558,12 @@ class UserMessageAPI {
         alert('Failed to encrypt message. Please check your connection.');
         return false;
       }
+    } else if (isRoomEncrypted && currentRoomKey && !cryptoSupported) {
+      // Crypto not supported but room is encrypted
+      alert(
+        '⚠️ Cannot send encrypted message: Your browser does not support encryption.\n\nPlease use a modern browser like Chrome, Firefox, or Safari.',
+      );
+      return false;
     }
 
     const payload = {
@@ -2805,6 +2831,15 @@ function handleDestructionUpdate(data) {
 async function tryDecryptMessage(data) {
   let messageText = data.message;
   if (CryptoUtils.isEncrypted(data.message)) {
+    // Check if crypto is supported
+    if (!cryptoSupported) {
+      console.warn(
+        '⚠️ Received encrypted message but crypto API is not supported',
+      );
+      messageText = '[Encrypted message - browser not supported]';
+      return messageText;
+    }
+
     if (isRoomEncrypted && currentRoomKey) {
       try {
         console.log('🔓 Decrypting message via worker pool...');
@@ -3607,8 +3642,8 @@ async function startChat() {
       let fileToUpload = file;
       let uploadFileName = fileName || file.name;
 
-      // Encrypt file if room is encrypted
-      if (isRoomEncrypted && currentRoomKey) {
+      // Encrypt file if room is encrypted AND crypto is supported
+      if (isRoomEncrypted && currentRoomKey && cryptoSupported) {
         try {
           console.log('🔒 Encrypting file...');
           addSystemMessage(`* Encrypting file: ${uploadFileName}...`);
@@ -3631,6 +3666,12 @@ async function startChat() {
           addSystemMessage('* Failed to encrypt file: ' + error.message);
           return false;
         }
+      } else if (isRoomEncrypted && currentRoomKey && !cryptoSupported) {
+        // Room is encrypted but crypto not supported
+        addSystemMessage(
+          '* Cannot upload encrypted file: Your browser does not support encryption. Please use a modern browser.',
+        );
+        return false;
       }
 
       // Create form data
