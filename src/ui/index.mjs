@@ -27,6 +27,17 @@ if (!cryptoSupported) {
 
 const cryptoPool = getCryptoPool();
 
+// Configure marked.js for Markdown rendering (one-time setup)
+if (typeof marked !== 'undefined') {
+  marked.setOptions({
+    breaks: true, // GFM line breaks
+    gfm: true, // GitHub Flavored Markdown
+    headerIds: false, // Don't generate header IDs
+    mangle: false, // Don't escape email addresses
+  });
+  console.log('✅ Marked.js configured for Markdown rendering');
+}
+
 // Chat input component custom element
 class ChatInputComponent extends HTMLElement {
   constructor() {
@@ -918,6 +929,187 @@ class ChatMessage extends HTMLElement {
   }
 
   renderTextMessage(text, container) {
+    // Check if marked and DOMPurify are available
+    if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+      // Fallback to plain text rendering
+      this.renderPlainTextMessage(text, container);
+      return;
+    }
+
+    // Simple heuristic to detect if text contains Markdown syntax
+    const hasMarkdown = /[*_`[\]#>~\-]|\n\n/.test(text);
+
+    if (!hasMarkdown) {
+      // Fast path: no Markdown detected, use plain text rendering
+      this.renderPlainTextMessage(text, container);
+      return;
+    }
+
+    try {
+      // Parse Markdown
+      const rawHtml = marked.parse(text);
+
+      // Sanitize HTML with DOMPurify
+      const cleanHtml = DOMPurify.sanitize(rawHtml, {
+        ALLOWED_TAGS: [
+          'p',
+          'br',
+          'strong',
+          'b',
+          'em',
+          'i',
+          'code',
+          'pre',
+          'a',
+          'ul',
+          'ol',
+          'li',
+          'blockquote',
+          'h1',
+          'h2',
+          'h3',
+          'h4',
+          'h5',
+          'h6',
+          'del',
+          'hr',
+          'table',
+          'thead',
+          'tbody',
+          'tr',
+          'th',
+          'td',
+          'img',
+        ],
+        ALLOWED_ATTR: [
+          'href',
+          'target',
+          'rel',
+          'class',
+          'src',
+          'alt',
+          'loading',
+        ],
+        ALLOWED_URI_REGEXP:
+          /^(?:(?:(?:f|ht)tps?|mailto|tel|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+      });
+
+      // Create a wrapper div for markdown content
+      const markdownDiv = document.createElement('div');
+      markdownDiv.className = 'message-markdown';
+      markdownDiv.innerHTML = cleanHtml;
+
+      // Post-process: ensure all links open in new tab
+      markdownDiv.querySelectorAll('a').forEach((link) => {
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.style.color = '#0066cc';
+      });
+
+      // Post-process: handle channel links (e.g., #channel-name)
+      this.processChannelLinks(markdownDiv);
+
+      // Post-process: convert img tags to lazy-img custom elements
+      markdownDiv.querySelectorAll('img').forEach((img) => {
+        const lazyImg = document.createElement('lazy-img');
+        lazyImg.setAttribute('src', img.src);
+        if (img.alt) lazyImg.setAttribute('alt', img.alt);
+        img.replaceWith(lazyImg);
+      });
+
+      container.appendChild(markdownDiv);
+    } catch (error) {
+      console.error('Error rendering markdown:', error);
+      // Fallback to plain text on error
+      this.renderPlainTextMessage(text, container);
+    }
+  }
+
+  // Process channel links in markdown content
+  processChannelLinks(container) {
+    const channelRegex = /#([a-zA-Z0-9_\-\u4e00-\u9fa5]{2,32})/g;
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false,
+    );
+
+    const textNodes = [];
+    while (walker.nextNode()) {
+      // Skip text nodes inside code blocks
+      if (
+        walker.currentNode.parentElement.tagName === 'CODE' ||
+        walker.currentNode.parentElement.tagName === 'PRE'
+      ) {
+        continue;
+      }
+      textNodes.push(walker.currentNode);
+    }
+
+    textNodes.forEach((textNode) => {
+      const text = textNode.textContent;
+      if (!channelRegex.test(text)) return;
+
+      const fragment = document.createDocumentFragment();
+      let lastIndex = 0;
+      channelRegex.lastIndex = 0;
+      let match;
+
+      while ((match = channelRegex.exec(text)) !== null) {
+        // Add text before match
+        if (match.index > lastIndex) {
+          fragment.appendChild(
+            document.createTextNode(text.substring(lastIndex, match.index)),
+          );
+        }
+
+        // Create channel link
+        const channelName = match[1];
+        const channelLink = document.createElement('a');
+        channelLink.href = '#';
+        channelLink.className = 'channel-link';
+        channelLink.textContent = '#' + channelName;
+        channelLink.dataset.channel = channelName;
+        channelLink.style.color = '#1da1f2';
+        channelLink.style.fontWeight = '500';
+        channelLink.style.textDecoration = 'none';
+        channelLink.style.cursor = 'pointer';
+        channelLink.style.padding = '0 2px';
+        channelLink.style.borderRadius = '2px';
+        channelLink.style.transition = 'background-color 0.2s';
+
+        channelLink.addEventListener('mouseenter', () => {
+          channelLink.style.backgroundColor = '#e8f5fd';
+          channelLink.style.textDecoration = 'underline';
+        });
+        channelLink.addEventListener('mouseleave', () => {
+          channelLink.style.backgroundColor = 'transparent';
+          channelLink.style.textDecoration = 'none';
+        });
+
+        channelLink.addEventListener('click', (e) => {
+          e.preventDefault();
+          window.switchToChannel(channelName);
+        });
+
+        fragment.appendChild(channelLink);
+        lastIndex = match.index + match[0].length;
+      }
+
+      // Add remaining text
+      if (lastIndex < text.length) {
+        fragment.appendChild(
+          document.createTextNode(text.substring(lastIndex)),
+        );
+      }
+
+      textNode.replaceWith(fragment);
+    });
+  }
+
+  // Plain text rendering (original logic)
+  renderPlainTextMessage(text, container) {
     // Helper function to add text with preserved newlines
     const addTextWithNewlines = (textContent) => {
       const lines = textContent.split('\n');

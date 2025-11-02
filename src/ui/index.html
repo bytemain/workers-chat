@@ -18,6 +18,9 @@
       async
       src="https://cdn.jsdelivr.net/npm/playful-avatars/index.js"
     ></script>
+    <!-- Markdown support -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
     <style type="text/css">
       :root {
         --border-radius: 5px;
@@ -1440,6 +1443,143 @@
         flex-shrink: 0;
       }
 
+      /* Markdown message styles */
+      .message-markdown {
+        line-height: 1.6;
+      }
+
+      .message-markdown p {
+        margin: 0.5em 0;
+      }
+
+      .message-markdown p:first-child {
+        margin-top: 0;
+      }
+
+      .message-markdown p:last-child {
+        margin-bottom: 0;
+      }
+
+      .message-markdown strong {
+        font-weight: 600;
+        color: var(--text-main);
+      }
+
+      .message-markdown em {
+        font-style: italic;
+      }
+
+      .message-markdown code {
+        background: var(--background-alt);
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Courier New', monospace;
+        font-size: 0.9em;
+        color: #d73a49;
+      }
+
+      .message-markdown pre {
+        background: var(--background-alt);
+        padding: 12px;
+        border-radius: 5px;
+        overflow-x: auto;
+        margin: 8px 0;
+      }
+
+      .message-markdown pre code {
+        background: none;
+        padding: 0;
+        color: var(--text-main);
+        font-size: 0.85em;
+      }
+
+      .message-markdown blockquote {
+        border-left: 3px solid var(--links);
+        padding-left: 12px;
+        margin: 8px 0;
+        color: var(--text-muted);
+      }
+
+      .message-markdown a {
+        color: var(--links);
+        text-decoration: none;
+      }
+
+      .message-markdown a:hover {
+        text-decoration: underline;
+      }
+
+      .message-markdown ul,
+      .message-markdown ol {
+        margin: 8px 0;
+        padding-left: 24px;
+      }
+
+      .message-markdown li {
+        margin: 4px 0;
+      }
+
+      .message-markdown h1,
+      .message-markdown h2,
+      .message-markdown h3,
+      .message-markdown h4 {
+        margin: 12px 0 8px 0;
+        font-weight: 600;
+        line-height: 1.3;
+      }
+
+      .message-markdown h1 {
+        font-size: 1.4em;
+      }
+
+      .message-markdown h2 {
+        font-size: 1.3em;
+      }
+
+      .message-markdown h3 {
+        font-size: 1.2em;
+      }
+
+      .message-markdown h4 {
+        font-size: 1.1em;
+      }
+
+      .message-markdown hr {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 12px 0;
+      }
+
+      .message-markdown del {
+        text-decoration: line-through;
+        opacity: 0.7;
+      }
+
+      .message-markdown table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 8px 0;
+      }
+
+      .message-markdown th,
+      .message-markdown td {
+        border: 1px solid var(--border);
+        padding: 6px 12px;
+        text-align: left;
+      }
+
+      .message-markdown th {
+        background: var(--background-alt);
+        font-weight: 600;
+      }
+
+      .message-markdown img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 5px;
+        margin: 8px 0;
+      }
+
       .reply-reference .reply-author {
         font-weight: 600;
         color: var(--links);
@@ -1956,12 +2096,25 @@
         <div id="main-chat-input-container">
           <chat-input-component
             id="chat-input"
-            placeholder="Type a message..."
+            placeholder="Type a message... (Markdown supported)"
             rows="1"
             min-height="32px"
             max-height="150px"
             show-file-upload="true"
           ></chat-input-component>
+          <div
+            id="markdown-hint"
+            style="
+              font-size: 0.75em;
+              color: var(--text-muted);
+              padding: 4px 8px;
+              display: none;
+              opacity: 0.7;
+            "
+            title="**bold** *italic* `code` [link](url) > quote"
+          >
+            💡 Markdown: **bold** *italic* `code`
+          </div>
         </div>
       </div>
 
