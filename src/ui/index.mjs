@@ -2113,7 +2113,14 @@ function createMessageElement(
   }
 
   actions.appendChild(buttonsContainer);
-  wrapper.appendChild(actions);
+
+  // Wrap actions in a sticky container
+  const actionsSticky = document.createElement('div');
+  actionsSticky.className = 'message-actions-sticky';
+  actionsSticky.appendChild(actions);
+
+  // Insert at the beginning of wrapper
+  wrapper.insertBefore(actionsSticky, wrapper.firstChild);
 
   return wrapper;
 }
@@ -3602,7 +3609,7 @@ async function startChat() {
     if (charCountElement && chatInputComponent.textarea) {
       const updateCharCount = () => {
         const length = chatInputComponent.textarea.value.length;
-        
+
         // Only show character count when over 20000 characters
         if (length > 20000) {
           charCountElement.textContent = `${length} / ${MAX_MESSAGE_LENGTH}`;
@@ -3765,7 +3772,7 @@ async function startChat() {
     if (threadCharCountElement && threadInputComponent.textarea) {
       const updateThreadCharCount = () => {
         const length = threadInputComponent.textarea.value.length;
-        
+
         // Only show character count when over 20000 characters
         if (length > 20000) {
           threadCharCountElement.textContent = `${length} / ${MAX_MESSAGE_LENGTH}`;

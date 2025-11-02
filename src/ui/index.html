@@ -98,7 +98,7 @@
         justify-content: space-between;
         padding: 0 var(--spacing);
         border-bottom: 1px solid var(--border);
-        background: var(--background);
+        background: var(--background-alt);
         z-index: 10;
       }
 
@@ -1315,6 +1315,34 @@
         background: var(--background-alt);
       }
 
+      /* Sticky wrapper for message actions */
+      .message-actions-sticky {
+        position: sticky;
+        top: calc(var(--spacing-xs) + 8px);
+        height: 0;
+        z-index: 10;
+        pointer-events: none;
+        display: flex;
+        justify-content: flex-end;
+        padding-right: var(--spacing-sm);
+      }
+
+      .message-actions {
+        position: relative;
+        right: 0;
+        top: 0;
+        display: none;
+        gap: var(--spacing-xs);
+        align-items: center;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--border-radius);
+        padding: 2px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        pointer-events: auto;
+        min-height: fit-content;
+      }
+
       /* Hover time - shown at the beginning of message on hover */
       .message-wrapper::before {
         content: attr(data-hover-time);
@@ -1358,20 +1386,6 @@
         font-size: 0.85em;
         white-space: nowrap;
         margin-left: 8px;
-      }
-
-      .message-actions {
-        position: absolute;
-        right: var(--spacing-sm);
-        top: var(--spacing-xs);
-        display: none;
-        gap: var(--spacing-xs);
-        align-items: center;
-        background: var(--background);
-        border: 1px solid var(--border);
-        border-radius: var(--border-radius);
-        padding: 2px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       }
 
       .message-actions-buttons {
