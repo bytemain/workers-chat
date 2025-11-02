@@ -2067,6 +2067,15 @@ async function loadChannels() {
       }
     });
 
+    // Ensure 'general' channel always exists (even if no messages yet)
+    if (!channelMap.has('general')) {
+      channelMap.set('general', {
+        channel: 'general',
+        count: 0,
+        lastUsed: Date.now(),
+      });
+    }
+
     // Convert back to array
     allChannels = Array.from(channelMap.values());
     renderChannelList();
@@ -2880,10 +2889,15 @@ async function startChat() {
   // Hide room selector and show chat interface
   hideRoomSelector();
 
-  // Reset encryption initialization flag for new room
+  // Reset state for new room
   encryptionState.initialized = false;
   encryptionState.roomKey = null;
   encryptionState.isEncrypted = false;
+
+  // Reset channel state
+  allChannels = [];
+  temporaryChannels.clear();
+  currentChannel = 'general';
 
   // Normalize the room name a bit.
   roomname = roomname
@@ -4801,11 +4815,19 @@ function showMobileChannelList() {
   url.searchParams.delete('channel');
   window.history.pushState({}, '', url);
 
-  // Clear current channel
-  currentChannel = null;
+  // Reset to general channel (don't set to null)
+  currentChannel = 'general';
 
-  // Update channel list content
-  updateMobileChannelList();
+  // Ensure channels are loaded and update channel list content
+  if (allChannels.length === 0) {
+    // If channels haven't been loaded yet, load them
+    loadChannels().then(() => {
+      updateMobileChannelList();
+    });
+  } else {
+    // Channels already loaded, just update the display
+    updateMobileChannelList();
+  }
 }
 
 // Show mobile chat page
