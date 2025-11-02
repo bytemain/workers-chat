@@ -1010,14 +1010,6 @@ class ChatMessage extends HTMLElement {
       // Post-process: handle channel links (e.g., #channel-name)
       this.processChannelLinks(markdownDiv);
 
-      // Post-process: convert img tags to lazy-img custom elements
-      markdownDiv.querySelectorAll('img').forEach((img) => {
-        const lazyImg = document.createElement('lazy-img');
-        lazyImg.setAttribute('src', img.src);
-        if (img.alt) lazyImg.setAttribute('alt', img.alt);
-        img.replaceWith(lazyImg);
-      });
-
       container.appendChild(markdownDiv);
     } catch (error) {
       console.error('Error rendering markdown:', error);
@@ -3121,6 +3113,7 @@ async function startChat() {
     } else {
       console.log('🔐 Using existing saved encryption key');
     }
+    await initializeRoomEncryption(roomname);
   } catch (error) {
     console.error('❌ Failed to setup encryption:', error);
     addSystemMessage('❌: Failed to setup encryption: ' + error.message);
@@ -4003,19 +3996,6 @@ function join() {
   };
 
   ws.addEventListener('open', async () => {
-    // Initialize encryption first
-    console.log('🔐 Initializing room encryption...');
-    const encryptionReady = await initializeRoomEncryption(roomname);
-
-    if (!encryptionReady) {
-      console.error('❌ Failed to initialize encryption, closing connection');
-      ws.close(1000, 'User cancelled encryption setup');
-      addSystemMessage(
-        '* Failed to join room: Encryption initialization failed',
-      );
-      return;
-    }
-
     currentWebSocket = ws;
 
     // Send user info message.
