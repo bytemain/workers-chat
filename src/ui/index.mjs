@@ -13,6 +13,7 @@ import { applyCSSConstants } from './constants.mjs';
 import { updateRoomList } from './room-list.mjs';
 import * as MobileUI from './mobile.mjs';
 import { initCryptoCompatCheck } from '../common/crypto-compat.js';
+import { MAX_MESSAGE_LENGTH } from '../common/constants.mjs';
 
 // Apply CSS constants on load
 applyCSSConstants();
@@ -4452,13 +4453,13 @@ function showEditDialog(messageData) {
     font-size: 12px;
     margin-top: 4px;
   `;
-  charCount.textContent = `${textarea.value.length} / 6000`;
+  charCount.textContent = `${textarea.value.length} / ${MAX_MESSAGE_LENGTH}`;
   dialog.appendChild(charCount);
 
   textarea.addEventListener('input', () => {
     const len = textarea.value.length;
-    charCount.textContent = `${len} / 6000`;
-    charCount.style.color = len > 6000 ? '#dc3545' : '#666';
+    charCount.textContent = `${len} / ${MAX_MESSAGE_LENGTH}`;
+    charCount.style.color = len > MAX_MESSAGE_LENGTH ? '#dc3545' : '#666';
   });
 
   // Buttons container
@@ -4502,8 +4503,8 @@ function showEditDialog(messageData) {
       return;
     }
 
-    if (newMessage.length > 6000) {
-      alert('Message is too long (max 6000 characters)');
+    if (newMessage.length > MAX_MESSAGE_LENGTH) {
+      alert(`Message is too long (max ${MAX_MESSAGE_LENGTH} characters)`);
       return;
     }
 

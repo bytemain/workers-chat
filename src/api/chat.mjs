@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { getPath, splitPath } from 'hono/utils/url';
 import { showRoutes } from 'hono/dev';
 import { cors } from 'hono/cors';
+import { MAX_MESSAGE_LENGTH } from '../common/constants.mjs';
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -499,7 +500,7 @@ export class ChatRoom {
         }
 
         // Check message length
-        if (newMessage.length > 6000) {
+        if (newMessage.length > MAX_MESSAGE_LENGTH) {
           return c.json({ error: 'Message too long' }, 400);
         }
 
@@ -993,7 +994,7 @@ export class ChatRoom {
       } else {
         // Block people from sending overly long messages. This is also enforced on the client,
         // so to trigger this the user must be bypassing the client code.
-        if (data.message.length > 6000) {
+        if (data.message.length > MAX_MESSAGE_LENGTH) {
           webSocket.send(JSON.stringify({ error: 'Message too long.' }));
           return;
         }
