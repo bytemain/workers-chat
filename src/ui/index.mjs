@@ -4469,11 +4469,13 @@ window.addEventListener('hashchange', () => {
   }
 });
 
-// Listen for browser back/forward button to handle thread navigation
+// Listen for browser back/forward button to handle thread and channel navigation
 window.addEventListener('popstate', () => {
   const urlParams = new URLSearchParams(window.location.search);
   const threadParam = urlParams.get('thread');
+  const channelParam = urlParams.get('channel');
 
+  // Handle thread navigation
   if (threadParam) {
     // Open the thread if it's in the URL
     if (currentThreadId !== threadParam) {
@@ -4483,6 +4485,20 @@ window.addEventListener('popstate', () => {
     // Close the thread if there's no thread parameter
     if (currentThreadId) {
       window.closeThread();
+    }
+  }
+
+  // Handle channel navigation
+  const targetChannel = channelParam || 'general';
+  if (targetChannel !== currentChannel) {
+    console.log(
+      `🔄 Popstate: switching from ${currentChannel} to ${targetChannel}`,
+    );
+    switchToChannel(targetChannel);
+
+    // On mobile, ensure we're showing the chat page
+    if (isMobile()) {
+      MobileUI.showMobileChatPage();
     }
   }
 });
@@ -4736,7 +4752,7 @@ window.hideLeftSidebar = hideLeftSidebar;
 // Show mobile channel list page
 function showMobileChannelList() {
   if (!isMobile()) return;
-  
+
   MobileUI.showMobileChannelList();
 
   // Clear channel parameter from URL
@@ -4962,4 +4978,3 @@ window.showMobileChannelList = showMobileChannelList;
 window.showMobileChatPage = showMobileChatPage;
 window.updateMobileChannelList = updateMobileChannelList;
 window.initMobileNavigation = initMobileNavigation;
-
