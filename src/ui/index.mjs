@@ -2013,23 +2013,9 @@ async function loadChannelMessages(channel) {
 
     // Process and render all messages using addChatMessage for consistency
     for (const msg of messages) {
-      // Decrypt message if encrypted
-      const decryptedMessage = await tryDecryptMessage(msg);
-
       // Use addChatMessage to render (this will also cache and handle date separators)
-      addChatMessage(
-        msg.name,
-        decryptedMessage,
-        msg.timestamp,
-        {
-          messageId: msg.messageId,
-          replyTo: msg.replyTo,
-          threadInfo: msg.threadInfo,
-          channel: msg.channel || 'general',
-          editedAt: msg.editedAt || null,
-        },
-        { updateChannels: false },
-      );
+      // addChatMessage now handles decryption internally
+      await addChatMessage(msg, { updateChannels: false });
     }
 
     // Scroll to bottom
@@ -3773,16 +3759,8 @@ async function processPendingMessages() {
 
       // Only add if it's for the current channel
       if (messageChannel.toLowerCase() === currentChannel.toLowerCase()) {
-        // Decrypt message if encrypted
-        let messageText = await tryDecryptMessage(data);
-
-        addChatMessage(data.name, messageText, data.timestamp, {
-          messageId: data.messageId,
-          replyTo: data.replyTo,
-          threadInfo: data.threadInfo,
-          channel: messageChannel,
-          editedAt: data.editedAt || null,
-        });
+        // addChatMessage now handles decryption internally
+        await addChatMessage(data);
       }
       lastSeenTimestamp = data.timestamp;
     }
@@ -4062,16 +4040,8 @@ function join() {
 
           // Only display message if it belongs to the current channel
           if (messageChannel.toLowerCase() === currentChannel.toLowerCase()) {
-            // Decrypt message if encrypted
-            let messageText = await tryDecryptMessage(data);
-
-            addChatMessage(data.name, messageText, data.timestamp, {
-              messageId: data.messageId,
-              replyTo: data.replyTo,
-              threadInfo: data.threadInfo,
-              channel: messageChannel,
-              editedAt: data.editedAt || null,
-            });
+            // addChatMessage now handles decryption internally
+            await addChatMessage(data);
 
             // Scroll to bottom if we were at bottom (includes our own messages)
             if (isAtBottom) {
@@ -4398,37 +4368,36 @@ function showEditDialog(messageData) {
   document.addEventListener('keydown', escHandler);
 }
 
-function addChatMessage(name, text, ts, msgData = {}, options = {}) {
-  // ts: message timestamp (ms)
+// Add a chat message to the log
+// Now accepts a message object directly
+async function addChatMessage(messageObj, options = {}) {
+  // messageObj should have: { name, message, timestamp, messageId, replyTo, threadInfo, channel, editedAt }
   // options: { updateChannels: true } - whether to update channel list
-  let timestamp = ts;
-  if (typeof timestamp !== 'number') {
-    timestamp = Date.now();
-  }
 
   // Default options
   const updateChannels = options.updateChannels !== false;
 
-  // Generate or use existing messageId
-  const messageId =
-    msgData.messageId || generateLegacyMessageId(timestamp, name);
+  // Decrypt message if encrypted
+  const decryptedMessage = await tryDecryptMessage(messageObj);
 
-  // Create complete message data
+  // Create complete message data with decrypted content
   const messageData = {
-    name: name,
-    message: text,
-    timestamp: timestamp,
-    messageId: messageId,
-    replyTo: msgData.replyTo || null,
-    threadInfo: msgData.threadInfo || null,
-    channel: msgData.channel || 'general', // Include channel field
-    editedAt: msgData.editedAt || null,
+    name: messageObj.name,
+    message: decryptedMessage, // Use decrypted message
+    timestamp: messageObj.timestamp,
+    messageId:
+      messageObj.messageId ||
+      generateLegacyMessageId(messageObj.timestamp, messageObj.name),
+    replyTo: messageObj.replyTo || null,
+    threadInfo: messageObj.threadInfo || null,
+    channel: messageObj.channel || 'general',
+    editedAt: messageObj.editedAt || null,
   };
 
   // Cache the message
-  messagesCache.set(messageId, messageData);
+  messagesCache.set(messageData.messageId, messageData);
 
-  const date = new Date(timestamp);
+  const date = new Date(messageData.timestamp);
   const dateStr =
     date.getFullYear() +
     '-' +
@@ -4459,9 +4428,9 @@ function addChatMessage(name, text, ts, msgData = {}, options = {}) {
   updateTimeDisplayForMessage(messageElement);
 
   // If this is a reply and the thread is open, also add to thread panel
-  if (msgData.replyTo) {
+  if (messageData.replyTo) {
     // Find the root message of this reply
-    let rootId = msgData.replyTo.messageId;
+    let rootId = messageData.replyTo.messageId;
     let parentMsg = messagesCache.get(rootId);
     while (parentMsg && parentMsg.replyTo) {
       rootId = parentMsg.replyTo.messageId;
@@ -4474,7 +4443,7 @@ function addChatMessage(name, text, ts, msgData = {}, options = {}) {
       const totalReplies = countTotalReplies(rootId);
       rootMessage.threadInfo = rootMessage.threadInfo || {};
       rootMessage.threadInfo.replyCount = totalReplies;
-      rootMessage.threadInfo.lastReplyTime = timestamp;
+      rootMessage.threadInfo.lastReplyTime = messageData.timestamp;
 
       // Update the message in main chat list
       const mainChatMsg = document.querySelector(
