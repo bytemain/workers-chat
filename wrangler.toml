@@ -34,6 +34,7 @@ new_sqlite_classes = ["ChatRoom", "RateLimiter"]
 directory = "./dist/ui"
 binding = "ASSETS"
 run_worker_first = true
+not_found_handling = "single-page-application"
 
 [build]
 command = "npm run ui"

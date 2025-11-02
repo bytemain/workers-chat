@@ -156,18 +156,6 @@ const app = ignite((app) => {
   app.notFound(async (c) => {
     const response = await c.env.ASSETS.fetch(c.req.raw);
 
-    // If the asset is not found (404), redirect to /#path to auto-join room
-    if (response.status === 404) {
-      console.log('Asset not found:', c.req.raw.url);
-      const url = new URL(c.req.raw.url);
-      const pathname = url.pathname;
-
-      const roomPath = pathname.slice(1);
-      if (roomPath) {
-        return c.redirect(`/#${roomPath}`);
-      }
-    }
-
     console.log('Serving asset:', c.req.raw.url);
     // Clone the response so we can modify headers
     const newResponse = new Response(response.body, response);

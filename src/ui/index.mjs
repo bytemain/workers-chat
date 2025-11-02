@@ -2730,6 +2730,46 @@ function getRoomHistory() {
   return history ? JSON.parse(history) : [];
 }
 
+/**
+ * Get room name from URL hash or pathname
+ * Handles both formats: #roomname, /roomname, or roomname
+ * @returns {string} Room name or empty string
+ */
+function getRoomNameFromURL() {
+  // First try to get from hash
+  const hash = document.location.hash;
+  if (hash.length > 1) {
+    // Remove leading # if present
+    return hash.startsWith('#') ? hash.slice(1) : hash;
+  }
+
+  // If no hash, try pathname
+  const pathname = document.location.pathname;
+  if (pathname && pathname !== '/') {
+    // Remove leading / if present
+    return pathname.startsWith('/') ? pathname.slice(1) : pathname;
+  }
+
+  return '';
+}
+
+/**
+ * Navigate to a specific room
+ * Uses pathname instead of hash for cleaner URLs
+ * @param {string} roomName - Room name to navigate to
+ * @param {boolean} reload - Whether to reload the page (default: true)
+ */
+function navigateToRoom(roomName) {
+  if (!roomName) {
+    // Navigate to room selector
+    window.location.pathname = '/';
+    return;
+  }
+
+  // Update pathname
+  window.location.pathname = '/' + roomName;
+}
+
 function addToRoomHistory(roomName) {
   let history = getRoomHistory();
 
@@ -2777,8 +2817,9 @@ export function startNameChooser() {
 }
 
 function startRoomChooser() {
-  if (document.location.hash.length > 1) {
-    roomname = document.location.hash.slice(1);
+  const roomFromURL = getRoomNameFromURL();
+  if (roomFromURL) {
+    roomname = roomFromURL;
     // Save username to localStorage when directly entering via URL
     localStorage.setItem('chatUsername', username);
     startChat();
@@ -2849,8 +2890,7 @@ function startRoomChooser() {
 
       roomname = selectorRoomInput?.value.trim() || '';
       if (roomname.length > 0) {
-        window.location.hash = '#' + roomname;
-        startChat();
+        navigateToRoom(roomname);
       }
     });
   }
@@ -2870,8 +2910,7 @@ function startRoomChooser() {
 
       try {
         roomname = await api.createPrivateRoom();
-        window.location.hash = '#' + roomname;
-        startChat();
+        navigateToRoom(roomname);
       } catch (err) {
         alert('Something went wrong creating the private room');
         selectorPrivateBtn.disabled = false;
@@ -3106,7 +3145,8 @@ async function startChat() {
     return;
   }
 
-  document.location.hash = '#' + roomname;
+  // No longer set hash, navigation is handled by pathname
+  // document.location.hash = '#' + roomname;
 
   // Setup encryption with room name as default password if not already set
   // This handles all entry paths (form submit, buttons, URL hash)
@@ -3131,8 +3171,7 @@ async function startChat() {
 
   // Initialize reactive room info state
   // Use a temporary default name, will be replaced by server data
-  const initialRoomName =
-    roomname.length === 64 ? 'Private Room' : '#' + roomname;
+  const initialRoomName = roomname.length === 64 ? 'Private Room' : roomname;
   urlRoomHash = roomname.length === 64 ? '' : '#' + roomname;
   roomInfo.name = initialRoomName;
 
@@ -4229,8 +4268,8 @@ function join() {
             if (currentWebSocket) {
               currentWebSocket.close();
             }
-            // Reload page without hash to start fresh
-            window.location.href = window.location.href.split('#')[0];
+            // Navigate to room selector
+            navigateToRoom('');
           };
           userItem.appendChild(logoutBtn);
           userItem.classList.add('current-user');
@@ -4726,17 +4765,16 @@ async function addChatMessage(messageObj, options = {}) {
   }
 }
 
-// Listen for hash changes to switch rooms
-window.addEventListener('hashchange', () => {
-  const newRoomName = document.location.hash.slice(1);
-  // Only reload if we're in a different room (not initial room setup)
-  if (roomname && newRoomName !== roomname) {
-    window.location.reload();
-  }
-});
-
-// Listen for browser back/forward button to handle thread and channel navigation
+// Listen for browser back/forward button to handle room, thread and channel navigation
 window.addEventListener('popstate', () => {
+  // Check if room changed (by pathname)
+  const newRoomName = getRoomNameFromURL();
+  if (roomname && newRoomName !== roomname) {
+    // Room changed, reload the page
+    window.location.reload();
+    return;
+  }
+
   const urlParams = new URLSearchParams(window.location.search);
   const threadParam = urlParams.get('thread');
   const channelParam = urlParams.get('channel');
@@ -4847,8 +4885,7 @@ function updateRoomListUI() {
   const callbacks = {
     onRoomClick: (roomName) => {
       if (roomName !== roomname) {
-        window.location.hash = '#' + roomName;
-        window.location.reload();
+        navigateToRoom(roomName);
       }
       // Close dropdown
       roomDropdown.classList.remove('visible');
@@ -4857,9 +4894,8 @@ function updateRoomListUI() {
         ?.classList.remove('dropdown-open');
     },
     onCreateRoom: () => {
-      // Clear hash and reload to go back to room selection
-      window.location.hash = '';
-      window.location.reload();
+      // Navigate to room selector
+      navigateToRoom('');
     },
     onRoomContextMenu: (e, roomName) => {
       showRoomContextMenu(e, roomName);
@@ -4928,8 +4964,7 @@ function showRoomContextMenu(event, targetRoomName) {
 
       // If leaving current room, redirect to room chooser
       if (targetRoomName === roomname) {
-        window.location.hash = '';
-        window.location.reload();
+        navigateToRoom('');
       }
     };
   }
@@ -5004,6 +5039,7 @@ function hideLeftSidebar() {
 }
 
 // Export functions for use in other parts of the code
+window.navigateToRoom = navigateToRoom;
 window.incrementUnreadCount = incrementUnreadCount;
 window.clearUnreadCount = clearUnreadCount;
 window.updateRoomListUI = updateRoomListUI;
@@ -5197,8 +5233,8 @@ function initMobileRoomSelector() {
   );
 
   if (updateMobileRoomName) {
-    // Listen for room changes
-    window.addEventListener('hashchange', () => {
+    // Listen for room changes (popstate handles pathname changes)
+    window.addEventListener('popstate', () => {
       updateMobileRoomName();
     });
   }
@@ -5230,12 +5266,10 @@ function populateMobileRoomDropdown() {
   // Callbacks for room-list component
   const callbacks = {
     onRoomClick: (roomName) => {
-      window.location.hash = roomName;
-      window.location.reload();
+      navigateToRoom(roomName);
     },
     onCreateRoom: () => {
-      window.location.hash = '';
-      window.location.reload();
+      navigateToRoom('');
     },
     onRoomContextMenu: (e, roomName) => {
       // Can add context menu functionality later if needed
