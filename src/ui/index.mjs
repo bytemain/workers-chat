@@ -2035,6 +2035,24 @@ async function loadChannelMessages(channel) {
     // Scroll to bottom
     chatlog.scrollTop = chatlog.scrollHeight;
     isAtBottom = true;
+
+    // Add welcome messages AFTER loading channel messages
+    addSystemMessage('* Hello ' + username + '!');
+    addSystemMessage(
+      '* This is a app built with Cloudflare Workers Durable Objects. The source code ' +
+        'can be found at: https://github.com/bytemain/workers-chat',
+    );
+    addSystemMessage(
+      '* WARNING: Participants in this chat are random people on the internet. ' +
+        'Names are not authenticated; anyone can pretend to be anyone.Chat history is saved.',
+    );
+    if (roomname.length == 64) {
+      addSystemMessage(
+        '* This is a private room. You can invite someone to the room by sending them the URL.',
+      );
+    } else {
+      addSystemMessage('* Welcome to ' + documentTitlePrefix + '. Say hi!');
+    }
   } catch (err) {
     console.error('Failed to load channel messages:', err);
     chatlog.innerHTML =
@@ -3730,7 +3748,6 @@ async function startChat() {
 }
 
 let lastSeenTimestamp = 0;
-let wroteWelcomeMessages = false;
 let isReconnecting = false; // Track if this is a reconnection
 let pendingMessages = []; // Queue for messages during initial load (legacy, may not be used)
 let isInitialLoad = true; // Flag to distinguish initial load from real-time messages
@@ -4022,51 +4039,7 @@ function join() {
       // Mark initial load as complete - subsequent messages will be processed immediately
       isInitialLoad = false;
 
-      if (!wroteWelcomeMessages) {
-        wroteWelcomeMessages = true;
-        addSystemMessage('* Hello ' + username + '!');
-        addSystemMessage(
-          '* This is a app built with Cloudflare Workers Durable Objects. The source code ' +
-            'can be found at: https://github.com/bytemain/workers-chat',
-        );
-        addSystemMessage(
-          '* WARNING: Participants in this chat are random people on the internet. ' +
-            'Names are not authenticated; anyone can pretend to be anyone.Chat history is saved.',
-        );
-        if (roomname.length == 64) {
-          addSystemMessage(
-            '* This is a private room. You can invite someone to the room by sending them the URL.',
-          );
-        } else {
-          addSystemMessage('* Welcome to ' + documentTitlePrefix + '. Say hi!');
-        }
-
-        loadChannels().then(async () => {
-          // Initialize channel add button
-          initChannelAddButton();
-          // Initialize channel info bar
-          initChannelInfoBar();
-          // Initialize channel panel features
-          initChannelPanel();
-
-          // Check if there's a channel filter in the URL
-          const urlParams = new URLSearchParams(window.location.search);
-          const channelParam = urlParams.get('channel');
-          if (channelParam) {
-            // Switch to the channel from URL (will load messages)
-            await switchToChannel(channelParam);
-          } else {
-            // No channel specified, load messages for default channel
-            await loadChannelMessages(currentChannel);
-          }
-
-          // Check if there's a thread ID in the URL
-          const threadParam = urlParams.get('thread');
-          if (threadParam) {
-            window.openThread(threadParam);
-          }
-        });
-      } else if (isReconnecting) {
+      if (isReconnecting) {
         // Show connected status if this is a reconnection
         updateConnectionStatus('connected');
         // Reset reconnecting flag (status already updated in 'open' event)
@@ -4144,6 +4117,32 @@ function join() {
     console.log('WebSocket error, reconnecting:', event);
     updateConnectionStatus('reconnecting');
     rejoin();
+  });
+
+  loadChannels().then(async () => {
+    // Initialize channel add button
+    initChannelAddButton();
+    // Initialize channel info bar
+    initChannelInfoBar();
+    // Initialize channel panel features
+    initChannelPanel();
+
+    // Check if there's a channel filter in the URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const channelParam = urlParams.get('channel');
+    if (channelParam) {
+      // Switch to the channel from URL (will load messages)
+      await switchToChannel(channelParam);
+    } else {
+      // No channel specified, load messages for default channel
+      await loadChannelMessages(currentChannel);
+    }
+
+    // Check if there's a thread ID in the URL
+    const threadParam = urlParams.get('thread');
+    if (threadParam) {
+      window.openThread(threadParam);
+    }
   });
 }
 
