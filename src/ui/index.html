@@ -15,6 +15,7 @@
     />
     <script
       type="module"
+      async
       src="https://cdn.jsdelivr.net/npm/playful-avatars/index.js"
     ></script>
     <style type="text/css">
@@ -24,6 +25,23 @@
         --spacing-sm: 0.5rem;
         --spacing-xs: 0.25rem;
         --transition: 0.2s ease;
+      }
+
+      /* Hide icons until font is loaded */
+      .icon-loading [class*='ri-'],
+      .icon-loading .channel-icon,
+      .icon-loading .mobile-channel-item-icon,
+      .icon-loading .room-list-icon,
+      .icon-loading #room-name-large::after {
+        visibility: hidden;
+      }
+
+      .icon-loaded [class*='ri-'],
+      .icon-loaded .channel-icon,
+      .icon-loaded .mobile-channel-item-icon,
+      .icon-loaded .room-list-icon,
+      .icon-loaded #room-name-large::after {
+        visibility: visible;
       }
 
       * {
@@ -1752,7 +1770,28 @@
     </style>
   </head>
 
-  <body>
+  <body class="icon-loading">
+    <!-- Font loading detection script -->
+    <script>
+      // Detect when remixicon font is loaded
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(() => {
+          // Wait a tiny bit to ensure all fonts are applied
+          setTimeout(() => {
+            document.body.classList.remove('icon-loading');
+            document.body.classList.add('icon-loaded');
+          }, 50);
+        });
+      } else {
+        // Fallback for browsers without Font Loading API
+        window.addEventListener('load', () => {
+          setTimeout(() => {
+            document.body.classList.remove('icon-loading');
+            document.body.classList.add('icon-loaded');
+          }, 100);
+        });
+      }
+    </script>
     <!-- Main Container with Flex Layout -->
     <div id="main-container">
       <!-- Channel Panel -->
