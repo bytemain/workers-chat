@@ -11,6 +11,7 @@ import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
 import tooltip from './tooltip.js';
 import { applyCSSConstants } from './constants.mjs';
 import { updateRoomList } from './room-list.mjs';
+import * as MobileUI from './mobile.mjs';
 
 // Apply CSS constants on load
 applyCSSConstants();
@@ -1421,9 +1422,6 @@ function updateEncryptionUI() {
   const encryptionStatusText = document.querySelector(
     '#encryption-status-text',
   );
-  const mobileTopBarEncryption = document.querySelector(
-    '#mobile-top-bar-encryption',
-  );
 
   if (!mainInputContainer) {
     // UI elements not ready yet
@@ -1447,19 +1445,8 @@ function updateEncryptionUI() {
     }
   }
 
-  // Update mobile top bar encryption indicator
-  if (mobileTopBarEncryption) {
-    mobileTopBarEncryption.classList.add('visible');
-    if (hasValidKey) {
-      mobileTopBarEncryption.textContent = '🔒';
-      mobileTopBarEncryption.className = 'visible encrypted';
-      mobileTopBarEncryption.title = 'End-to-End Encrypted';
-    } else {
-      mobileTopBarEncryption.textContent = '🔓';
-      mobileTopBarEncryption.className = 'visible not-encrypted';
-      mobileTopBarEncryption.title = 'Not Encrypted';
-    }
-  }
+  // Update mobile encryption indicator
+  MobileUI.updateMobileEncryptionIndicator(hasValidKey);
 
   if (isRoomEncrypted && !currentRoomKey) {
     // Also disable input placeholder to indicate it's not usable
@@ -1632,10 +1619,8 @@ window.openThread = async function (messageId) {
     mainInputContainer.classList.add('thread-open');
   }
 
-  // Prevent body scroll on mobile when thread is open
-  if (window.innerWidth <= 600) {
-    document.body.classList.add('thread-open');
-  }
+  // Handle mobile thread panel
+  MobileUI.handleMobileThreadPanel(true);
 
   // Update URL with thread ID
   const url = new URL(window.location);
@@ -1680,8 +1665,8 @@ window.closeThread = function () {
     mainInputContainer.classList.remove('thread-open');
   }
 
-  // Restore body scroll on mobile
-  document.body.classList.remove('thread-open');
+  // Handle mobile thread panel
+  MobileUI.handleMobileThreadPanel(false);
 
   if (threadInputComponent) {
     threadInputComponent.clear();
@@ -3674,14 +3659,8 @@ async function startChat() {
     }
   }
 
-  // Detect mobile keyboard appearing and disappearing, and adjust the scroll as appropriate.
-  if ('visualViewport' in window) {
-    window.visualViewport.addEventListener('resize', function (event) {
-      if (isAtBottom) {
-        chatlog.scrollBy(0, 1e8);
-      }
-    });
-  }
+  // Setup mobile keyboard handler
+  MobileUI.setupMobileKeyboardHandler(chatlog, () => isAtBottom);
 
   // Initialize left sidebar with room list and user info
   initializeLeftSidebar();
@@ -4751,18 +4730,14 @@ window.initializeLeftSidebar = initializeLeftSidebar;
 window.hideLeftSidebar = hideLeftSidebar;
 
 // ============================================
-// Mobile Navigation System
+// Mobile Navigation System (Uses mobile.mjs module)
 // ============================================
 
 // Show mobile channel list page
 function showMobileChannelList() {
   if (!isMobile()) return;
-
-  const channelListPage = document.getElementById('mobile-channel-list-page');
-  const chatPage = document.getElementById('mobile-chat-page');
-
-  if (channelListPage) channelListPage.classList.add('active');
-  if (chatPage) chatPage.classList.remove('active');
+  
+  MobileUI.showMobileChannelList();
 
   // Clear channel parameter from URL
   const url = new URL(window.location);
@@ -4780,11 +4755,7 @@ function showMobileChannelList() {
 function showMobileChatPage() {
   if (!isMobile()) return;
 
-  const channelListPage = document.getElementById('mobile-channel-list-page');
-  const chatPage = document.getElementById('mobile-chat-page');
-
-  if (channelListPage) channelListPage.classList.remove('active');
-  if (chatPage) chatPage.classList.add('active');
+  MobileUI.showMobileChatPage();
 
   // Update chat title
   const chatTitle = document.getElementById('mobile-chat-title');
@@ -4802,6 +4773,8 @@ function showMobileChatPage() {
 
 // Update mobile channel list content
 function updateMobileChannelList() {
+  if (!isMobile()) return;
+
   const channelsContainer = document.getElementById(
     'mobile-channels-container',
   );
@@ -4928,70 +4901,17 @@ function initMobileNavigation() {
 
 // Initialize mobile room selector using room-list component
 function initMobileRoomSelector() {
-  const mobileRoomHeader = document.getElementById('mobile-room-header');
-  const mobileRoomNameDisplay = document.getElementById(
-    'mobile-room-name-display',
+  const updateMobileRoomName = MobileUI.initMobileRoomSelector(
+    roomname,
+    populateMobileRoomDropdown,
   );
-  const mobileRoomDropdown = document.getElementById('mobile-room-dropdown');
-  const mobileRoomMenuBtn = document.getElementById('mobile-room-menu-btn');
 
-  if (!mobileRoomHeader || !mobileRoomNameDisplay || !mobileRoomDropdown)
-    return;
-
-  // Update room name display
-  const updateMobileRoomName = () => {
-    if (roomname) {
-      mobileRoomNameDisplay.textContent = roomname;
-    } else {
-      mobileRoomNameDisplay.textContent = 'Select a Room';
-    }
-  };
-  updateMobileRoomName();
-
-  // Toggle dropdown on header click
-  mobileRoomHeader.addEventListener('click', (e) => {
-    // Don't toggle if clicking the menu button
-    if (e.target.closest('#mobile-room-menu-btn')) return;
-
-    const isOpen = mobileRoomDropdown.classList.contains('visible');
-    if (isOpen) {
-      mobileRoomDropdown.classList.remove('visible');
-      mobileRoomHeader.classList.remove('dropdown-open');
-    } else {
-      mobileRoomDropdown.classList.add('visible');
-      mobileRoomHeader.classList.add('dropdown-open');
-      // Populate dropdown using room-list component
-      populateMobileRoomDropdown();
-    }
-  });
-
-  // Menu button - show room menu
-  if (mobileRoomMenuBtn) {
-    mobileRoomMenuBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      // Reuse existing room menu functionality
-      const roomMenuBtn = document.getElementById('room-menu-btn');
-      if (roomMenuBtn) {
-        roomMenuBtn.click();
-      }
+  if (updateMobileRoomName) {
+    // Listen for room changes
+    window.addEventListener('hashchange', () => {
+      updateMobileRoomName();
     });
   }
-
-  // Close dropdown when clicking outside
-  document.addEventListener('click', (e) => {
-    if (
-      !mobileRoomHeader.contains(e.target) &&
-      !mobileRoomDropdown.contains(e.target)
-    ) {
-      mobileRoomDropdown.classList.remove('visible');
-      mobileRoomHeader.classList.remove('dropdown-open');
-    }
-  });
-
-  // Listen for room changes
-  window.addEventListener('hashchange', () => {
-    updateMobileRoomName();
-  });
 }
 
 function getRecentRooms() {
@@ -5042,3 +4962,4 @@ window.showMobileChannelList = showMobileChannelList;
 window.showMobileChatPage = showMobileChatPage;
 window.updateMobileChannelList = updateMobileChannelList;
 window.initMobileNavigation = initMobileNavigation;
+
