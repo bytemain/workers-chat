@@ -27,7 +27,7 @@ bucket_name = "edge-chat-files"
 
 # Indicate that you want the ChatRoom and RateLimiter classes to be callable as Durable Objects.
 [[migrations]]
-tag = "v1"
+tag = "v2"
 new_sqlite_classes = ["ChatRoom", "RateLimiter"]
 
 [assets]

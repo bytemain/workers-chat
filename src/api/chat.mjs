@@ -1,9 +1,8 @@
-import { ChannelManager, validateChannelName } from './channel.mjs';
 import { Hono } from 'hono';
-import { getPath, splitPath } from 'hono/utils/url';
-import { showRoutes } from 'hono/dev';
 import { cors } from 'hono/cors';
+import { showRoutes } from 'hono/dev';
 import { MAX_MESSAGE_LENGTH } from '../common/constants.mjs';
+import { getPath, splitPath } from 'hono/utils/url';
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -40,9 +39,7 @@ function ignite(mount) {
     return c.text('Error: ' + err.message, 500);
   });
   app.use('*', cors());
-  showRoutes(app, {
-    verbose: true,
-  });
+  showRoutes(app, { verbose: true });
   return app;
 }
 
@@ -105,7 +102,6 @@ const app = ignite((app) => {
       } else {
         return new Response('Name too long', { status: 404 });
       }
-
       // Get the Durable Object stub for this room! The stub is a client object that can be used
       // to send messages to the remote Durable Object instance. The stub is returned immediately;
       // there is no need to await it. This is important because you would not want to wait for
@@ -123,21 +119,20 @@ const app = ignite((app) => {
       return roomObject.fetch(newUrl, request);
     });
 
-    // Define API routes here
     return api;
   }
 
   app.route('/api', apiRoutes());
+
   app.get('/files/*', async (c) => {
     const { env, req } = c;
     const url = new URL(req.url);
-    const path = url.pathname.slice(7).split('/'); // Remove '/files/' prefix
+    const path = url.pathname.slice(7).split('/');
 
     if (!path[0]) {
       return new Response('Not found', { status: 404 });
     }
 
-    // Get the file from R2
     const fileKey = path.join('/');
     const object = await env.CHAT_FILES.get(fileKey);
 
@@ -145,7 +140,6 @@ const app = ignite((app) => {
       return new Response('File not found', { status: 404 });
     }
 
-    // Return the file with appropriate headers
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set('etag', object.httpEtag);
@@ -153,20 +147,18 @@ const app = ignite((app) => {
 
     return new Response(object.body, { headers });
   });
+
   app.notFound(async (c) => {
     const response = await c.env.ASSETS.fetch(c.req.raw);
 
     console.log('Serving asset:', c.req.raw.url);
     // Clone the response so we can modify headers
     const newResponse = new Response(response.body, response);
-
-    // Get the Content-Type header
     const contentType = newResponse.headers.get('Content-Type');
+
     if (contentType) {
-      // Replace charset with UTF-8 or add it if not present
       let newContentType = contentType;
       if (contentType.includes('charset=')) {
-        // Replace existing charset with UTF-8
         newContentType = contentType.replace(
           /charset=[^;,\s]*/i,
           'charset=UTF-8',
@@ -176,8 +168,7 @@ const app = ignite((app) => {
         contentType.includes('application/json') ||
         contentType.includes('application/javascript')
       ) {
-        // Add charset=UTF-8 for text-based content types
-        newContentType = contentType + ';charset=UTF-8';
+        newContentType += '; charset=UTF-8';
       }
       newResponse.headers.set('Content-Type', newContentType);
     }
@@ -195,7 +186,7 @@ export default {
 };
 
 // =======================================================================================
-// The ChatRoom Durable Object Class
+// SQLite-backed ChatRoom Durable Object
 
 // ChatRoom implements a Durable Object that coordinates an individual chat room. Participants
 // connect to the room using WebSockets, and the room broadcasts messages from each participant
@@ -203,23 +194,19 @@ export default {
 export class ChatRoom {
   constructor(state, env) {
     this.state = state;
-
-    // `state.storage` provides access to our durable storage. It provides a simple KV
-    // get()/put() interface.
     this.storage = state.storage;
-
-    // `env` is our environment bindings (discussed earlier).
+    this.sql = state.storage.sql;
     this.env = env;
 
-    // Initialize channel manager
-    this.channelManager = new ChannelManager(this.storage);
+    // Initialize database schema
+    this.initDatabase();
 
-    // Destruction timer
+    // Destruction timers
     this.destructionTimer = null;
     this.destructionTime = null;
-    this.destructionBroadcastInterval = null; // Broadcast interval for destruction status
+    this.destructionBroadcastInterval = null;
 
-    // We will track metadata for each client WebSocket object in `sessions`.
+    // Track WebSocket sessions
     this.sessions = new Map();
     this.state.getWebSockets().forEach((webSocket) => {
       // The constructor may have been called when waking up from hibernation,
@@ -242,50 +229,98 @@ export class ChatRoom {
       this.sessions.set(webSocket, { ...meta, limiter, blockedMessages });
     });
 
-    // We keep track of the last-seen message's timestamp just so that we can assign monotonically
-    // increasing timestamps even if multiple messages arrive simultaneously (see below). There's
-    // no need to store this to disk since we assume if the object is destroyed and recreated, much
-    // more than a millisecond will have gone by.
     this.lastTimestamp = 0;
     this.app = this.createApp();
-
-    // Check if there's a pending destruction and restore the timer
     this.restoreDestructionTimer();
   }
 
-  // Restore destruction timer after DO restart
+  // Initialize SQLite database schema
+  initDatabase() {
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id TEXT UNIQUE NOT NULL,
+        timestamp INTEGER NOT NULL,
+        username TEXT NOT NULL,
+        message TEXT NOT NULL,
+        channel TEXT NOT NULL DEFAULT 'general',
+        reply_to_id TEXT,
+        edited_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id);
+
+      CREATE TABLE IF NOT EXISTS threads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_message_id TEXT NOT NULL,
+        reply_message_id TEXT NOT NULL,
+        reply_timestamp INTEGER NOT NULL,
+        FOREIGN KEY (parent_message_id) REFERENCES messages(message_id),
+        FOREIGN KEY (reply_message_id) REFERENCES messages(message_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_threads_parent ON threads(parent_message_id);
+
+      CREATE TABLE IF NOT EXISTS edit_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id TEXT NOT NULL,
+        old_message TEXT NOT NULL,
+        edited_at INTEGER NOT NULL,
+        FOREIGN KEY (message_id) REFERENCES messages(message_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS room_metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS file_references (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id TEXT NOT NULL,
+        file_key TEXT NOT NULL,
+        FOREIGN KEY (message_id) REFERENCES messages(message_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_file_refs_message ON file_references(message_id);
+    `);
+  }
+
+  // Restore destruction timer
   async restoreDestructionTimer() {
     try {
-      const destructionTime = await this.storage.get('destruction-time');
-      if (destructionTime) {
+      const results = this.sql
+        .exec(`SELECT value FROM room_metadata WHERE key = 'destruction-time'`)
+        .toArray();
+
+      if (results.length > 0) {
+        const result = results[0];
+        const destructionTime = parseInt(result.value);
         const now = Date.now();
         const remaining = destructionTime - now;
 
         if (remaining <= 0) {
-          // Time has already passed, execute destruction immediately
           await this.executeDestruction();
         } else {
-          // Restore the timer
           this.destructionTime = destructionTime;
           this.destructionTimer = setTimeout(() => {
             this.executeDestruction();
           }, remaining);
 
-          // Set up periodic broadcast (every 5 seconds)
           this.destructionBroadcastInterval = setInterval(() => {
-            if (this.destructionTime) {
-              this.broadcast({
-                destructionUpdate: {
-                  destructionStarted: true,
-                  destructionTime: this.destructionTime,
-                },
-              });
-            }
-          }, 5000);
-
-          console.log(
-            `Restored destruction timer: ${Math.floor(remaining / 1000)}s remaining`,
-          );
+            const remaining = Math.max(
+              0,
+              Math.floor((this.destructionTime - Date.now()) / 1000),
+            );
+            this.broadcast({
+              destructionUpdate: {
+                countdown: remaining,
+                destructionTime: this.destructionTime,
+              },
+            });
+          }, 1000);
         }
       }
     } catch (err) {
@@ -301,7 +336,7 @@ export class ChatRoom {
         // The request is to `/api/room/<name>/websocket`. A client is trying to establish a new
         // WebSocket session.
         if (request.headers.get('Upgrade') != 'websocket') {
-          return new Response('expected websocket', { status: 400 });
+          return new Response('Expected WebSocket', { status: 400 });
         }
 
         // Get the client's IP address for use with the rate limiter.
@@ -322,55 +357,49 @@ export class ChatRoom {
       });
 
       app.post('/upload', async (c) => {
-        // Handle file upload
         const { req } = c;
         const request = req.raw;
-        // Get the client's IP address for rate limiting
         let ip = request.headers.get('CF-Connecting-IP');
 
-        // Check rate limit
+        // Rate limit check
         let limiterId = this.env.limiters.idFromName(ip);
         let limiter = this.env.limiters.get(limiterId);
         let response = await limiter.fetch('https://dummy-url', {
           method: 'POST',
         });
         let cooldown = +(await response.text());
+
         if (cooldown > 0) {
           return c.json(
-            { error: 'Rate limited. Please try again later.' },
-            429,
+            { error: 'Rate limit exceeded. Please wait before uploading.' },
+            { status: 429 },
           );
         }
 
-        // Parse multipart form data
         const formData = await request.formData();
         const file = formData.get('file');
 
         if (!file || !(file instanceof File)) {
-          return c.json({ error: 'No file provided' }, 400);
+          return c.json({ error: 'No file provided' }, { status: 400 });
         }
 
-        // Validate file size (10MB max)
         if (file.size > 10 * 1024 * 1024) {
           return c.json(
-            { error: 'File too large. Maximum size is 10MB.' },
-            400,
+            { error: 'File too large (max 10MB)' },
+            { status: 413 },
           );
         }
 
-        // Generate unique file key
         const fileId = crypto.randomUUID();
         const fileExtension = file.name.split('.').pop() || 'bin';
         const fileKey = `${fileId}.${fileExtension}`;
 
-        // Upload to R2
         await this.env.CHAT_FILES.put(fileKey, file.stream(), {
           httpMetadata: {
             contentType: file.type || 'application/octet-stream',
           },
         });
 
-        // Return the file URL
         const fileUrl = `/files/${fileKey}`;
         return c.json({
           success: true,
@@ -382,7 +411,18 @@ export class ChatRoom {
       });
 
       app.get('/channels', async (c) => {
-        const channels = await this.channelManager.getAllChannels(100);
+        const cursor = this.sql.exec(`
+          SELECT 
+            channel,
+            COUNT(*) as count,
+            MAX(timestamp) as lastUsed
+          FROM messages
+          GROUP BY channel
+          ORDER BY lastUsed DESC
+          LIMIT 100
+        `);
+
+        const channels = cursor.toArray();
         return c.json({ channels });
       });
 
@@ -394,17 +434,55 @@ export class ChatRoom {
           return c.json({ error: "Missing 'channelName' parameter" }, 400);
         }
 
-        const messages = await this.channelManager.getMessagesForChannel(
+        console.log(
+          'Fetching messages for channel:',
+          channelName,
+          'limit:',
+          limit,
+        );
+        const cursor = this.sql.exec(
+          `
+          SELECT 
+            message_id as messageId,
+            timestamp,
+            username as name,
+            message,
+            channel,
+            reply_to_id as replyToId,
+            edited_at as editedAt
+          FROM messages
+          WHERE channel = ?
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `,
           channelName,
           limit,
         );
+
+        const messages = cursor.toArray().reverse(); // Reverse to get chronological order
         return c.json({ channel: channelName, messages });
       });
 
       app.get('/channel/search', async (c) => {
         const query = c.req.query('q') || '';
-        const channels = await this.channelManager.searchChannels(query, 20);
-        return c.json({ query, results: channels });
+
+        const cursor = this.sql.exec(
+          `
+          SELECT 
+            channel,
+            COUNT(*) as count,
+            MAX(timestamp) as lastUsed
+          FROM messages
+          WHERE channel LIKE ?
+          GROUP BY channel
+          ORDER BY lastUsed DESC
+          LIMIT 20
+        `,
+          query + '%',
+        );
+
+        const results = cursor.toArray();
+        return c.json({ query, results });
       });
 
       app.delete('/message/:messageId', async (c) => {
@@ -415,64 +493,40 @@ export class ChatRoom {
           return c.json({ error: "Missing 'messageId' parameter" }, 400);
         }
 
-        // Find the message by searching storage
-        const messages = await this.storage.list();
-        let messageKey = null;
-        let messageData = null;
+        // Find and verify ownership
+        const msgCursor = this.sql.exec(
+          `SELECT username, message FROM messages WHERE message_id = ?`,
+          messageId,
+        );
 
-        for (const [key, value] of messages) {
-          if (
-            key.startsWith('thread:') ||
-            key === 'room-info' ||
-            key === 'destruction-time'
-          ) {
-            continue;
-          }
-
-          try {
-            const msg = typeof value === 'string' ? JSON.parse(value) : value;
-            if (msg.messageId === messageId) {
-              messageKey = key;
-              messageData = msg;
-              break;
-            }
-          } catch (e) {
-            continue;
-          }
-        }
-
+        const messageData = msgCursor.one();
         if (!messageData) {
           return c.json({ error: 'Message not found' }, 404);
         }
 
-        // Verify the user owns this message
-        if (messageData.name !== username) {
+        if (messageData.username !== username) {
           return c.json(
             { error: 'You can only delete your own messages' },
-            403,
+            { status: 403 },
           );
         }
 
-        console.log(
-          `[DELETE] Deleting message ${messageId} (key: ${messageKey})`,
+        // Delete message and related data
+        this.sql.exec(
+          `
+          DELETE FROM edit_history WHERE message_id = ?;
+          DELETE FROM threads WHERE parent_message_id = ? OR reply_message_id = ?;
+          DELETE FROM file_references WHERE message_id = ?;
+          DELETE FROM messages WHERE message_id = ?;
+        `,
+          messageId,
+          messageId,
+          messageId,
+          messageId,
+          messageId,
         );
 
-        // Get the channel from the message
-        const channel = messageData.channel || 'general';
-        console.log(`[DELETE] Message is in channel: #${channel}`);
-
-        // Delete the message
-        await this.storage.delete(messageKey);
-
-        // Remove this message from the channel index
-        await this.channelManager.removeMessageFromChannel(channel, messageKey);
-
-        // Broadcast message deletion to all clients
-        // Note: We don't send channelsUpdated - channels persist even when empty
-        this.broadcast({
-          messageDeleted: messageId,
-        });
-
+        this.broadcast({ messageDeleted: messageId });
         return c.json({ success: true, messageId });
       });
 
@@ -487,80 +541,53 @@ export class ChatRoom {
           );
         }
 
-        // Check message length
         if (newMessage.length > MAX_MESSAGE_LENGTH) {
           return c.json({ error: 'Message too long' }, 400);
         }
 
-        // Find the message by searching storage
-        const messages = await this.storage.list();
-        let messageKey = null;
-        let messageData = null;
+        // Find and verify
+        const msgCursor = this.sql.exec(
+          `SELECT username, message FROM messages WHERE message_id = ?`,
+          messageId,
+        );
 
-        for (const [key, value] of messages) {
-          if (
-            key.startsWith('thread:') ||
-            key === 'room-info' ||
-            key === 'destruction-time'
-          ) {
-            continue;
-          }
-
-          try {
-            const msg = typeof value === 'string' ? JSON.parse(value) : value;
-            if (msg.messageId === messageId) {
-              messageKey = key;
-              messageData = msg;
-              break;
-            }
-          } catch (e) {
-            continue;
-          }
-        }
-
+        const messageData = msgCursor.one();
         if (!messageData) {
           return c.json({ error: 'Message not found' }, 404);
         }
 
-        // Verify the user owns this message
-        if (messageData.name !== username) {
+        if (messageData.username !== username) {
           return c.json({ error: 'You can only edit your own messages' }, 403);
         }
 
-        // Can't edit file messages
         if (messageData.message.startsWith('FILE:')) {
           return c.json({ error: 'Cannot edit file messages' }, 400);
         }
 
-        // Save original message to edit history
-        if (!messageData.editHistory) {
-          messageData.editHistory = [];
-        }
-        messageData.editHistory.push({
-          message: messageData.message,
-          editedAt: Date.now(),
-        });
+        // Save to edit history
+        const editedAt = Date.now();
+        this.sql.exec(
+          `
+          INSERT INTO edit_history (message_id, old_message, edited_at)
+          VALUES (?, ?, ?);
+          
+          UPDATE messages
+          SET message = ?, edited_at = ?
+          WHERE message_id = ?;
+        `,
+          messageId,
+          messageData.message,
+          editedAt,
+          newMessage,
+          editedAt,
+          messageId,
+        );
 
-        console.log(`[EDIT] Editing message ${messageId} (key: ${messageKey})`);
-
-        // Get the channel from the message (channel doesn't change on edit)
-        const channel = messageData.channel || 'general';
-        console.log(`[EDIT] Message is in channel: #${channel}`);
-
-        // Update the message
-        messageData.message = newMessage;
-        messageData.editedAt = Date.now();
-
-        // Save updated message
-        await this.storage.put(messageKey, JSON.stringify(messageData));
-
-        // Broadcast message edit to all clients
-        // Note: Channel doesn't change, no need to update channel indexes
         this.broadcast({
           messageEdited: {
-            messageId: messageId,
+            messageId,
             message: newMessage,
-            editedAt: messageData.editedAt,
+            editedAt,
           },
         });
 
@@ -568,46 +595,63 @@ export class ChatRoom {
           success: true,
           messageId,
           message: newMessage,
-          editedAt: messageData.editedAt,
+          editedAt,
         });
       });
 
       app.get('/info', async (c) => {
-        const info = (await this.storage.get('room-info')) || {};
-        return c.json(info);
+        try {
+          const nameCursor = this.sql.exec(
+            `SELECT value FROM room_metadata WHERE key = 'name'`,
+          );
+          const noteCursor = this.sql.exec(
+            `SELECT value FROM room_metadata WHERE key = 'note'`,
+          );
+
+          const info = {};
+          const nameResult = nameCursor.one();
+          const noteResult = noteCursor.one();
+
+          if (nameResult) info.name = nameResult.value;
+          if (noteResult) info.note = noteResult.value;
+
+          return c.json(info);
+        } catch (err) {
+          return c.json({});
+        }
       });
 
       app.put('/info', async (c) => {
         const data = await c.req.json();
-        let info = (await this.storage.get('room-info')) || {};
-
-        // Track what changed
         let changed = false;
 
-        // Update name if provided
-        if (data.name !== undefined && data.name !== info.name) {
-          info.name = data.name;
+        if (data.name !== undefined) {
+          this.sql.exec(
+            `
+            INSERT OR REPLACE INTO room_metadata (key, value)
+            VALUES ('name', ?)
+          `,
+            data.name,
+          );
           changed = true;
         }
 
-        // Update note if provided
-        if (data.note !== undefined && data.note !== info.note) {
-          info.note = data.note;
+        if (data.note !== undefined) {
+          this.sql.exec(
+            `
+            INSERT OR REPLACE INTO room_metadata (key, value)
+            VALUES ('note', ?)
+          `,
+            data.note,
+          );
           changed = true;
         }
 
-        // E2EE: Server doesn't store encryption settings
-        // All encryption state is managed client-side in IndexedDB
-        // Server only stores basic room metadata (name, note)
-
-        await this.storage.put('room-info', info);
-
-        // Broadcast the update to all connected clients
         if (changed) {
           this.broadcast({
             roomInfoUpdate: {
-              name: info.name,
-              note: info.note,
+              name: data.name,
+              note: data.note,
             },
           });
         }
@@ -617,190 +661,215 @@ export class ChatRoom {
 
       app.get('/thread/:messageId', async (c) => {
         const messageId = c.req.param('messageId');
-
         if (!messageId) {
           return new Response('Method not allowed', { status: 405 });
         }
+
         try {
-          // Check if nested parameter is set
           const nested = c.req.query('nested') === 'true';
 
           if (nested) {
-            // Return all nested replies recursively
-            const allReplies = await this.getAllThreadReplies(messageId);
+            // Recursive query for nested replies
+            const cursor = this.sql.exec(
+              `
+              WITH RECURSIVE thread_tree AS (
+                SELECT message_id, reply_to_id, 0 as depth
+                FROM messages
+                WHERE message_id = ?
+                
+                UNION ALL
+                
+                SELECT m.message_id, m.reply_to_id, tt.depth + 1
+                FROM messages m
+                INNER JOIN thread_tree tt ON m.reply_to_id = tt.message_id
+                WHERE tt.depth < 10
+              )
+              SELECT 
+                m.message_id as messageId,
+                m.timestamp,
+                m.username as name,
+                m.message,
+                m.channel,
+                m.reply_to_id as replyToId,
+                m.edited_at as editedAt
+              FROM thread_tree tt
+              INNER JOIN messages m ON tt.message_id = m.message_id
+              WHERE tt.depth > 0
+              ORDER BY m.timestamp ASC
+            `,
+              messageId,
+            );
+
+            const allReplies = cursor.toArray();
             return c.json({ replies: allReplies });
           } else {
-            // Return only direct replies (original behavior)
-            const threadKey = `thread:${messageId}`;
-            const threadReplies = (await this.storage.get(threadKey)) || [];
+            // Direct replies only
+            const cursor = this.sql.exec(
+              `
+              SELECT 
+                message_id as messageId,
+                timestamp,
+                username as name,
+                message,
+                channel,
+                reply_to_id as replyToId,
+                edited_at as editedAt
+              FROM messages
+              WHERE reply_to_id = ?
+              ORDER BY timestamp ASC
+            `,
+              messageId,
+            );
 
-            // Load the actual reply messages
-            const replies = [];
-            for (const reply of threadReplies) {
-              try {
-                const msgData = await this.storage.get(reply.key);
-                if (msgData) {
-                  const msg =
-                    typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
-                  replies.push(msg);
-                }
-              } catch (e) {
-                console.error('Failed to load reply:', e);
-              }
-            }
-
+            const replies = cursor.toArray();
             return c.json({ replies });
           }
         } catch (err) {
+          console.error('Thread query error:', err);
           return c.json({ error: err.message }, 500);
         }
       });
 
-      // Start room destruction countdown
       app.post('/destruction/start', async (c) => {
         try {
-          const data = await c.req.json();
-          const minutes =
-            data.minutes !== undefined ? parseInt(data.minutes) : 30;
-          console.log(`Starting destruction timer for ${minutes} minutes`);
-          if (minutes === 0) {
-            // Immediate destruction - broadcast first, then execute
-            this.broadcast({
-              destructionUpdate: {
-                roomDestroyed: true,
-              },
-            });
+          const { countdownSeconds } = await c.req.json();
+          const countdown = parseInt(countdownSeconds) || 300;
 
-            // Give clients a moment to receive the message before destroying
-            setTimeout(async () => {
-              await this.executeDestruction();
-            }, 1000);
-
-            return c.json({
-              success: true,
-              immediate: true,
-            });
+          if (countdown < 10 || countdown > 86400) {
+            return c.json(
+              { error: 'Countdown must be between 10 and 86400 seconds' },
+              400,
+            );
           }
 
-          // Set destruction time
-          this.destructionTime = Date.now() + minutes * 60 * 1000;
-          await this.storage.put('destruction-time', this.destructionTime);
+          this.destructionTime = Date.now() + countdown * 1000;
 
-          // Clear any existing timer
+          this.sql.exec(
+            `
+            INSERT OR REPLACE INTO room_metadata (key, value)
+            VALUES ('destruction-time', ?)
+          `,
+            this.destructionTime.toString(),
+          );
+
           if (this.destructionTimer) {
             clearTimeout(this.destructionTimer);
           }
-
-          // Set new timer
-          this.destructionTimer = setTimeout(
-            () => {
-              this.executeDestruction();
-            },
-            minutes * 60 * 1000,
-          );
-
-          // Clear any existing broadcast interval
           if (this.destructionBroadcastInterval) {
             clearInterval(this.destructionBroadcastInterval);
           }
 
-          // Set up periodic broadcast (every 5 seconds)
-          this.destructionBroadcastInterval = setInterval(() => {
-            if (this.destructionTime) {
-              this.broadcast({
-                destructionUpdate: {
-                  destructionStarted: true,
-                  destructionTime: this.destructionTime,
-                },
-              });
-            }
-          }, 5000);
+          this.destructionTimer = setTimeout(() => {
+            this.executeDestruction();
+          }, countdown * 1000);
 
-          // Broadcast to all clients immediately
+          this.destructionBroadcastInterval = setInterval(() => {
+            const remaining = Math.max(
+              0,
+              Math.floor((this.destructionTime - Date.now()) / 1000),
+            );
+            this.broadcast({
+              destructionUpdate: {
+                countdown: remaining,
+                destructionTime: this.destructionTime,
+              },
+            });
+
+            if (remaining <= 0) {
+              clearInterval(this.destructionBroadcastInterval);
+              this.destructionBroadcastInterval = null;
+            }
+          }, 1000);
+
           this.broadcast({
             destructionUpdate: {
-              destructionStarted: true,
+              countdown,
               destructionTime: this.destructionTime,
             },
           });
 
           return c.json({
             success: true,
+            countdown,
             destructionTime: this.destructionTime,
           });
         } catch (err) {
+          console.error('Failed to start destruction:', err);
           return c.json({ error: err.message }, 500);
         }
       });
 
-      // Cancel room destruction
       app.post('/destruction/cancel', async (c) => {
         try {
-          // Clear destruction time
-          this.destructionTime = null;
-          await this.storage.delete('destruction-time');
-
-          // Clear timer
           if (this.destructionTimer) {
             clearTimeout(this.destructionTimer);
             this.destructionTimer = null;
           }
-
-          // Clear broadcast interval
           if (this.destructionBroadcastInterval) {
             clearInterval(this.destructionBroadcastInterval);
             this.destructionBroadcastInterval = null;
           }
 
-          // Broadcast to all clients
+          this.destructionTime = null;
+
+          this.sql.exec(
+            `DELETE FROM room_metadata WHERE key = 'destruction-time'`,
+          );
+
           this.broadcast({
             destructionUpdate: {
-              destructionCancelled: true,
+              cancelled: true,
             },
           });
 
           return c.json({ success: true });
         } catch (err) {
+          console.error('Failed to cancel destruction:', err);
           return c.json({ error: err.message }, 500);
         }
       });
 
-      // Export all room data
       app.get('/export', async (c) => {
         try {
-          const exportData = {
-            roomInfo: (await this.storage.get('room-info')) || {},
-            messages: [],
-            channels: await this.channelManager.getAllChannels(1000),
-            exportedAt: new Date().toISOString(),
-          };
+          const nameCursor = this.sql.exec(
+            `SELECT value FROM room_metadata WHERE key = 'name'`,
+          );
+          const noteCursor = this.sql.exec(
+            `SELECT value FROM room_metadata WHERE key = 'note'`,
+          );
 
-          // Get all messages (server just returns raw messages, client will decrypt and extract files)
-          const messages = await this.storage.list();
-          for (const [key, value] of messages) {
-            // Skip internal keys
-            if (
-              key.startsWith('thread:') ||
-              key === 'room-info' ||
-              key === 'destruction-time'
-            ) {
-              continue;
-            }
+          const roomInfo = {};
+          try {
+            const nameResult = nameCursor.one();
+            if (nameResult) roomInfo.name = nameResult.value;
+          } catch (e) {}
 
-            try {
-              const msg = typeof value === 'string' ? JSON.parse(value) : value;
-              exportData.messages.push(msg);
-            } catch (e) {
-              console.error('Failed to parse message:', e);
-            }
-          }
+          try {
+            const noteResult = noteCursor.one();
+            if (noteResult) roomInfo.note = noteResult.value;
+          } catch (e) {}
 
-          // Sort messages by timestamp
-          exportData.messages.sort((a, b) => a.timestamp - b.timestamp);
+          const messagesCursor = this.sql.exec(`
+            SELECT 
+              message_id as messageId,
+              timestamp,
+              username as name,
+              message,
+              channel,
+              reply_to_id as replyToId,
+              edited_at as editedAt,
+              created_at as createdAt
+            FROM messages
+            ORDER BY timestamp ASC
+          `);
 
-          // Return JSON for client-side processing
-          // Client will decrypt messages and extract file information
-          return c.json(exportData);
+          const messages = messagesCursor.toArray();
+
+          return c.json({
+            roomInfo,
+            messages,
+            exportedAt: Date.now(),
+          });
         } catch (err) {
           console.error('Export error:', err);
           return c.json({ error: err.message }, 500);
@@ -809,41 +878,30 @@ export class ChatRoom {
     });
   }
 
-  // The system will call fetch() whenever an HTTP request is sent to this Object. Such requests
-  // can only be sent from other Worker code, such as the code above; these requests don't come
-  // directly from the internet. In the future, we will support other formats than HTTP for these
-  // communications, but we started with HTTP for its familiarity.
   async fetch(request) {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
-      console.log('ChatRoom handling request for:', url.pathname);
       return this.app.fetch(request);
     });
   }
 
-  // handleSession() implements our WebSocket-based chat protocol.
   async handleSession(webSocket, ip) {
-    // Accept our end of the WebSocket. This tells the runtime that we'll be terminating the
-    // WebSocket in JavaScript, not sending it elsewhere.
     this.state.acceptWebSocket(webSocket);
 
-    // Set up our rate limiter client.
     let limiterId = this.env.limiters.idFromName(ip);
     let limiter = new RateLimiterClient(
       () => this.env.limiters.get(limiterId),
       (err) => webSocket.close(1011, err.stack),
     );
 
-    // Create our session and add it to the sessions map.
     let session = { limiterId, limiter, blockedMessages: [] };
-    // attach limiterId to the webSocket so it survives hibernation
     webSocket.serializeAttachment({
       ...webSocket.deserializeAttachment(),
       limiterId: limiterId.toString(),
     });
     this.sessions.set(webSocket, session);
 
-    // Queue "join" messages for all online users, to populate the client's roster.
+    // Queue join messages
     for (let otherSession of this.sessions.values()) {
       if (otherSession.name) {
         session.blockedMessages.push(
@@ -857,167 +915,140 @@ export class ChatRoom {
     try {
       let session = this.sessions.get(webSocket);
       if (session.quit) {
-        // Whoops, when trying to send to this WebSocket in the past, it threw an exception and
-        // we marked it broken. But somehow we got another message? I guess try sending a
-        // close(), which might throw, in which case we'll try to send an error, which will also
-        // throw, and whatever, at least we won't accept the message. (This probably can't
-        // actually happen. This is defensive coding.)
-        webSocket.close(1011, 'WebSocket broken.');
+        webSocket.close(1011, 'WebSocket broken');
         return;
       }
 
-      // Check if the user is over their rate limit and reject the message if so.
       if (!session.limiter.checkLimit()) {
         webSocket.send(
           JSON.stringify({
-            error: 'Your IP is being rate-limited, please try again later.',
+            error: 'Your IP is being rate-limited. Please try again later.',
           }),
         );
         return;
       }
 
-      // I guess we'll use JSON.
       let data = JSON.parse(msg);
 
       if (!session.name) {
-        // The first message the client sends is the user info message with their name. Save it
-        // into their session object.
-        const requestedName = '' + (data.name || 'anonymous');
+        session.name = '' + (data.name || 'anonymous');
+        session.name = session.name.substring(0, 32);
 
-        // Don't let people use ridiculously long names. (This is also enforced on the client,
-        // so if they get here they are not using the intended client.)
-        if (requestedName.length > 32) {
-          webSocket.send(JSON.stringify({ error: 'Name too long.' }));
-          webSocket.close(1009, 'Name too long.');
-          return;
+        if (session.blockedMessages.length > 0) {
+          session.blockedMessages.forEach((queued) => {
+            try {
+              webSocket.send(queued);
+            } catch (err) {
+              session.quit = true;
+            }
+          });
+          session.blockedMessages = [];
         }
 
-        // Check if this username is already taken
-        let existingSession = null;
-        for (let [ws, otherSession] of this.sessions.entries()) {
-          if (otherSession.name === requestedName && otherSession !== session) {
-            existingSession = { ws, session: otherSession };
-            break;
-          }
-        }
-
-        // If the username is taken, kick out the old connection (likely a stale connection)
-        if (existingSession) {
-          try {
-            // Close the old connection
-            existingSession.ws.close(1000, 'Reconnected from another session');
-            this.sessions.delete(existingSession.ws);
-            // Broadcast that the user left
-            this.broadcast({ quit: requestedName });
-          } catch (err) {
-            // If closing fails, the connection is probably already dead, which is fine
-            console.log('Failed to close existing session:', err);
-          }
-        }
-
-        session.name = requestedName;
-        // attach name to the webSocket so it survives hibernation
-        webSocket.serializeAttachment({
-          ...webSocket.deserializeAttachment(),
-          name: session.name,
-        });
-
-        // Deliver all the messages we queued up since the user connected.
-        session.blockedMessages.forEach((queued) => {
-          // Apply JSON if we weren't given a string to start with.
-          if (typeof queued !== 'string') {
-            queued = JSON.stringify(queued);
-          }
-
-          webSocket.send(queued);
-        });
-        delete session.blockedMessages;
-
-        // Broadcast to all other connections that this user has joined.
         this.broadcast({ joined: session.name });
-
-        // Send ready signal
         webSocket.send(JSON.stringify({ ready: true }));
-
-        // If there's an ongoing destruction countdown, inform the new client
-        if (this.destructionTime) {
-          webSocket.send(
-            JSON.stringify({
-              destructionUpdate: {
-                destructionStarted: true,
-                destructionTime: this.destructionTime,
-              },
-            }),
-          );
-        }
-
         return;
       }
 
-      // Construct sanitized message for storage and broadcast.
+      // Construct message
       data = {
         name: session.name,
         message: '' + data.message,
-        messageId: data.messageId || crypto.randomUUID(), // Generate UUID if not provided
-        replyTo: data.replyTo || null, // Include reply information if present
-        channel: data.channel || 'general', // Channel field (plaintext, not encrypted)
+        messageId: data.messageId || crypto.randomUUID(),
+        replyTo: data.replyTo || null,
+        channel: data.channel || 'general',
       };
 
-      // Validate and normalize channel name
-      try {
-        data.channel = validateChannelName(data.channel);
-      } catch (err) {
-        webSocket.send(
-          JSON.stringify({ error: 'Invalid channel name: ' + err.message }),
-        );
-        return;
+      // Validate channel
+      if (data.channel.length > 100) {
+        throw new Error('Channel name too long');
       }
 
-      console.log(`[WebSocket] Message for channel: #${data.channel}`);
-
-      // Check if this is a file message
+      // Validate message length
       if (data.message.startsWith('FILE:')) {
-        // File messages have format: "FILE:{fileUrl}|{fileName}|{fileType}"
-        // No additional validation needed as the file was already uploaded
-      } else {
-        // Block people from sending overly long messages. This is also enforced on the client,
-        // so to trigger this the user must be bypassing the client code.
-        if (data.message.length > MAX_MESSAGE_LENGTH) {
-          webSocket.send(JSON.stringify({ error: 'Message too long.' }));
-          return;
+        const parts = data.message.substring(5).split('|');
+        if (parts.length < 3) {
+          throw new Error('Invalid file message format');
         }
+      } else if (data.message.length > MAX_MESSAGE_LENGTH) {
+        throw new Error('Message too long');
       }
 
-      // Add timestamp. Here's where this.lastTimestamp comes in -- if we receive a bunch of
-      // messages at the same time (or if the clock somehow goes backwards????), we'll assign
-      // them sequential timestamps, so at least the ordering is maintained.
       data.timestamp = Math.max(Date.now(), this.lastTimestamp + 1);
       this.lastTimestamp = data.timestamp;
 
-      // Broadcast the message to all other WebSockets.
+      // Broadcast
       let dataStr = JSON.stringify(data);
       this.broadcast(dataStr);
 
-      // Save message.
-      let key = new Date(data.timestamp).toISOString();
-      await this.storage.put(key, dataStr);
+      // Save to database
+      this.sql.exec(
+        `
+        INSERT INTO messages (
+          message_id, timestamp, username, message, channel,
+          reply_to_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        data.messageId,
+        data.timestamp,
+        data.name,
+        data.message,
+        data.channel,
+        data.replyTo?.messageId || null,
+        Date.now(),
+      );
 
-      // If this is a reply, update thread index
+      // Update thread index if reply
       if (data.replyTo && data.replyTo.messageId) {
-        await this.updateThreadIndex(data.replyTo.messageId, key, data);
+        this.sql.exec(
+          `
+          INSERT INTO threads (parent_message_id, reply_message_id, reply_timestamp)
+          VALUES (?, ?, ?)
+        `,
+          data.replyTo.messageId,
+          data.messageId,
+          data.timestamp,
+        );
+
+        // Broadcast thread update
+        const countCursor = this.sql.exec(
+          `
+          SELECT COUNT(*) as count FROM threads WHERE parent_message_id = ?
+        `,
+          data.replyTo.messageId,
+        );
+        const countResult = countCursor.one();
+
+        this.broadcast({
+          threadUpdate: {
+            messageId: data.replyTo.messageId,
+            threadInfo: {
+              replyCount: countResult.count,
+            },
+          },
+        });
       }
 
-      // Index message in the channel
-      await this.channelManager.indexMessage(key, data.channel, data.timestamp);
+      // Track file reference
+      if (data.message.startsWith('FILE:')) {
+        const parts = data.message.substring(5).split('|');
+        const fileUrl = parts[0];
+        const fileKey = fileUrl.replace('/files/', '');
+
+        this.sql.exec(
+          `
+          INSERT INTO file_references (message_id, file_key)
+          VALUES (?, ?)
+        `,
+          data.messageId,
+          fileKey,
+        );
+      }
     } catch (err) {
-      // Report any exceptions directly back to the client. As with our handleErrors() this
-      // probably isn't what you'd want to do in production, but it's convenient when testing.
       webSocket.send(JSON.stringify({ error: err.stack }));
     }
   }
 
-  // On "close" and "error" events, remove the WebSocket from the sessions list and broadcast
-  // a quit message.
   async closeOrErrorHandler(webSocket) {
     let session = this.sessions.get(webSocket) || {};
     session.quit = true;
@@ -1035,206 +1066,85 @@ export class ChatRoom {
     this.closeOrErrorHandler(webSocket);
   }
 
-  // Update thread index when a reply is posted
-  async updateThreadIndex(parentMessageId, replyKey, replyData) {
-    try {
-      // Get or create thread index
-      const threadKey = `thread:${parentMessageId}`;
-      let threadReplies = (await this.storage.get(threadKey)) || [];
-
-      // Add this reply to the thread
-      threadReplies.push({
-        key: replyKey,
-        timestamp: replyData.timestamp,
-      });
-
-      // Save updated thread index
-      await this.storage.put(threadKey, threadReplies);
-
-      // Update parent message's threadInfo
-      // Try to find the parent message by searching storage
-      // Since messageId might be UUID or timestamp-based, we need to search
-      const messages = await this.storage.list();
-      for (const [key, value] of messages) {
-        if (key.startsWith('thread:')) continue; // Skip thread indexes
-
-        try {
-          const msg = typeof value === 'string' ? JSON.parse(value) : value;
-          if (msg.messageId === parentMessageId) {
-            msg.threadInfo = {
-              replyCount: threadReplies.length,
-              lastReplyTime: replyData.timestamp,
-            };
-            await this.storage.put(key, JSON.stringify(msg));
-
-            // Broadcast the updated threadInfo to all clients
-            this.broadcast({
-              threadUpdate: {
-                messageId: parentMessageId,
-                threadInfo: msg.threadInfo,
-              },
-            });
-            break;
-          }
-        } catch (e) {
-          // Skip invalid entries
-          continue;
-        }
-      }
-    } catch (err) {
-      console.error('Failed to update thread index:', err);
-    }
-  }
-
-  // Get all replies for a thread recursively (including nested replies)
-  async getAllThreadReplies(rootMessageId) {
-    const allReplies = [];
-    const visited = new Set();
-
-    // Recursive function to collect replies
-    const collectReplies = async (messageId) => {
-      if (visited.has(messageId)) {
-        return; // Prevent infinite loops
-      }
-      visited.add(messageId);
-
-      // Get direct replies to this message
-      const threadKey = `thread:${messageId}`;
-      const threadReplies = (await this.storage.get(threadKey)) || [];
-
-      // Load each reply message
-      for (const replyRef of threadReplies) {
-        try {
-          const msgData = await this.storage.get(replyRef.key);
-          if (msgData) {
-            const msg =
-              typeof msgData === 'string' ? JSON.parse(msgData) : msgData;
-            allReplies.push(msg);
-
-            // Recursively get replies to this reply
-            if (msg.messageId) {
-              await collectReplies(msg.messageId);
-            }
-          }
-        } catch (e) {
-          console.error('Failed to load reply:', e);
-        }
-      }
-    };
-
-    // Start collecting from the root message
-    await collectReplies(rootMessageId);
-
-    return allReplies;
-  }
-
-  // broadcast() broadcasts a message to all clients.
   broadcast(message) {
-    // Apply JSON if we weren't given a string to start with.
     if (typeof message !== 'string') {
       message = JSON.stringify(message);
     }
 
-    // Iterate over all the sessions sending them messages.
     let quitters = [];
     this.sessions.forEach((session, webSocket) => {
       if (session.name) {
         try {
           webSocket.send(message);
         } catch (err) {
-          // Whoops, this connection is dead. Remove it from the map and arrange to notify
-          // everyone below.
           session.quit = true;
           quitters.push(session);
-          this.sessions.delete(webSocket);
         }
       } else {
-        // This session hasn't sent the initial user info message yet, so we're not sending them
-        // messages yet (no secret lurking!). Queue the message to be sent later.
         session.blockedMessages.push(message);
       }
     });
 
     quitters.forEach((quitter) => {
       if (quitter.name) {
-        this.broadcast({ quit: quitter.name });
+        this.sessions.delete(quitter);
       }
     });
   }
 
-  // Execute room destruction - completely destroy all data
   async executeDestruction() {
     try {
       console.log('Executing room destruction...');
 
-      // Notify all clients that the room is being destroyed
       this.broadcast({
         destructionUpdate: {
           roomDestroyed: true,
         },
       });
 
-      // Close all WebSocket connections
+      // Close all WebSockets
       for (const [webSocket, session] of this.sessions.entries()) {
         try {
-          webSocket.close(1000, 'Room has been destroyed');
-        } catch (err) {
-          console.error('Failed to close WebSocket:', err);
-        }
+          webSocket.close(1000, 'Room destroyed');
+        } catch (e) {}
       }
       this.sessions.clear();
 
-      // Collect all R2 file keys to delete
-      const filesToDelete = [];
-      const messages = await this.storage.list();
-
-      for (const [key, value] of messages) {
-        try {
-          // Skip internal keys
-          if (
-            key.startsWith('thread:') ||
-            key === 'room-info' ||
-            key === 'destruction-time'
-          ) {
-            continue;
-          }
-
-          const msg = typeof value === 'string' ? JSON.parse(value) : value;
-
-          // Check if message contains a file
-          if (msg.message && msg.message.startsWith('FILE:')) {
-            const parts = msg.message.substring(5).split('|');
-            const fileUrl = parts[0];
-
-            // Extract file key from URL (format: /files/{key})
-            if (fileUrl.startsWith('/files/')) {
-              const fileKey = fileUrl.substring(7);
-              filesToDelete.push(fileKey);
-            }
-          }
-        } catch (e) {
-          console.error('Failed to process message for file deletion:', e);
-        }
-      }
+      // Get all file references for R2 deletion
+      const cursor = this.sql.exec(`SELECT file_key FROM file_references`);
+      const filesToDelete = cursor.toArray().map((row) => row.file_key);
 
       // Delete all R2 files
       console.log(`Deleting ${filesToDelete.length} files from R2...`);
       for (const fileKey of filesToDelete) {
         try {
           await this.env.CHAT_FILES.delete(fileKey);
-        } catch (err) {
-          console.error(`Failed to delete file ${fileKey}:`, err);
+        } catch (e) {
+          console.error(`Failed to delete file ${fileKey}:`, e);
         }
       }
 
-      // Delete all storage data
-      console.log('Deleting all storage data...');
-      await this.storage.deleteAll();
+      // Delete all database data
+      console.log('Deleting all database data...');
+      this.sql.exec(`
+        DROP TABLE IF EXISTS messages;
+        DROP TABLE IF EXISTS threads;
+        DROP TABLE IF EXISTS edit_history;
+        DROP TABLE IF EXISTS room_metadata;
+        DROP TABLE IF EXISTS file_references;
+      `);
+
+      // Reinitialize schema
+      this.initDatabase();
 
       // Clear timers
       if (this.destructionTimer) {
         clearTimeout(this.destructionTimer);
         this.destructionTimer = null;
+      }
+      if (this.destructionBroadcastInterval) {
+        clearInterval(this.destructionBroadcastInterval);
+        this.destructionBroadcastInterval = null;
       }
       this.destructionTime = null;
 
@@ -1268,13 +1178,10 @@ export class RateLimiter {
   async fetch(request) {
     return await handleErrors(request, async () => {
       let now = Date.now() / 1000;
-
       this.nextAllowedTime = Math.max(now, this.nextAllowedTime);
 
       if (request.method == 'POST') {
-        // POST request means the user performed an action.
-        // We allow one action per 0.1 seconds (10 messages per second)
-        this.nextAllowedTime += 0.1;
+        this.nextAllowedTime += 1 / 10; // 10 requests per second
       }
 
       // Return the number of seconds that the client needs to wait.
@@ -1298,8 +1205,6 @@ class RateLimiterClient {
   constructor(getLimiterStub, reportError) {
     this.getLimiterStub = getLimiterStub;
     this.reportError = reportError;
-
-    // Call the callback to get the initial stub.
     this.limiter = getLimiterStub();
 
     // When `inCooldown` is true, the rate limit is currently applied and checkLimit() will return
@@ -1345,11 +1250,8 @@ class RateLimiterClient {
         });
       }
 
-      // The response indicates how long we want to pause before accepting more requests.
       let cooldown = +(await response.text());
       await new Promise((resolve) => setTimeout(resolve, cooldown * 1000));
-
-      // Done waiting.
       this.inCooldown = false;
     } catch (err) {
       this.reportError(err);
