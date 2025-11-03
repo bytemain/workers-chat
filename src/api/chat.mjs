@@ -566,18 +566,21 @@ export class ChatRoom {
 
         // Save to edit history
         const editedAt = Date.now();
+
+        // Insert into edit history
         this.sql.exec(
-          `
-          INSERT INTO edit_history (message_id, old_message, edited_at)
-          VALUES (?, ?, ?);
-          
-          UPDATE messages
-          SET message = ?, edited_at = ?
-          WHERE message_id = ?;
-        `,
+          `INSERT INTO edit_history (message_id, old_message, edited_at)
+           VALUES (?, ?, ?)`,
           messageId,
           messageData.message,
           editedAt,
+        );
+
+        // Update message
+        this.sql.exec(
+          `UPDATE messages
+           SET message = ?, edited_at = ?
+           WHERE message_id = ?`,
           newMessage,
           editedAt,
           messageId,
