@@ -29,15 +29,6 @@ bucket_name = "edge-chat-files"
 tag = "v1"
 new_sqlite_classes = ["ChatRoom", "RateLimiter"]
 
-[[migrations]]
-tag = "v2"
-deleted_classes = ["ChatRoom", "RateLimiter"]
-
-[[migrations]]
-tag = "v3"
-new_sqlite_classes = ["ChatRoom", "RateLimiter"]
-
-
 [assets]
 directory = "./dist/ui"
 binding = "ASSETS"
