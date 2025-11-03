@@ -846,6 +846,19 @@ class ChatMessage extends HTMLElement {
     // Get contentDiv for adding reply references and other content
     const contentDiv = this.querySelector('.msg-content');
 
+    // Add "(edited)" indicator if message was edited
+    if (editedAt) {
+      const editedSpan = document.createElement('span');
+      editedSpan.className = 'msg-edited-indicator';
+      editedSpan.textContent = ' (edited)';
+      editedSpan.style.color = '#888';
+      editedSpan.style.fontSize = '0.75em';
+      editedSpan.style.fontStyle = 'italic';
+      editedSpan.style.marginLeft = '4px';
+      editedSpan.title = `Edited at ${formatTimestamp(editedAt)}`;
+      contentDiv.appendChild(editedSpan);
+    }
+
     // Add reply reference if this is a reply and not in thread view
     if (replyTo && !isInThread) {
       try {
