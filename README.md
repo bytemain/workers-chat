@@ -1,4 +1,4 @@
-# Cloudflare Edge Chat
+# Workers Chat
 
 This is a demo app written on [Cloudflare Workers](https://workers.cloudflare.com/) utilizing [Durable Objects](https://blog.cloudflare.com/introducing-workers-durable-objects) to implement real-time chat with stored history. This app runs 100% on Cloudflare's edge.
 
@@ -24,9 +24,9 @@ Switching to the WebSocket Hibernation API reduces duration billing from the lif
 
 ## Learn More
 
-* [Durable Objects introductory blog post](https://blog.cloudflare.com/introducing-workers-durable-objects)
-* [Durable Objects documentation](https://developers.cloudflare.com/workers/learning/using-durable-objects)
-* [Durable Object WebSocket documentation](https://developers.cloudflare.com/durable-objects/reference/websockets/)
+- [Durable Objects introductory blog post](https://blog.cloudflare.com/introducing-workers-durable-objects)
+- [Durable Objects documentation](https://developers.cloudflare.com/workers/learning/using-durable-objects)
+- [Durable Object WebSocket documentation](https://developers.cloudflare.com/durable-objects/reference/websockets/)
 
 ## Deploy it yourself
 
@@ -42,29 +42,4 @@ Once you've enabled Durable Objects on your account and have Wrangler installed 
 
 If you get an error saying "Cannot create binding for class [...] because it is not currently configured to implement durable objects", you need to update your version of Wrangler.
 
-This command will deploy the app to your account under the name `edge-chat-demo`.
-
-## What are the dependencies?
-
-This demo code does not have any dependencies, aside from Cloudflare Workers (for the server side, `chat.mjs`) and a modern web browser (for the client side, `chat.html`). Deploying the code requires Wrangler.
-
-## How to uninstall
-
-Modify wrangler.toml to remove the durable_objects bindings and add a deleted_classes migration. The bottom of your wrangler.toml should look like:
-
-```
-[durable_objects]
-bindings = [
-]
-
-# Indicate that you want the ChatRoom and RateLimiter classes to be callable as Durable Objects.
-[[migrations]]
-tag = "v1" # Should be unique for each entry
-new_classes = ["ChatRoom", "RateLimiter"]
-
-[[migrations]]
-tag = "v2"
-deleted_classes = ["ChatRoom", "RateLimiter"]
-```
-
-Then run `wrangler deploy`, which will delete the Durable Objects and all data stored in them.  To remove the Worker, go to [dash.cloudflare.com](dash.cloudflare.com) and navigate to Workers -> Overview -> edge-chat-demo -> Manage Service -> Delete (bottom of page)
+This command will deploy the app to your account under the name `edge-chat`.

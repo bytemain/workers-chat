@@ -25,10 +25,18 @@ persist = true
 binding = "CHAT_FILES"
 bucket_name = "edge-chat-files"
 
-# Indicate that you want the ChatRoom and RateLimiter classes to be callable as Durable Objects.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChatRoom", "RateLimiter"]
+
 [[migrations]]
 tag = "v2"
+deleted_classes = ["ChatRoom", "RateLimiter"]
+
+[[migrations]]
+tag = "v3"
 new_sqlite_classes = ["ChatRoom", "RateLimiter"]
+
 
 [assets]
 directory = "./dist/ui"
