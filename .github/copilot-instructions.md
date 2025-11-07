@@ -2,15 +2,16 @@
 
 ## Project Overview
 
-This is a real-time chat application running 100% on Cloudflare's edge using **Workers**, **Durable Objects**, and **R2 storage**. The key architectural insight: **Durable Objects coordinate WebSocket connections and manage per-room state** without traditional servers.
+This is a real-time chat application running 100% on Cloudflare's edge using **Workers**, **Durable Objects**, **R2 storage**, and **SQLite** (via Durable Objects SQL API). The key architectural insight: **Durable Objects coordinate WebSocket connections and manage per-room state** without traditional servers.
 
-`Local First` principles are applied to the frontend.
+`Local First` principles are applied to the frontend with **E2EE (End-to-End Encryption)** via Web Crypto API.
 
-You must make the UI looks like simple and efficient as possible, while also being visually appealing.
-And ui need to be responsive so it works well on both desktop and mobile devices.
-Something like title do not need to be bold or big font size, just compact, conscious.
+### UI Design Principles
 
-All icons must use [Remix Icon](https://remixicon.com/) library. You can use `remix-icon` mcp to get icons info.
+- Simple, efficient, and visually appealing
+- Responsive design for desktop and mobile (see `src/ui/mobile.mjs` for mobile-specific patterns)
+- Compact styling (no bold titles, conscious spacing)
+- All icons use [Remix Icon](https://remixicon.com/) library (use `remix-icon` MCP to get icon info)
 
 ## Core Architecture
 
@@ -19,9 +20,16 @@ All icons must use [Remix Icon](https://remixicon.com/) library. You can use `re
 **Each chat room is a separate Durable Object instance** (`ChatRoom` class in `src/api/chat.mjs`):
 
 - Single-threaded, strongly consistent per-room state
+- **SQLite storage** via `state.storage.sql` (migrated from KV storage - see `wrangler.toml` migrations)
 - WebSocket connections use **Hibernation API** to reduce duration billing
 - Sessions survive hibernation via `serializeAttachment()`/`deserializeAttachment()`
-- Storage is simple KV: timestamps as keys, message JSON as values
+
+**Storage Schema**:
+
+- Messages stored in `messages` table with indexes on `timestamp`, `channel`, `message_id`
+- Thread replies tracked in `threads` table
+- Hashtag indexes in `hashtags` table
+- Room metadata (channels, user settings) in separate tables
 
 **Key insight**: The Worker (`src/api/chat.mjs` export default) routes requests to Durable Object stubs:
 
@@ -128,13 +136,49 @@ if (message.startsWith('YOUR_PREFIX:')) {
 
 ### Thread System (Example of Complex Feature)
 
-Threads are stored as **separate indexes** in DO storage:
+Threads are stored in **SQLite tables** (migrated from KV indexes):
 
-- Message keys: ISO timestamps (e.g., `2025-10-26T10:00:00.000Z`)
-- Thread indexes: `thread:{messageId}` → array of reply keys
+- Messages in `messages` table with `reply_to_id` foreign key
+- Thread relationships tracked in `threads` table: `parent_message_id` → array of `reply_message_id`
 - Messages cache: `Map` of messageId → message data (client-side)
 
 **Critical pattern**: Use GET endpoint for initial load, WebSocket for real-time updates.
+
+## Crypto Architecture (E2EE)
+
+**All encryption happens client-side** - server is zero-knowledge:
+
+### 1. Key Derivation (`src/common/crypto-utils.js`)
+
+- Password → AES-256-GCM key via PBKDF2-SHA256 (100k iterations)
+- Room ID used as salt (ensures different rooms = different keys)
+- Keys cached in `KeyManager` (LocalStorage + in-memory cache, 5min TTL)
+
+### 2. Message Encryption
+
+- Each message gets unique IV (12 bytes random)
+- Format: `{iv: Uint8Array, ciphertext: Uint8Array, version: "1.0"}`
+- Server stores/forwards ciphertext, never sees plaintext
+
+### 3. File Encryption (`src/common/file-crypto.js`)
+
+- **Streaming encryption** via Worker Pool (avoids main thread blocking)
+- Files split into 2MB chunks, each encrypted separately
+- Metadata header: `{originalName, originalType, totalChunks, version: "2.0"}`
+- Encrypted blob stored in R2, URL shared in chat
+
+### 4. Crypto Worker Pool (`src/ui/crypto-worker-pool.js`)
+
+- **Multi-threaded encryption** for performance (2-8 workers based on CPU cores)
+- Auto-scaling: adds workers at 80% load, removes at 30% idle
+- Task queue with load balancing (max 5 tasks/worker)
+- Worker lifecycle: 30s idle timeout, dynamic spawn/terminate
+
+**Key files**:
+
+- `src/common/key-manager.js` - LocalStorage-based key persistence
+- `src/ui/crypto.worker.js` - Web Worker for off-thread crypto operations
+- `src/common/crypto-compat.js` - Browser compatibility shims
 
 ## Testing & Debugging
 
@@ -168,6 +212,8 @@ Use `wrangler dev` + DevTools console:
 - **Storage keys**: ISO timestamps for messages, prefixes for indexes (`thread:`, `hashtag:`, etc.)
 - **Custom elements**: Used extensively for UI components (`<chat-message>`, `<lazy-img>`, `<chat-input-component>`)
 - **No framework**: Vanilla JS with Web Components, no React/Vue
+- **Reactive state**: `src/ui/react/state.mjs` provides simple Proxy-based reactivity pattern
+- **Mobile-first**: Dedicated mobile module (`src/ui/mobile.mjs`) handles page navigation, touch gestures
 
 ## External Dependencies (Minimal)
 
@@ -175,21 +221,14 @@ Use `wrangler dev` + DevTools console:
 - `@zip.js/zip.js` - Export feature (ZIP all messages + R2 files)
 - `@chialab/rna` - UI bundler (dev dependency)
 
-## E2EE
-
-- Client-side encryption using Web Crypto API
-- Server stores/forwards ciphertext only
-- Room password → AES-256-GCM key derivation (PBKDF2)
-- Verification data for password validation (client-side decryption test)
-- **Important**: No server-side crypto code - server is "zero-knowledge"
-
 ## Key Design Decisions
 
 1. **Why Durable Objects?** Per-room state coordination + WebSocket hibernation = infinite scalability at low cost
 2. **Why R2 for files?** DO storage is KV, not suited for large blobs; R2 provides cheap object storage
-3. **Why no database?** DO storage IS the database (strongly consistent, per-room isolation)
+3. **Why SQLite?** Migrated from KV for better query patterns (indexes, joins, complex filters)
 4. **Why custom elements?** Vanilla JS approach, no build complexity for components, progressive enhancement
 5. **Why Hono?** Lightweight routing, works in both Worker and DO contexts, better DX than raw fetch()
+6. **Why Worker Pool for crypto?** Avoids blocking main thread during encryption, scales with CPU cores
 
 ## Performance Patterns
 
