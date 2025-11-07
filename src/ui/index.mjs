@@ -1723,6 +1723,11 @@ class UserMessageAPI {
       return false;
     }
 
+    // Wait for WebSocket session to be ready (server has confirmed username)
+    if (isSessionReady && isSessionReady.promise) {
+      await isSessionReady.promise;
+    }
+
     // Check if room is encrypted but user doesn't have the key
     if (isRoomEncrypted && !currentRoomKey) {
       alert(
@@ -4043,6 +4048,18 @@ async function startChat() {
 
 let lastSeenTimestamp = 0;
 let isReconnecting = false; // Track if this is a reconnection
+
+// Helper function to create a deferred promise (polyfill for Promise.withResolvers)
+function createPromiseResolvers() {
+  let resolve, reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+let isSessionReady = null; // Promise that resolves when server confirms session is ready
 let pendingMessages = []; // Queue for messages during initial load (legacy, may not be used)
 let isInitialLoad = true; // Flag to distinguish initial load from real-time messages
 
@@ -4087,6 +4104,8 @@ function join() {
   // Clear pending messages and reset flags when starting a new connection
   pendingMessages = [];
   isInitialLoad = true;
+  // Create new deferred promise for session ready
+  isSessionReady = createPromiseResolvers();
 
   let ws = new WebSocket(api.getWebSocketUrl(roomname));
   let rejoined = false;
@@ -4307,6 +4326,7 @@ function join() {
     } else if (data.ready) {
       // All pre-join messages have been delivered.
       // Note: Server no longer sends backlog, we load channel messages via REST API
+      isSessionReady.resolve(); // Resolve the promise to unblock any waiting operations
       await processPendingMessages();
 
       // Mark initial load as complete - subsequent messages will be processed immediately
