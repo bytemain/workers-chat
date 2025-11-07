@@ -153,37 +153,6 @@ export class KeyManager {
   }
 
   /**
-   * Verify if room password is correct
-   *
-   * @param {string} roomId - Room ID
-   * @param {string} password - Password to verify
-   * @param {string} verificationData - Encrypted verification data for testing
-   * @returns {Promise<{success: boolean, key?: CryptoKey, error?: string}>}
-   */
-  async verifyRoomPassword(roomId, password, verificationData) {
-    try {
-      // Use CryptoUtils to verify password
-      const result = await CryptoUtils.verifyPassword(
-        password,
-        roomId,
-        verificationData,
-      );
-
-      if (result.success) {
-        // Password correct, save password and cache key
-        await this.saveRoomPassword(roomId, password);
-        const key = await this.getRoomKey(roomId, password);
-        return { success: true, key };
-      } else {
-        return result;
-      }
-    } catch (error) {
-      console.error('Password verification failed:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
    * Clean up expired key cache (memory cache)
    */
   cleanupCache() {
