@@ -3,7 +3,7 @@
   <head>
     <meta
       name="viewport"
-      content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, user-scalable=0"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content"
     />
     <link
       rel="stylesheet"
@@ -746,10 +746,36 @@
           background: var(--background);
           border-top: 1px solid var(--border);
           z-index: 20;
+          /* Enable smooth transitions when keyboard appears */
+          transition: transform 0.2s ease-out;
+          /* Use will-change to optimize transform animations */
+          will-change: transform;
         }
 
         body:has(#mobile-chat-page.active) #chatlog {
           padding-bottom: 80px; /* Extra space for input container */
+          /* Ensure scrolling works smoothly with keyboard */
+          overscroll-behavior: contain;
+        }
+
+        /* Thread input container positioning on mobile */
+        @media (max-width: 600px) {
+          #thread-input-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 21;
+            background: var(--background);
+            border-top: 1px solid var(--border);
+            padding: var(--spacing-sm);
+            transition: transform 0.2s ease-out;
+            will-change: transform;
+          }
+
+          #thread-replies {
+            padding-bottom: 80px;
+          }
         }
 
         /* Hide channel list page content on desktop */

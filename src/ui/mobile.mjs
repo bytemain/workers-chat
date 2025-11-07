@@ -370,14 +370,103 @@ export function initMobileRoomSelector(roomname, populateDropdown) {
  * @param {Function} isAtBottom - Function to check if at bottom
  */
 export function setupMobileKeyboardHandler(chatlog, isAtBottom) {
-  // Detect mobile keyboard appearing and disappearing, and adjust the scroll as appropriate.
-  if ('visualViewport' in window) {
-    window.visualViewport.addEventListener('resize', function (event) {
-      if (isAtBottom()) {
-        chatlog.scrollBy(0, 1e8);
+  if (!isMobile()) return;
+
+  const inputContainer = document.getElementById('main-chat-input-container');
+  const threadInputContainer = document.getElementById(
+    'thread-input-container',
+  );
+
+  let lastViewportHeight = window.visualViewport?.height || window.innerHeight;
+
+  // Function to update input container position based on visual viewport
+  function updateInputPosition() {
+    if (!window.visualViewport) return;
+
+    const viewport = window.visualViewport;
+    const currentHeight = viewport.height;
+    const offsetY = window.innerHeight - currentHeight;
+
+    // Only apply transform if keyboard is actually showing (significant height change)
+    if (offsetY > 50) {
+      // Keyboard is showing
+      if (inputContainer) {
+        inputContainer.style.transform = `translateY(-${offsetY}px)`;
       }
-    });
+
+      if (threadInputContainer) {
+        threadInputContainer.style.transform = `translateY(-${offsetY}px)`;
+      }
+
+      // Ensure chat scrolls to bottom if user was at bottom
+      if (isAtBottom()) {
+        requestAnimationFrame(() => {
+          chatlog.scrollBy(0, 1e8);
+        });
+      }
+    } else {
+      // Keyboard is hidden, reset position
+      if (inputContainer) {
+        inputContainer.style.transform = 'translateY(0)';
+      }
+
+      if (threadInputContainer) {
+        threadInputContainer.style.transform = 'translateY(0)';
+      }
+    }
+
+    lastViewportHeight = currentHeight;
   }
+
+  // Detect mobile keyboard appearing and disappearing
+  if ('visualViewport' in window) {
+    window.visualViewport.addEventListener('resize', updateInputPosition);
+    window.visualViewport.addEventListener('scroll', updateInputPosition);
+
+    // Initial position update
+    updateInputPosition();
+  }
+
+  // Focus handling - ensure input scrolls into view
+  const setupInputFocusHandler = (input) => {
+    if (!input) return;
+
+    input.addEventListener('focus', () => {
+      // Small delay to allow keyboard animation to start
+      setTimeout(() => {
+        // Force update position
+        updateInputPosition();
+
+        // Scroll input into view
+        input.scrollIntoView({
+          behavior: 'smooth',
+          block: 'end',
+          inline: 'nearest',
+        });
+
+        // Ensure chatlog stays at bottom if needed
+        setTimeout(() => {
+          if (isAtBottom()) {
+            chatlog.scrollBy(0, 1e8);
+          }
+        }, 150);
+      }, 100);
+    });
+
+    input.addEventListener('blur', () => {
+      // Reset position when losing focus (keyboard might close)
+      setTimeout(updateInputPosition, 100);
+    });
+  };
+
+  // Setup focus handlers for text inputs (use setTimeout to ensure elements exist)
+  setTimeout(() => {
+    const mainInput = document.querySelector('#chat-input textarea');
+    const threadInput = document.querySelector('#thread-input textarea');
+
+    setupInputFocusHandler(mainInput);
+    setupInputFocusHandler(threadInput);
+  }, 500);
 }
 
 /**
