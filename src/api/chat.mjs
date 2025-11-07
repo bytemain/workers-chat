@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { showRoutes } from 'hono/dev';
-import { MAX_MESSAGE_LENGTH } from '../common/constants.mjs';
+import {
+  MAX_MESSAGE_LENGTH,
+  MAX_FILE_SIZE_BYTES,
+} from '../common/constants.mjs';
 import { getPath, splitPath } from 'hono/utils/url';
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
@@ -383,7 +386,7 @@ export class ChatRoom {
           return c.json({ error: 'No file provided' }, { status: 400 });
         }
 
-        if (file.size > 10 * 1024 * 1024) {
+        if (file.size > MAX_FILE_SIZE_BYTES) {
           return c.json(
             { error: 'File too large (max 10MB)' },
             { status: 413 },
