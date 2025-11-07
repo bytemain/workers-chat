@@ -182,10 +182,21 @@ class ChatInputComponent extends HTMLElement {
   setupEventListeners() {
     if (!this.textarea) return;
 
+    // Track composition state for IME input (Chinese, Japanese, etc.)
+    let isComposing = false;
+
+    this.textarea.addEventListener('compositionstart', () => {
+      isComposing = true;
+    });
+
+    this.textarea.addEventListener('compositionend', () => {
+      isComposing = false;
+    });
+
     // Handle Enter key (submit on Enter, new line on Shift+Enter)
-    // Also check isComposing to avoid sending during IME composition
+    // Check our own isComposing flag to avoid sending during IME composition
     this.textarea.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      if (event.key === 'Enter' && !event.shiftKey && !isComposing) {
         event.preventDefault();
         this.submit();
         return;
