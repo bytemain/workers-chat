@@ -937,6 +937,12 @@ export class ChatRoom {
         session.name = '' + (data.name || 'anonymous');
         session.name = session.name.substring(0, 32);
 
+        // Serialize the name to attachment for hibernation recovery
+        webSocket.serializeAttachment({
+          ...webSocket.deserializeAttachment(),
+          name: session.name,
+        });
+
         if (session.blockedMessages.length > 0) {
           session.blockedMessages.forEach((queued) => {
             try {
