@@ -13,7 +13,11 @@ import { applyCSSConstants } from './constants.mjs';
 import { updateRoomList } from './room-list.mjs';
 import * as MobileUI from './mobile.mjs';
 import { initCryptoCompatCheck } from '../common/crypto-compat.js';
-import { MAX_MESSAGE_LENGTH } from '../common/constants.mjs';
+import {
+  MAX_MESSAGE_LENGTH,
+  MAX_FILE_SIZE_BYTES,
+  MAX_FILE_SIZE_MB,
+} from '../common/constants.mjs';
 
 // Apply CSS constants on load
 applyCSSConstants();
@@ -1415,6 +1419,21 @@ let currentReplyTo = null; // {messageId, username, preview, rootMessageId}
 // Generate message ID from timestamp and username for legacy messages
 function generateLegacyMessageId(timestamp, username) {
   return `${timestamp}-${username}`;
+}
+
+/**
+ * Format file size in bytes to human-readable format
+ * @param {number} bytes - File size in bytes
+ * @returns {string} Formatted file size
+ */
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
 
 // ===== E2EE Helper Functions =====
@@ -3981,6 +4000,17 @@ async function startChat() {
   // Upload file function
   async function uploadFile(file, fileName = null, replyTo = null) {
     try {
+      // Validate file size before anything else
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        const fileSizeFormatted = formatFileSize(file.size);
+        const maxSizeFormatted = formatFileSize(MAX_FILE_SIZE_BYTES);
+        const errorMsg = `File is too large (${fileSizeFormatted}). Maximum allowed size is ${maxSizeFormatted}.`;
+
+        addSystemMessage(`* Upload failed: ${errorMsg}`);
+        alert(errorMsg);
+        return false;
+      }
+
       let fileToUpload = file;
       let uploadFileName = fileName || file.name;
 
