@@ -98,7 +98,6 @@ class ChatInputComponent extends HTMLElement {
             <input 
               type="file" 
               class="chat-input-file" 
-              accept="*/*"
               multiple
               style="display: none;"
             >
@@ -107,6 +106,7 @@ class ChatInputComponent extends HTMLElement {
               class="chat-input-media" 
               accept="image/*,video/*"
               multiple
+              capture
               style="display: none;"
             >
             <i 
