@@ -2098,6 +2098,39 @@ function createMessageElement(
   const buttonsContainer = document.createElement('div');
   buttonsContainer.className = 'message-actions-buttons';
 
+  // Add Copy button for all messages (first button)
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'message-action-btn';
+  copyBtn.innerHTML = '<i class="ri-file-copy-line"></i> Copy';
+  copyBtn.title = 'Copy message text';
+  copyBtn.onclick = async (e) => {
+    e.stopPropagation();
+    try {
+      // Don't copy FILE: messages, just show a notice
+      if (data.message.startsWith('FILE:')) {
+        copyBtn.innerHTML = '<i class="ri-check-line"></i> File';
+        setTimeout(() => {
+          copyBtn.innerHTML = '<i class="ri-file-copy-line"></i> Copy';
+        }, 1000);
+        return;
+      }
+
+      await navigator.clipboard.writeText(data.message);
+      // Show feedback
+      copyBtn.innerHTML = '<i class="ri-check-line"></i> Copied';
+      setTimeout(() => {
+        copyBtn.innerHTML = '<i class="ri-file-copy-line"></i> Copy';
+      }, 1000);
+    } catch (err) {
+      console.error('Failed to copy message:', err);
+      copyBtn.innerHTML = '<i class="ri-close-line"></i> Failed';
+      setTimeout(() => {
+        copyBtn.innerHTML = '<i class="ri-file-copy-line"></i> Copy';
+      }, 1000);
+    }
+  };
+  buttonsContainer.appendChild(copyBtn);
+
   if (isInThread || isThreadOriginal) {
     // In thread panel - show Locate button
     const locateBtn = document.createElement('button');
@@ -2701,9 +2734,16 @@ function initChannelInfoBar() {
       // TODO: Implement search modal
     });
   }
-}
 
-// Initialize channel panel features
+  // Room settings - placeholder for future features
+  const btnRoomSettings = document.getElementById('btn-room-settings');
+  if (btnRoomSettings) {
+    btnRoomSettings.addEventListener('click', () => {
+      console.log('Room settings - to be implemented');
+      // TODO: Add more room settings in the future
+    });
+  }
+}// Initialize channel panel features
 function initChannelPanel() {
   // Toggle section collapse
   document.querySelectorAll('.channel-section-header').forEach((header) => {
