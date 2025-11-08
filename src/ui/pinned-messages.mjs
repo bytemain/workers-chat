@@ -22,9 +22,9 @@ const pinnedState = store(
   },
   {
     // Action to open the panel
-    open(state) {
+    open(state, showLoading = true) {
       state.isOpen = true;
-      state.loading = true;
+      state.loading = showLoading;
       state.error = null;
     },
     // Action to close the panel
@@ -82,13 +82,6 @@ function pinnedMessagesTemplate() {
           <i class="ri-pushpin-fill"></i>
           <span>Pinned Messages</span>
         </div>
-        <button 
-          class="pinned-panel-close" 
-          data-reef-close
-          title="Close"
-        >
-          <i class="ri-close-line"></i>
-        </button>
       </div>
 
         <!-- Content -->
@@ -115,8 +108,6 @@ function pinnedMessagesTemplate() {
                 <i class="ri-pushpin-2-line"></i>
               </div>
               <h3>This channel doesn't have any pinned messages... yet.</h3>
-              <p class="pinned-empty-tip">PROTIP:</p>
-              <p>Pin important messages by right-clicking them and selecting "Pin Message".</p>
             </div>
           `
                   : `
@@ -153,8 +144,8 @@ function pinnedMessagesTemplate() {
                       <i class="ri-unpin-line"></i>
                     </button>
                   </div>
-                  ${index < messages.length - 1 ? '<div class="pinned-message-divider"></div>' : ''}
                 </div>
+                ${index < messages.length - 1 ? '<div class="pinned-message-divider"></div>' : ''}
               `,
                 )
                 .join('')}
@@ -262,25 +253,12 @@ export function initPinnedMessages(pinButtonSelector = '#btn-show-pins') {
     return;
   }
 
-  // Wrap the pin button in a relative container if needed
-  let wrapper = pinButton.parentElement;
-  if (!wrapper.classList.contains('pinned-messages-wrapper')) {
-    wrapper = document.createElement('div');
-    wrapper.className = 'pinned-messages-wrapper';
-    wrapper.style.position = 'relative';
-    wrapper.style.display = 'inline-block';
-
-    // Wrap the pin button
-    pinButton.parentElement.insertBefore(wrapper, pinButton);
-    wrapper.appendChild(pinButton);
-  }
-
-  // Create container inside the wrapper
-  let container = wrapper.querySelector('#pinned-messages-container');
+  // Create container directly under body
+  let container = document.querySelector('#pinned-messages-container');
   if (!container) {
     container = document.createElement('div');
     container.id = 'pinned-messages-container';
-    wrapper.appendChild(container);
+    document.body.appendChild(container);
   }
 
   // Create Reef component
@@ -313,13 +291,6 @@ export function initPinnedMessages(pinButtonSelector = '#btn-show-pins') {
 
 // Handle clicks within the pinned panel
 function handlePinnedPanelClick(event) {
-  const target = event.target.closest('[data-reef-close]');
-  if (target) {
-    event.preventDefault();
-    closePinnedPanel();
-    return;
-  }
-
   const jumpBtn = event.target.closest('[data-reef-jump]');
   if (jumpBtn) {
     event.preventDefault();
@@ -349,18 +320,45 @@ function handlePinnedPanelClick(event) {
 export function openPinnedPanel(roomName, channelName) {
   console.log('Opening pinned panel for', roomName, channelName);
 
+  // Check if we have cached data
+  const hasCache = pinnedState.value.messages.length > 0;
+
   // Use actions to trigger reactive updates
-  pinnedState.open();
+  // Only show loading state if no cache
+  pinnedState.open(!hasCache);
 
   console.log('State after update:', pinnedState.value);
 
-  // Load pinned messages from server
+  // Update button icon to filled
+  updatePinButtonIcon(true);
+
+  // Load pinned messages from server (silent reload if we have cache)
   loadPinnedMessages(roomName, channelName);
 }
 
 // Close the pinned messages panel
 export function closePinnedPanel() {
   pinnedState.close();
+
+  // Update button icon to outline
+  updatePinButtonIcon(false);
+}
+
+// Update the pin button icon based on panel state
+function updatePinButtonIcon(isOpen) {
+  const btnShowPins = document.getElementById('btn-show-pins');
+  if (btnShowPins) {
+    const icon = btnShowPins.querySelector('i');
+    if (icon) {
+      if (isOpen) {
+        icon.className = 'ri-pushpin-fill';
+        btnShowPins.classList.add('active');
+      } else {
+        icon.className = 'ri-pushpin-line';
+        btnShowPins.classList.remove('active');
+      }
+    }
+  }
 }
 
 // Toggle the pinned messages panel
@@ -507,17 +505,13 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'pinned-messages-styles';
   style.textContent = /* css */ `
-    /* Wrapper for relative positioning */
-    .pinned-messages-wrapper {
-      position: relative;
-      display: inline-block;
-    }
-
-    /* Container positioning */
+    /* Container positioning - fixed to viewport */
     #pinned-messages-container {
-      position: absolute;
+      position: fixed;
       top: 0;
+      left: 0;
       right: 0;
+      bottom: 0;
       z-index: 1001;
       pointer-events: none;
     }
@@ -528,8 +522,8 @@ function injectStyles() {
 
     /* Pinned Panel Container - Discord-style popover dropdown */
     .pinned-panel {
-      position: absolute;
-      top: calc(100% + var(--header-height));
+      position: fixed;
+      top: calc(var(--header-height) + 10px);
       right: 120px;
       width: 420px;
       max-width: 90vw;
@@ -577,26 +571,6 @@ function injectStyles() {
     .pinned-panel-title i {
       font-size: 1.2em;
       color: var(--links);
-    }
-
-    .pinned-panel-close {
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: transparent;
-      border: none;
-      border-radius: var(--border-radius);
-      cursor: pointer;
-      transition: var(--transition);
-      font-size: 1.3em;
-      color: var(--text-muted);
-    }
-
-    .pinned-panel-close:hover {
-      background: var(--background-alt);
-      color: var(--text-main);
     }
 
     /* Content Area */
@@ -676,23 +650,12 @@ function injectStyles() {
       color: var(--text-main);
     }
 
-    .pinned-empty-tip {
-      color: #28a745;
-      font-weight: 600;
-      margin-top: var(--spacing);
-      margin-bottom: var(--spacing-xs);
-    }
-
-    .pinned-panel-empty p:last-child {
-      margin: 0;
-      font-size: 0.9em;
-    }
-
     /* Messages List */
     .pinned-messages-list {
       display: flex;
       flex-direction: column;
       gap: 0;
+      width: 100%;
     }
 
     /* Message Item */
@@ -701,6 +664,8 @@ function injectStyles() {
       gap: var(--spacing-sm);
       padding: var(--spacing);
       transition: var(--transition);
+      width: 100%;
+      box-sizing: border-box;
     }
 
     .pinned-message-item:hover {
