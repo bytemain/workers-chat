@@ -4,25 +4,10 @@
  */
 
 import { isMobile } from './utils/device.mjs';
+import { initChannelInfo, openChannelInfo } from './mobile/channel-info.mjs';
 
 // Mobile state
 let currentMobilePage = null;
-
-/**
- * Show mobile channel list page
- */
-export function showMobileChannelList() {
-  const channelListPage = document.getElementById('mobile-channel-list-page');
-  const chatPage = document.getElementById('mobile-chat-page');
-
-  if (channelListPage) {
-    channelListPage.classList.add('active');
-    currentMobilePage = 'channels';
-  }
-  if (chatPage) {
-    chatPage.classList.remove('active');
-  }
-}
 
 /**
  * Show mobile chat page
@@ -37,130 +22,6 @@ export function showMobileChatPage() {
   }
   if (channelListPage) {
     channelListPage.classList.remove('active');
-  }
-}
-
-/**
- * Update mobile channel list content
- * @param {Array} channels - Array of channel objects
- * @param {string} currentChannel - Currently active channel
- * @param {Function} switchToChannel - Function to switch to a channel
- * @param {string} username - Current username for DMs
- */
-export function updateMobileChannelList(
-  channels,
-  currentChannel,
-  switchToChannel,
-  username,
-) {
-  const mobileChannelListContent = document.getElementById(
-    'mobile-channel-list-content',
-  );
-  if (!mobileChannelListContent) return;
-
-  // Create channels section
-  const channelsSection = document.createElement('div');
-  channelsSection.className = 'mobile-channel-section';
-  channelsSection.innerHTML = `
-    <div class="mobile-channel-section-title">Channels</div>
-  `;
-
-  const channelsContainer = document.createElement('div');
-  channelsContainer.className = 'mobile-channel-section-items';
-
-  channels.forEach((channel) => {
-    if (channel.name.startsWith('dm-')) return; // Skip DMs in channel section
-
-    const channelItem = document.createElement('div');
-    channelItem.className = 'mobile-channel-item';
-    if (channel.name === currentChannel) {
-      channelItem.classList.add('active');
-    }
-
-    const unreadCount = window.getUnreadCount?.(channel.name) || 0;
-
-    channelItem.innerHTML = `
-      <div class="mobile-channel-item-icon">
-        <i class="ri-hashtag"></i>
-      </div>
-      <div class="mobile-channel-item-info">
-        <div class="mobile-channel-item-name">${channel.name}</div>
-        <div class="mobile-channel-item-count">${channel.messageCount || 0} messages</div>
-      </div>
-      ${
-        unreadCount > 0
-          ? `<div class="mobile-channel-item-badge">${unreadCount}</div>`
-          : ''
-      }
-      <div class="mobile-channel-item-arrow">
-        <i class="ri-arrow-right-s-line"></i>
-      </div>
-    `;
-
-    channelItem.onclick = () => {
-      switchToChannel(channel.name);
-      showMobileChatPage();
-    };
-
-    channelsContainer.appendChild(channelItem);
-  });
-
-  channelsSection.appendChild(channelsContainer);
-  mobileChannelListContent.innerHTML = '';
-  mobileChannelListContent.appendChild(channelsSection);
-
-  // Create DMs section
-  const dmsSection = document.createElement('div');
-  dmsSection.className = 'mobile-channel-section';
-  dmsSection.innerHTML = `
-    <div class="mobile-channel-section-title">Direct Messages</div>
-  `;
-
-  const dmsContainer = document.createElement('div');
-  dmsContainer.className = 'mobile-channel-section-items';
-
-  // Add self DM
-  if (username) {
-    const selfDM = document.createElement('div');
-    selfDM.className = 'mobile-channel-item';
-    const selfChannelName = `dm-${username}`;
-    if (selfChannelName === currentChannel) {
-      selfDM.classList.add('active');
-    }
-
-    selfDM.innerHTML = `
-      <div class="mobile-channel-item-icon">
-        <i class="ri-user-line"></i>
-      </div>
-      <div class="mobile-channel-item-info">
-        <div class="mobile-channel-item-name">${username} (You)</div>
-        <div class="mobile-channel-item-count">Personal space</div>
-      </div>
-      <div class="mobile-channel-item-arrow">
-        <i class="ri-arrow-right-s-line"></i>
-      </div>
-    `;
-
-    selfDM.onclick = () => {
-      switchToChannel(selfChannelName);
-      showMobileChatPage();
-    };
-
-    dmsContainer.appendChild(selfDM);
-  }
-
-  dmsSection.appendChild(dmsContainer);
-  mobileChannelListContent.appendChild(dmsSection);
-}
-
-/**
- * Update mobile top bar title
- * @param {string} title - Title to display
- */
-export function updateMobileTopBarTitle(title) {
-  const mobileTopBarTitle = document.querySelector('#mobile-top-bar-title');
-  if (mobileTopBarTitle) {
-    mobileTopBarTitle.textContent = title;
   }
 }
 
@@ -268,31 +129,54 @@ export function handleMobileThreadPanel(isOpen) {
 
 /**
  * Initialize mobile navigation system
- * @param {Function} loadHashtags - Function to load hashtags
  */
-export function initMobileNavigation(loadHashtags) {
-  // Mobile nav bar buttons
-  const navChannelsBtn = document.getElementById('nav-channels-btn');
-  const navChatBtn = document.getElementById('nav-chat-btn');
+export function initMobileNavigation() {
+  // Initialize mobile channel-info component (mounts its container to body)
+  try {
+    initChannelInfo('body');
+    setupMobileChatTitleButton();
+  } catch (e) {
+    // Fail silently if component can't initialize in current environment
+    console.warn('initChannelInfo failed:', e);
+  }
+}
 
-  if (navChannelsBtn) {
-    navChannelsBtn.addEventListener('click', () => {
-      showMobileChannelList();
-    });
+/**
+ * Setup channel info button next to mobile chat title
+ */
+function setupMobileChatTitleButton() {
+  const mobileChatTitle = document.getElementById('mobile-chat-title');
+  if (!mobileChatTitle) return;
+
+  // Check if button already exists
+  let channelInfoBtn = document.getElementById('mobile-channel-info-btn');
+  if (channelInfoBtn) return;
+
+  // Create button
+  channelInfoBtn = document.createElement('button');
+  channelInfoBtn.id = 'mobile-channel-info-btn';
+  channelInfoBtn.className = 'mobile-channel-info-btn';
+  channelInfoBtn.type = 'button';
+  channelInfoBtn.title = 'Channel info';
+  channelInfoBtn.innerHTML = '<i class="ri-arrow-right-s-line"></i>';
+
+  // Insert after chat title
+  if (mobileChatTitle.parentNode) {
+    mobileChatTitle.parentNode.insertBefore(
+      channelInfoBtn,
+      mobileChatTitle.nextSibling,
+    );
   }
 
-  if (navChatBtn) {
-    navChatBtn.addEventListener('click', () => {
-      showMobileChatPage();
-    });
-  }
-
-  // Initialize on chat page by default (if in a room)
-  if (window.location.hash.length > 1) {
-    showMobileChatPage();
-  } else {
-    showMobileChannelList();
-  }
+  // Click opens channel info
+  channelInfoBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const room = window.currentRoomName || '';
+    const channel = window.currentChannel || '';
+    if (room && channel) {
+      openChannelInfo(room, channel);
+    }
+  });
 }
 
 /**
@@ -469,31 +353,9 @@ export function setupMobileKeyboardHandler(chatlog, isAtBottom) {
   }, 500);
 }
 
-/**
- * Get current mobile page
- * @returns {string|null} Current page name ('channels' or 'chat')
- */
-export function getCurrentMobilePage() {
-  return currentMobilePage;
-}
-
-/**
- * Check if device is mobile
- * @returns {boolean}
- */
-export function checkIsMobile() {
-  return isMobile();
-}
-
 // Export all functions as window globals for backward compatibility
 if (typeof window !== 'undefined') {
-  window.showMobileChannelList = showMobileChannelList;
-  window.showMobileChatPage = showMobileChatPage;
-  window.updateMobileChannelList = updateMobileChannelList;
-  window.initMobileNavigation = initMobileNavigation;
   window.initMobileRoomSelector = initMobileRoomSelector;
-  window.updateMobileTopBarTitle = updateMobileTopBarTitle;
-  window.updateMobileEncryptionIndicator = updateMobileEncryptionIndicator;
   window.toggleMobileRoomInfo = toggleMobileRoomInfo;
   window.closeMobileRoomInfo = closeMobileRoomInfo;
   window.handleMobileThreadPanel = handleMobileThreadPanel;

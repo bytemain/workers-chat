@@ -5172,8 +5172,6 @@ window.hideLeftSidebar = hideLeftSidebar;
 function showMobileChannelList() {
   if (!isMobile()) return;
 
-  MobileUI.showMobileChannelList();
-
   // Clear channel parameter from URL
   const url = new URL(window.location);
   url.searchParams.delete('channel');
@@ -5333,6 +5331,9 @@ function initMobileNavigation() {
 
   // Initialize mobile room selector
   initMobileRoomSelector();
+
+  // Initialize mobile channel info component
+  MobileUI.initMobileNavigation();
 
   // If we have a current channel, show chat page, otherwise show channel list
   if (currentChannel) {

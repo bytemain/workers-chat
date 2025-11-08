@@ -373,21 +373,10 @@ export function togglePinnedPanel(roomName, channelName) {
 // Load pinned messages from server
 async function loadPinnedMessages(roomName, channelName) {
   try {
-    // Fetch from server
     const result = await api.getPinnedMessages(roomName, channelName);
 
-    // Decrypt messages if they are encrypted
-    const decryptedPins = await Promise.all(
-      (result.pins || []).map(async (pin) => {
-        // Try to get decryption key from window (set by main app)
-        const roomKey = window.encryptionState?.roomKey;
-        const decryptedMessage = await decryptMessageText(pin.message, roomKey);
-        return { ...pin, message: decryptedMessage };
-      }),
-    );
-
     // Use action to set messages
-    pinnedState.setMessages(decryptedPins);
+    pinnedState.setMessages(result.pins || []);
   } catch (error) {
     console.error('Failed to load pinned messages:', error);
     // Use action to set error

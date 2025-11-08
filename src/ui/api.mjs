@@ -1,3 +1,5 @@
+import { decryptPins } from './utils/pin-crypto.mjs';
+
 // API Client class for server requests
 class ChatAPI {
   constructor() {
@@ -234,7 +236,15 @@ class ChatAPI {
     if (!response.ok) {
       throw new Error('Failed to load pinned messages');
     }
-    return await response.json();
+
+    const result = await response.json();
+
+    // Auto-decrypt pins if encryption is enabled
+    if (result.pins && result.pins.length > 0) {
+      result.pins = await decryptPins(result.pins);
+    }
+
+    return result;
   }
 }
 
