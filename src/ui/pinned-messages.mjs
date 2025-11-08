@@ -7,6 +7,8 @@ import {
   store,
   component,
 } from 'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js';
+import { api } from './api.mjs';
+import { decryptMessageText } from './utils/message-crypto.mjs';
 
 const SignalName = 'pinnedState';
 
@@ -330,7 +332,10 @@ function handlePinnedPanelClick(event) {
   if (unpinBtn) {
     event.preventDefault();
     const messageId = unpinBtn.getAttribute('data-reef-unpin');
-    unpinMessage(messageId);
+    // Get current room and channel from global state
+    const roomName = window.currentRoomName;
+    const channelName = window.currentChannel || 'general';
+    unpinMessage(roomName, channelName, messageId);
     return;
   }
 
@@ -367,20 +372,24 @@ export function togglePinnedPanel(roomName, channelName) {
   }
 }
 
-// Load pinned messages from server (placeholder - needs backend API)
+// Load pinned messages from server
 async function loadPinnedMessages(roomName, channelName) {
   try {
-    // TODO: Replace with actual API call
-    // For now, use localStorage as a temporary storage
-    const storageKey = `pinnedMessages:${roomName}:${channelName}`;
-    const stored = localStorage.getItem(storageKey);
-    const messages = stored ? JSON.parse(stored) : [];
+    // Fetch from server
+    const result = await api.getPinnedMessages(roomName, channelName);
 
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Decrypt messages if they are encrypted
+    const decryptedPins = await Promise.all(
+      (result.pins || []).map(async (pin) => {
+        // Try to get decryption key from window (set by main app)
+        const roomKey = window.encryptionState?.roomKey;
+        const decryptedMessage = await decryptMessageText(pin.message, roomKey);
+        return { ...pin, message: decryptedMessage };
+      }),
+    );
 
     // Use action to set messages
-    pinnedState.setMessages(messages);
+    pinnedState.setMessages(decryptedPins);
   } catch (error) {
     console.error('Failed to load pinned messages:', error);
     // Use action to set error
@@ -389,63 +398,44 @@ async function loadPinnedMessages(roomName, channelName) {
 }
 
 // Pin a message
-export function pinMessage(roomName, channelName, messageData) {
-  const storageKey = `pinnedMessages:${roomName}:${channelName}`;
-  const stored = localStorage.getItem(storageKey);
-  const messages = stored ? JSON.parse(stored) : [];
+export async function pinMessage(roomName, channelName, messageData, username) {
+  try {
+    // Check if already pinned
+    const exists = pinnedState.value.messages.some(
+      (msg) => msg.messageId === messageData.messageId,
+    );
+    if (exists) {
+      console.log('Message already pinned');
+      return;
+    }
 
-  // Check if already pinned
-  const exists = messages.some(
-    (msg) => msg.messageId === messageData.messageId,
-  );
-  if (exists) {
-    console.log('Message already pinned');
-    return;
+    // Call server API to pin
+    await api.pinMessage(
+      roomName,
+      messageData.messageId,
+      channelName,
+      username,
+    );
+
+    // Server will broadcast the update, which will be handled in index.mjs
+    console.log('✅ Message pin request sent');
+  } catch (error) {
+    console.error('Failed to pin message:', error);
+    throw error;
   }
-
-  // Add to pinned messages (at the beginning)
-  messages.unshift({
-    messageId: messageData.messageId,
-    name: messageData.name,
-    message: messageData.message,
-    timestamp: messageData.timestamp,
-    channel: channelName,
-    pinnedAt: Date.now(),
-  });
-
-  // Limit to 50 pinned messages per channel
-  if (messages.length > 50) {
-    messages.pop();
-  }
-
-  localStorage.setItem(storageKey, JSON.stringify(messages));
-
-  // If panel is open, refresh using action
-  if (pinnedState.isOpen) {
-    pinnedState.addMessage({
-      messageId: messageData.messageId,
-      name: messageData.name,
-      message: messageData.message,
-      timestamp: messageData.timestamp,
-      channel: channelName,
-      pinnedAt: Date.now(),
-    });
-  }
-
-  console.log('✅ Message pinned');
 }
 
 // Unpin a message
-export function unpinMessage(messageId) {
-  // Use action to remove message
-  pinnedState.removeMessage(messageId);
+export async function unpinMessage(roomName, channelName, messageId) {
+  try {
+    // Call server API to unpin
+    await api.unpinMessage(roomName, messageId, channelName);
 
-  // Update localStorage
-  // Extract room and channel from remaining messages
-  if (pinnedState.messages.length > 0) {
-    const sampleMsg = pinnedState.messages[0];
-    // We need room and channel info - for now just log
-    console.log('✅ Message unpinned');
+    // Server will broadcast the update, which will be handled in index.mjs
+    console.log('✅ Message unpin request sent');
+  } catch (error) {
+    console.error('Failed to unpin message:', error);
+    throw error;
   }
 }
 
@@ -475,12 +465,37 @@ function jumpToMessage(messageId) {
   }
 }
 
-// Get pinned message count for a channel
-export function getPinnedCount(roomName, channelName) {
-  const storageKey = `pinnedMessages:${roomName}:${channelName}`;
-  const stored = localStorage.getItem(storageKey);
-  const messages = stored ? JSON.parse(stored) : [];
-  return messages.length;
+// Get pinned message count for a channel (from state)
+export function getPinnedCount() {
+  return pinnedState.value.messages.length;
+}
+
+// Handle pin update from server broadcast
+export async function handlePinUpdate(update) {
+  if (update.action === 'pin') {
+    // Decrypt message if encrypted
+    const roomKey = window.encryptionState?.roomKey;
+    const displayMessage = await decryptMessageText(
+      update.messageData.message,
+      roomKey,
+    );
+
+    // Add to state if panel is open and message is for current channel
+    if (pinnedState.value.isOpen) {
+      pinnedState.addMessage({
+        messageId: update.messageId,
+        name: update.messageData.name,
+        message: displayMessage,
+        timestamp: update.messageData.timestamp,
+        channel: update.channel,
+        pinnedBy: update.pinnedBy,
+        pinnedAt: update.pinnedAt,
+      });
+    }
+  } else if (update.action === 'unpin') {
+    // Remove from state
+    pinnedState.removeMessage(update.messageId);
+  }
 }
 
 // Inject CSS styles

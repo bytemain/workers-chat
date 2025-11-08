@@ -171,6 +171,71 @@ class ChatAPI {
     }
     return await response.json();
   }
+
+  // Pin a message
+  async pinMessage(roomName, messageId, channel, username) {
+    if (!messageId || !channel || !username) {
+      console.error('pinMessage called with:', {
+        roomName,
+        messageId,
+        channel,
+        username,
+      });
+      throw new Error('Missing required fields: messageId, channel, username');
+    }
+
+    const response = await fetch(`${this.baseUrl}/room/${roomName}/pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messageId,
+        channel,
+        username,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to pin message');
+    }
+    return await response.json();
+  }
+
+  // Unpin a message
+  async unpinMessage(roomName, messageId, channel) {
+    const response = await fetch(
+      `${this.baseUrl}/room/${roomName}/pin/${messageId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          channel,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to unpin message');
+    }
+    return await response.json();
+  }
+
+  // Get pinned messages for a channel
+  async getPinnedMessages(roomName, channelName) {
+    const response = await fetch(
+      `${this.baseUrl}/room/${roomName}/channel/${channelName}/pins`,
+    );
+
+    if (!response.ok) {
+      throw new Error('Failed to load pinned messages');
+    }
+    return await response.json();
+  }
 }
 
 // Initialize API client

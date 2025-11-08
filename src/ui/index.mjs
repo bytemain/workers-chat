@@ -21,7 +21,9 @@ import {
   togglePinnedPanel,
   pinMessage,
   getPinnedCount,
+  handlePinUpdate,
 } from './pinned-messages.mjs';
+import { tryDecryptMessage } from './utils/message-crypto.mjs';
 
 // Check Crypto API compatibility early
 const cryptoSupported = initCryptoCompatCheck();
@@ -1304,6 +1306,11 @@ let currentChannel = 'general'; // Current channel for sending messages
 let allChannels = []; // Cache of all channels
 let temporaryChannels = new Set(); // Track frontend-only temporary channels
 
+// Export to window for use by other modules
+window.currentRoomName = null;
+window.currentChannel = 'general';
+window.currentUsername = null;
+
 // E2EE state variables
 const { state: encryptionState, subscribe: subscribeEncryption } =
   createReactiveState({
@@ -1312,6 +1319,9 @@ const { state: encryptionState, subscribe: subscribeEncryption } =
     initialized: false, // Whether encryption has been initialized for this session
     dialogOpen: false, // Prevent multiple password dialogs
   });
+
+// Export encryption state to window for use by other modules
+window.encryptionState = encryptionState;
 
 // Backward compatibility getters (temporary during migration)
 let currentRoomKey = null;
@@ -1983,7 +1993,11 @@ async function loadThreadReplies(messageId) {
     // Decrypt all replies if needed (in parallel for better performance)
     await Promise.all(
       allReplies.map(async (reply) => {
-        const decryptedMessage = await tryDecryptMessage(reply);
+        const decryptedMessage = await tryDecryptMessage(
+          reply,
+          currentRoomKey,
+          isRoomEncrypted,
+        );
         reply.message = decryptedMessage;
       }),
     );
@@ -2202,7 +2216,8 @@ function createMessageElement(
     pinBtn.title = 'Pin this message';
     pinBtn.onclick = async (e) => {
       e.stopPropagation();
-      pinMessage(roomname, currentChannel, data);
+      // Use the global username variable (current logged-in user)
+      pinMessage(roomname, currentChannel, data, username);
       pinBtn.innerHTML = '<i class="ri-pushpin-fill"></i> Pinned';
       setTimeout(() => {
         pinBtn.innerHTML = '<i class="ri-pushpin-line"></i> Pin';
@@ -2495,6 +2510,7 @@ async function switchToChannel(channel) {
   }
 
   currentChannel = normalizedChannel;
+  window.currentChannel = normalizedChannel; // Update global for pinned-messages
 
   // Clear unread count for this channel
   clearChannelUnreadCount(normalizedChannel);
@@ -2914,6 +2930,7 @@ export function startNameChooser() {
 
   // Set username
   username = savedUsername;
+  window.currentUsername = savedUsername; // Update global for pinned-messages
 
   // Update user info card in left sidebar
   updateUserInfoCard();
@@ -3178,54 +3195,6 @@ function handleDestructionUpdate(data) {
   }
 }
 
-async function tryDecryptMessage(data) {
-  let messageText = data.message;
-  if (CryptoUtils.isEncrypted(data.message)) {
-    // Check if crypto is supported
-    if (!cryptoSupported) {
-      console.warn(
-        '⚠️ Received encrypted message but crypto API is not supported',
-      );
-      messageText = '[Encrypted message - browser not supported]';
-      return messageText;
-    }
-
-    if (isRoomEncrypted && currentRoomKey) {
-      try {
-        console.log('🔓 Decrypting message via worker pool...');
-        const encryptedData = CryptoUtils.parseEncryptedMessage(data.message);
-        if (encryptedData) {
-          // Export key for worker
-          const keyData = Array.from(
-            new Uint8Array(
-              await crypto.subtle.exportKey('raw', currentRoomKey),
-            ),
-          );
-
-          // Decrypt via worker pool
-          messageText = await cryptoPool.submitTask('decrypt', {
-            encrypted: encryptedData,
-            keyData: keyData,
-          });
-
-          console.log('✅ Message decrypted');
-        } else {
-          console.error('❌ Failed to parse encrypted message');
-          messageText = '[Encrypted message - failed to parse]';
-        }
-      } catch (error) {
-        console.error('❌ Failed to decrypt message:', error);
-        messageText = '[Encrypted message - decryption failed]';
-      }
-    } else {
-      console.warn('⚠️ Received encrypted message but no room key available');
-      messageText = '[Encrypted message]';
-    }
-  }
-
-  return messageText;
-}
-
 async function startChat() {
   // Hide room selector and show chat interface
   hideRoomSelector();
@@ -3245,6 +3214,8 @@ async function startChat() {
     .replace(/[^a-zA-Z0-9_-]/g, '')
     .replace(/_/g, '-')
     .toLowerCase();
+
+  window.currentRoomName = roomname; // Update global for pinned-messages
 
   if (roomname.length > 32 && !roomname.match(/^[0-9a-f]{64}$/)) {
     addSystemMessage('ERROR: Invalid room name.');
@@ -3592,7 +3563,11 @@ async function startChat() {
 
       for (let i = 0; i < exportData.messages.length; i++) {
         const msg = exportData.messages[i];
-        let decryptedMessage = await tryDecryptMessage(msg);
+        let decryptedMessage = await tryDecryptMessage(
+          msg,
+          currentRoomKey,
+          isRoomEncrypted,
+        );
 
         // Add decrypted message
         decryptedMessages.push({ ...msg, message: decryptedMessage });
@@ -4303,6 +4278,9 @@ function join() {
     } else if (data.destructionUpdate) {
       // Handle room destruction updates
       handleDestructionUpdate(data.destructionUpdate);
+    } else if (data.pinUpdate) {
+      // Handle pin/unpin updates
+      handlePinUpdate(data.pinUpdate);
     } else if (data.messageDeleted) {
       // Handle message deletion broadcast
       const deletedMessageId = data.messageDeleted;
@@ -4795,7 +4773,11 @@ async function addChatMessage(messageObj, options = {}) {
   const updateChannels = options.updateChannels !== false;
 
   // Decrypt message if encrypted
-  const decryptedMessage = await tryDecryptMessage(messageObj);
+  const decryptedMessage = await tryDecryptMessage(
+    messageObj,
+    currentRoomKey,
+    isRoomEncrypted,
+  );
 
   // Create complete message data with decrypted content
   const messageData = {
