@@ -11,11 +11,11 @@
     "format": "prettier --write ./src"
   },
   "dependencies": {
-    "@zip.js/zip.js": "^2.7.52",
     "hono": "^4.10.2"
   },
   "devDependencies": {
     "@chialab/rna": "^0.19.0",
+    "@zip.js/zip.js": "^2.7.52",
     "prettier": "^3.6.2"
   }
 }

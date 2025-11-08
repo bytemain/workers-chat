@@ -16,6 +16,12 @@ import {
   MAX_FILE_SIZE_BYTES,
   MAX_FILE_SIZE_MB,
 } from '../common/constants.mjs';
+import {
+  initPinnedMessages,
+  togglePinnedPanel,
+  pinMessage,
+  getPinnedCount,
+} from './pinned-messages.mjs';
 
 // Check Crypto API compatibility early
 const cryptoSupported = initCryptoCompatCheck();
@@ -2188,6 +2194,23 @@ function createMessageElement(
     buttonsContainer.appendChild(deleteBtn);
   }
 
+  // Add Pin button (only in main chat, not in thread)
+  if (!isInThread && !isThreadOriginal) {
+    const pinBtn = document.createElement('button');
+    pinBtn.className = 'message-action-btn';
+    pinBtn.innerHTML = '<i class="ri-pushpin-line"></i> Pin';
+    pinBtn.title = 'Pin this message';
+    pinBtn.onclick = async (e) => {
+      e.stopPropagation();
+      pinMessage(roomname, currentChannel, data);
+      pinBtn.innerHTML = '<i class="ri-pushpin-fill"></i> Pinned';
+      setTimeout(() => {
+        pinBtn.innerHTML = '<i class="ri-pushpin-line"></i> Pin';
+      }, 2000);
+    };
+    buttonsContainer.appendChild(pinBtn);
+  }
+
   actions.appendChild(buttonsContainer);
 
   // Wrap actions in a sticky container
@@ -2713,12 +2736,11 @@ function initChannelInfoBar() {
     });
   }
 
-  // Show pinned messages (TODO: implement later)
+  // Show pinned messages
   const btnShowPins = document.getElementById('btn-show-pins');
   if (btnShowPins) {
     btnShowPins.addEventListener('click', () => {
-      console.log('Show pinned messages - to be implemented');
-      // TODO: Implement pinned messages modal
+      togglePinnedPanel(roomname, currentChannel);
     });
   }
 
@@ -4116,6 +4138,9 @@ async function startChat() {
 
   // Initialize mobile navigation if on mobile
   initMobileNavigation();
+
+  // Initialize pinned messages panel (Reef.js component)
+  initPinnedMessages('body');
 
   // Clear unread count for current room
   clearUnreadCount(roomname);
