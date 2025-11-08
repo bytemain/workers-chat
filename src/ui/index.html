@@ -28,6 +28,11 @@
         --spacing-sm: 0.5rem;
         --spacing-xs: 0.25rem;
         --transition: 0.2s ease;
+        --header-height: 40px;
+        --footer-height: 50px;
+        --mobile-nav-bar-height: 56px;
+        --left-sidebar-width: 72px;
+        --user-card-height: 72px;
       }
 
       /* Hide icons until font is loaded */
@@ -2141,6 +2146,16 @@
           <span class="reply-indicator-text"></span>
         </div>
         <div id="main-chat-input-container">
+          <div
+            id="char-count"
+            style="
+              text-align: right;
+              color: #666;
+              font-size: 0.75em;
+              padding: 4px 8px;
+              display: none;
+            "
+          ></div>
           <chat-input-component
             id="chat-input"
             placeholder="Type a message... (Markdown supported)"
@@ -2149,21 +2164,6 @@
             max-height="150px"
             show-file-upload="true"
           ></chat-input-component>
-          <div
-            style="
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              padding: 4px 8px;
-              font-size: 0.75em;
-              color: var(--text-muted);
-            "
-          >
-            <div
-              id="char-count"
-              style="text-align: right; color: #666; display: none"
-            ></div>
-          </div>
         </div>
       </div>
 
@@ -2176,14 +2176,6 @@
         <div id="thread-original-message"></div>
         <div id="thread-replies"></div>
         <div id="thread-input-container">
-          <chat-input-component
-            id="thread-input"
-            placeholder="Reply in thread..."
-            rows="3"
-            min-height="60px"
-            max-height="120px"
-            show-file-upload="true"
-          ></chat-input-component>
           <div
             id="thread-char-count"
             style="
@@ -2194,6 +2186,14 @@
               display: none;
             "
           ></div>
+          <chat-input-component
+            id="thread-input"
+            placeholder="Reply in thread..."
+            rows="3"
+            min-height="60px"
+            max-height="120px"
+            show-file-upload="true"
+          ></chat-input-component>
         </div>
       </div>
 

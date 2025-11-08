@@ -8,7 +8,6 @@ import { generateRandomUsername } from './utils/random.mjs';
 import { isMobile } from './utils/device.mjs';
 import { BlobWriter, ZipWriter, TextReader } from '@zip.js/zip.js';
 import tooltip from './tooltip.js';
-import { applyCSSConstants } from './constants.mjs';
 import { updateRoomList } from './room-list.mjs';
 import * as MobileUI from './mobile.mjs';
 import { initCryptoCompatCheck } from '../common/crypto-compat.js';
@@ -17,9 +16,6 @@ import {
   MAX_FILE_SIZE_BYTES,
   MAX_FILE_SIZE_MB,
 } from '../common/constants.mjs';
-
-// Apply CSS constants on load
-applyCSSConstants();
 
 // Check Crypto API compatibility early
 const cryptoSupported = initCryptoCompatCheck();
@@ -2743,7 +2739,8 @@ function initChannelInfoBar() {
       // TODO: Add more room settings in the future
     });
   }
-}// Initialize channel panel features
+}
+// Initialize channel panel features
 function initChannelPanel() {
   // Toggle section collapse
   document.querySelectorAll('.channel-section-header').forEach((header) => {

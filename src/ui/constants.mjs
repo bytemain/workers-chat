@@ -25,17 +25,3 @@ export const SPACING_XS = 4; // px - var(--spacing-xs)
 
 // Border radius
 export const BORDER_RADIUS = 5; // px
-
-// Apply constants to CSS
-export function applyCSSConstants() {
-  const root = document.documentElement;
-  root.style.setProperty('--header-height', `${HEADER_HEIGHT}px`);
-  root.style.setProperty('--footer-height', `${FOOTER_HEIGHT}px`);
-  root.style.setProperty(
-    '--mobile-nav-bar-height',
-    `${MOBILE_NAV_BAR_HEIGHT}px`,
-  );
-
-  root.style.setProperty('--left-sidebar-width', `${LEFT_SIDEBAR_WIDTH}px`);
-  root.style.setProperty('--user-card-height', `${USER_CARD_HEIGHT}px`);
-}
