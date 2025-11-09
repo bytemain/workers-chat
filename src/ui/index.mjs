@@ -24,6 +24,7 @@ import {
   handlePinUpdate,
 } from './pinned-messages.mjs';
 import { tryDecryptMessage } from './utils/message-crypto.mjs';
+import { chatState, initChatState } from './utils/chat-state.mjs';
 
 // Check Crypto API compatibility early
 const cryptoSupported = initCryptoCompatCheck();
@@ -1302,13 +1303,41 @@ let isAtBottom = true;
 
 let username;
 let roomname;
-let currentChannel = 'general'; // Current channel for sending messages
+let currentChannel = 'general'; // Current channel for sending messages (DEPRECATED: use chatState)
+let currentThreadId = null; // Current thread ID (DEPRECATED: use chatState)
 let allChannels = []; // Cache of all channels
 let temporaryChannels = new Set(); // Track frontend-only temporary channels
 
+// Backward compatibility: Sync global variables with chatState
+// These will be removed after full migration
+Object.defineProperty(window, 'currentChannel', {
+  get() {
+    return chatState?.value?.channel || currentChannel;
+  },
+  set(v) {
+    currentChannel = v;
+    if (chatState) {
+      chatState.switchChannel(v);
+    }
+  },
+  configurable: true,
+});
+
+Object.defineProperty(window, 'currentThreadId', {
+  get() {
+    return chatState?.value?.threadId || currentThreadId;
+  },
+  set(v) {
+    currentThreadId = v;
+    if (chatState) {
+      v ? chatState.openThread(v) : chatState.closeThread();
+    }
+  },
+  configurable: true,
+});
+
 // Export to window for use by other modules
 window.currentRoomName = null;
-window.currentChannel = 'general';
 window.currentUsername = null;
 
 // E2EE state variables
@@ -1420,7 +1449,7 @@ function formatTimestamp(timestamp) {
 }
 
 // Thread state
-let currentThreadId = null; // Currently open thread
+// Note: currentThreadId is now managed by chatState (see line ~1307)
 let messagesCache = new Map(); // messageId -> message data
 let threadsCache = new Map(); // messageId -> array of reply messages
 
@@ -1878,6 +1907,12 @@ window.openThread = async function (messageId) {
   }
 
   currentThreadId = rootMessageId;
+
+  // Update state - URL sync happens automatically via chatState
+  if (chatState) {
+    chatState.openThread(rootMessageId);
+  }
+
   threadPanel.classList.add('visible');
   chatlog.classList.add('thread-open');
 
@@ -1891,11 +1926,6 @@ window.openThread = async function (messageId) {
 
   // Handle mobile thread panel
   MobileUI.handleMobileThreadPanel(true);
-
-  // Update URL with thread ID
-  const url = new URL(window.location);
-  url.searchParams.set('thread', rootMessageId);
-  window.history.pushState({}, '', url);
 
   // Load and display root message
   const rootMessage = messagesCache.get(rootMessageId);
@@ -1920,10 +1950,11 @@ window.openThread = async function (messageId) {
 window.closeThread = function () {
   currentThreadId = null;
 
-  // Remove thread parameter from URL
-  const url = new URL(window.location);
-  url.searchParams.delete('thread');
-  window.history.pushState({}, '', url);
+  // Update state - URL sync happens automatically via chatState
+  if (chatState) {
+    chatState.closeThread();
+  }
+
   threadPanel.classList.remove('visible');
   chatlog.classList.remove('thread-open');
 
@@ -2512,13 +2543,13 @@ async function switchToChannel(channel) {
   currentChannel = normalizedChannel;
   window.currentChannel = normalizedChannel; // Update global for pinned-messages
 
+  // Update state - URL sync happens automatically via chatState
+  if (chatState) {
+    chatState.switchChannel(normalizedChannel);
+  }
+
   // Clear unread count for this channel
   clearChannelUnreadCount(normalizedChannel);
-
-  // Update URL with channel parameter
-  const url = new URL(window.location);
-  url.searchParams.set('channel', normalizedChannel);
-  window.history.pushState({}, '', url);
 
   // Update channel info bar
   const channelNameDisplay = document.getElementById('channel-name-display');
@@ -3216,6 +3247,10 @@ async function startChat() {
     .toLowerCase();
 
   window.currentRoomName = roomname; // Update global for pinned-messages
+
+  // Initialize chat state with URL sync
+  initChatState();
+  chatState.setRoom(roomname);
 
   if (roomname.length > 32 && !roomname.match(/^[0-9a-f]{64}$/)) {
     addSystemMessage('ERROR: Invalid room name.');
@@ -4882,47 +4917,9 @@ async function addChatMessage(messageObj, options = {}) {
   }
 }
 
-// Listen for browser back/forward button to handle room, thread and channel navigation
-window.addEventListener('popstate', () => {
-  // Check if room changed (by pathname)
-  const newRoomName = getRoomNameFromURL();
-  if (roomname && newRoomName !== roomname) {
-    // Room changed, reload the page
-    window.location.reload();
-    return;
-  }
-
-  const urlParams = new URLSearchParams(window.location.search);
-  const threadParam = urlParams.get('thread');
-  const channelParam = urlParams.get('channel');
-
-  // Handle thread navigation
-  if (threadParam) {
-    // Open the thread if it's in the URL
-    if (currentThreadId !== threadParam) {
-      window.openThread(threadParam);
-    }
-  } else {
-    // Close the thread if there's no thread parameter
-    if (currentThreadId) {
-      window.closeThread();
-    }
-  }
-
-  // Handle channel navigation
-  const targetChannel = channelParam || 'general';
-  if (targetChannel !== currentChannel) {
-    console.log(
-      `🔄 Popstate: switching from ${currentChannel} to ${targetChannel}`,
-    );
-    switchToChannel(targetChannel);
-
-    // On mobile, ensure we're showing the chat page
-    if (isMobile()) {
-      MobileUI.showMobileChatPage();
-    }
-  }
-});
+// NOTE: Browser back/forward navigation is now handled by chat-state.mjs
+// The global popstate listener has been removed - URL state sync is automatic
+// via chatState's syncUrlState integration
 
 // ============================================
 // Left Sidebar Room List Management
@@ -5172,10 +5169,10 @@ window.hideLeftSidebar = hideLeftSidebar;
 function showMobileChannelList() {
   if (!isMobile()) return;
 
-  // Clear channel parameter from URL
-  const url = new URL(window.location);
-  url.searchParams.delete('channel');
-  window.history.pushState({}, '', url);
+  // Clear channel via chatState - URL sync happens automatically
+  if (chatState) {
+    chatState.clearChannel();
+  }
 
   // Reset to general channel (don't set to null)
   currentChannel = 'general';

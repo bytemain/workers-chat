@@ -31,6 +31,8 @@
  * ```
  */
 
+import { store } from 'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js';
+
 // Global registry to track URL param usage and prevent conflicts
 const urlParamRegistry = new Map();
 
@@ -87,22 +89,11 @@ function unregisterUrlParams(urlParams) {
 }
 
 /**
- * Get a descriptive name for a store (for error messages)
- */
-function getStoreName(reefStore) {
-  // Try to get signal name (best identifier)
-  if (reefStore.signal) {
-    return `signal:${reefStore.signal}`;
-  }
-  // Fallback to a generic name
-  return 'anonymous-store';
-}
-
-/**
  * Create a URL state synchronizer for a Reef.js store
  *
  * @param {Object} reefStore - Reef.js store created with store()
  * @param {Object} config - Configuration object
+ * @param {string} config.signalName - The signal name passed to store() (REQUIRED)
  * @param {Object} config.stateToUrl - Map of state keys to URL param names
  * @param {Object} [config.serialize] - Custom serializers for state values
  * @param {Object} [config.deserialize] - Custom deserializers for URL params
@@ -110,10 +101,11 @@ function getStoreName(reefStore) {
  * @param {boolean} [config.pushState] - Use pushState (true) or replaceState (false)
  * @param {Function} [config.onPopState] - Custom handler for popstate events
  * @returns {Object} - Sync controller with cleanup method
- * @throws {Error} if URL params conflict with another store
+ * @throws {Error} if URL params conflict with another store or signalName not provided
  */
 export function syncUrlState(reefStore, config = {}) {
   const {
+    signalName,
     stateToUrl = {},
     serialize = {},
     deserialize = {},
@@ -122,8 +114,17 @@ export function syncUrlState(reefStore, config = {}) {
     onPopState = null,
   } = config;
 
+  // Validate signalName
+  if (!signalName) {
+    throw new Error(
+      'syncUrlState requires config.signalName to be provided.\n' +
+        'This should match the third parameter you passed to store().\n' +
+        'Example: store(data, actions, "mySignal") → syncUrlState(myStore, { signalName: "mySignal", ... })',
+    );
+  }
+
   // Get store name for error messages
-  const storeName = getStoreName(reefStore);
+  const storeName = `signal:${signalName}`;
 
   // Extract URL params from config
   const urlParams = Object.values(stateToUrl);
@@ -239,26 +240,14 @@ export function syncUrlState(reefStore, config = {}) {
     }
   }
 
-  // Watch store changes with Reef.js signal
-  // We use a separate component just to listen to changes
-  const watcherElement = document.createElement('div');
-  watcherElement.style.display = 'none';
+  // Listen to Reef.js signal event for state changes
+  // Reef.js emits 'reef:signal-{name}' events on document when store changes
+  const signalEventName = `reef:signal-${signalName}`;
+  function handleSignalEvent() {
+    updateUrlFromState();
+  }
 
-  // Import component dynamically to avoid circular deps
-  import('https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js').then(
-    ({ component }) => {
-      // Create a watcher component
-      component(
-        watcherElement,
-        () => {
-          // Trigger URL update when state changes
-          updateUrlFromState();
-          return ''; // No rendering needed
-        },
-        { signals: [reefStore.signal] },
-      );
-    },
-  );
+  document.addEventListener(signalEventName, handleSignalEvent);
 
   // Listen to popstate
   window.addEventListener('popstate', handlePopState);
@@ -270,7 +259,7 @@ export function syncUrlState(reefStore, config = {}) {
   return {
     cleanup() {
       window.removeEventListener('popstate', handlePopState);
-      watcherElement.remove();
+      document.removeEventListener(signalEventName, handleSignalEvent);
       // Unregister URL params so they can be used again
       unregisterUrlParams(urlParams);
     },
@@ -293,9 +282,11 @@ export function syncUrlParam(
   reefStore,
   stateKey,
   urlKey = stateKey,
+  signalName,
   options = {},
 ) {
   return syncUrlState(reefStore, {
+    signalName,
     stateToUrl: { [stateKey]: urlKey },
     ...options,
   });
@@ -306,19 +297,14 @@ export function syncUrlParam(
  * Automatically syncs with URL on creation
  */
 export function createUrlStore(initialState, actions, signalName, syncConfig) {
-  // Import store from Reef.js
-  return import(
-    'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js'
-  ).then(({ store }) => {
-    const reefStore = store(initialState, actions, signalName);
+  const reefStore = store(initialState, actions, signalName);
 
-    // Auto-sync with URL
-    if (syncConfig) {
-      syncUrlState(reefStore, syncConfig);
-    }
+  // Auto-sync with URL
+  if (syncConfig) {
+    syncUrlState(reefStore, syncConfig);
+  }
 
-    return reefStore;
-  });
+  return reefStore;
 }
 
 /**

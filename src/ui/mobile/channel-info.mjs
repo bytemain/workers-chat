@@ -408,6 +408,8 @@ export function initChannelInfo(containerSelector = 'body') {
 
   // Setup URL state sync
   urlStateSync = syncUrlState(channelInfoState, {
+    // Signal name for this store
+    signalName: SignalName,
     // Map state keys to URL params
     stateToUrl: {
       isOpen: 'info',
