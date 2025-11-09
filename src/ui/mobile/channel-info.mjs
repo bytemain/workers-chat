@@ -8,6 +8,7 @@ import {
   component,
 } from 'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js';
 import { api } from '../api.mjs';
+import { syncUrlState } from '../utils/url-state-sync.mjs';
 
 const SignalName = 'channelInfoState';
 
@@ -383,6 +384,7 @@ function escapeHtml(text) {
 
 // Create Reef component
 let channelInfoComponent = null;
+let urlStateSync = null;
 
 // Initialize the channel info panel
 export function initChannelInfo(containerSelector = 'body') {
@@ -404,13 +406,58 @@ export function initChannelInfo(containerSelector = 'body') {
 
   console.log('Channel info component initialized');
 
+  // Setup URL state sync
+  urlStateSync = syncUrlState(channelInfoState, {
+    // Map state keys to URL params
+    stateToUrl: {
+      isOpen: 'info',
+      activeTab: 'tab',
+    },
+    // Serialize: convert state to URL
+    serialize: {
+      isOpen: (value) => (value ? 'open' : null), // null = remove from URL
+      activeTab: (value) => (value === 'members' ? null : value), // default tab not in URL
+    },
+    // Deserialize: convert URL to state
+    deserialize: {
+      isOpen: (value) => value === 'open',
+      activeTab: (value) => value || 'members',
+    },
+    // Only sync when panel is open
+    shouldSync: (state) => state.isOpen,
+    // Use replaceState for tab changes (no history spam)
+    pushState: false,
+    // Custom popstate handler to load data
+    onPopState: (event, store) => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const shouldBeOpen = urlParams.get('info') === 'open';
+      const urlTab = urlParams.get('tab') || 'members';
+      const state = store.value;
+
+      if (shouldBeOpen && !state.isOpen) {
+        // Should be open but currently closed
+        const room = window.currentRoomName || '';
+        const channel = window.currentChannel || '';
+        if (room && channel) {
+          store.open(room, channel);
+          store.switchTab(urlTab);
+          loadTabData(urlTab, room, channel);
+        }
+      } else if (!shouldBeOpen && state.isOpen) {
+        // Should be closed but currently open
+        store.close();
+      } else if (shouldBeOpen && state.isOpen && urlTab !== state.activeTab) {
+        // Same state but different tab
+        store.switchTab(urlTab);
+        loadTabData(urlTab, state.roomName, state.channelName);
+      }
+    },
+  });
+
   // Setup event delegation
   container.addEventListener('click', handleChannelInfoClick);
 
-  // Listen for browser back/forward button
-  window.addEventListener('popstate', handlePopState);
-
-  // Check if we should open channel info on initial load
+  // Initial load from URL (handled by syncUrlState automatically)
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('info') === 'open') {
     const room = window.currentRoomName || '';
@@ -419,7 +466,6 @@ export function initChannelInfo(containerSelector = 'body') {
     if (room && channel) {
       channelInfoState.open(room, channel);
       channelInfoState.switchTab(tab);
-      // Load data for the tab
       loadTabData(tab, room, channel);
     }
   }
@@ -443,34 +489,6 @@ function loadTabData(tabName, roomName, channelName) {
     case 'files':
       loadFilesData(roomName, channelName);
       break;
-  }
-}
-
-// Handle browser back/forward button
-function handlePopState(event) {
-  const urlParams = new URLSearchParams(window.location.search);
-  const shouldBeOpen = urlParams.get('info') === 'open';
-  const isCurrentlyOpen = channelInfoState.value.isOpen;
-  const urlTab = urlParams.get('tab') || 'members';
-  const currentTab = channelInfoState.value.activeTab;
-
-  if (shouldBeOpen && !isCurrentlyOpen) {
-    // Should be open but currently closed - reopen it
-    const room = window.currentRoomName || '';
-    const channel = window.currentChannel || '';
-    if (room && channel) {
-      channelInfoState.open(room, channel);
-      channelInfoState.switchTab(urlTab);
-      loadTabData(urlTab, room, channel);
-    }
-  } else if (!shouldBeOpen && isCurrentlyOpen) {
-    // Should be closed but currently open - close it
-    channelInfoState.close();
-  } else if (shouldBeOpen && isCurrentlyOpen && urlTab !== currentTab) {
-    // Same state but different tab - switch tab
-    const state = channelInfoState.value;
-    channelInfoState.switchTab(urlTab);
-    loadTabData(urlTab, state.roomName, state.channelName);
   }
 }
 
@@ -530,17 +548,8 @@ function jumpToMessage(messageId) {
 export function openChannelInfo(roomName, channelName) {
   console.log('Opening channel info for', roomName, channelName);
 
+  // Just update state - URL sync happens automatically
   channelInfoState.open(roomName, channelName);
-
-  // Push state to history
-  const currentUrl = new URL(window.location.href);
-  currentUrl.searchParams.set('info', 'open');
-  currentUrl.searchParams.set('tab', 'members'); // Default tab
-  window.history.pushState(
-    { channelInfoOpen: true },
-    '',
-    currentUrl.toString(),
-  );
 
   // Load initial data for members tab
   loadMembersData();
@@ -548,20 +557,8 @@ export function openChannelInfo(roomName, channelName) {
 
 // Close the channel info panel
 export function closeChannelInfo() {
+  // Just update state - URL sync happens automatically
   channelInfoState.close();
-
-  // Update URL to remove info params
-  const currentUrl = new URL(window.location.href);
-  currentUrl.searchParams.delete('info');
-  currentUrl.searchParams.delete('tab');
-
-  // Go back in history if we pushed a state
-  if (window.history.state?.channelInfoOpen) {
-    window.history.back();
-  } else {
-    // If no state, just update URL
-    window.history.replaceState(null, '', currentUrl.toString());
-  }
 
   // Notify mobile UI to return to chat
   if (window.MobileUI && window.MobileUI.showChatPage) {
@@ -571,18 +568,8 @@ export function closeChannelInfo() {
 
 // Switch tab
 function switchTab(tabName) {
+  // Just update state - URL sync happens automatically
   channelInfoState.switchTab(tabName);
-
-  // Update URL with current tab
-  const currentUrl = new URL(window.location.href);
-  if (currentUrl.searchParams.get('info') === 'open') {
-    currentUrl.searchParams.set('tab', tabName);
-    window.history.replaceState(
-      window.history.state,
-      '',
-      currentUrl.toString(),
-    );
-  }
 
   // Load data for the new tab
   const state = channelInfoState.value;

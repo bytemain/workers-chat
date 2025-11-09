@@ -161,6 +161,140 @@ containerElement.addEventListener('click', (event) => {
 - Tab navigation with data loading
 - Loading/error/empty states in templates
 
+### 7. URL State Management (Critical for Sharing)
+
+**All important UI state MUST be reflected in the URL** - this enables deep linking and sharing:
+
+**Why URL State?**
+
+- Users can share specific views (room, channel, thread, pinned message)
+- Browser back/forward buttons work naturally
+- State persists across page refreshes
+- Mobile-friendly navigation patterns
+
+**URL Structure Pattern**:
+
+```
+/room/{roomName}?channel={channelName}&tab={tabName}&thread={messageId}&msg={messageId}
+```
+
+**URL State Sync Utility** (`src/ui/utils/url-state-sync.mjs`):
+
+**Automatic bidirectional sync** between Reef.js store and URL params. Use this for all new features:
+
+```javascript
+import { syncUrlState } from '../utils/url-state-sync.mjs';
+import { store } from 'reefjs';
+
+const myState = store({ isOpen: false, tab: 'messages' }, actions, 'mySignal');
+
+// Set up automatic URL sync
+const sync = syncUrlState(myState, {
+  // Map state keys to URL param names
+  stateToUrl: {
+    isOpen: 'info',
+    tab: 'tab',
+  },
+
+  // Serialize: convert state value to URL param
+  serialize: {
+    isOpen: (value) => (value ? 'open' : null), // null = remove from URL
+    tab: (value) => (value === 'messages' ? null : value), // default omitted
+  },
+
+  // Deserialize: convert URL param to state value
+  deserialize: {
+    isOpen: (value) => value === 'open',
+    tab: (value) => value || 'messages',
+  },
+
+  // Optional: only sync when condition is true
+  shouldSync: (state) => state.isOpen,
+
+  // Optional: use pushState (true) or replaceState (false)
+  pushState: false,
+
+  // Optional: custom popstate handler
+  onPopState: (event, store) => {
+    // Handle browser back/forward
+    const urlParams = new URLSearchParams(window.location.search);
+    // Update state based on URL...
+  },
+});
+
+// Now just update state - URL syncs automatically!
+myState.isOpen = true; // URL updates to ?info=open
+myState.tab = 'pins'; // URL updates to ?info=open&tab=pins
+```
+
+**Key Benefits**:
+
+- 🔄 **Automatic sync**: Change state → URL updates, browser back/forward → state updates
+- 🎯 **Declarative mapping**: Define state-to-URL mapping once
+- 🧹 **Clean code**: No manual `pushState`/`replaceState` calls scattered everywhere
+- 🔧 **Flexible**: Custom serializers, conditional sync, custom popstate handlers
+- ⚠️ **Conflict detection**: Throws error if multiple stores try to use same URL param (fail-fast development)
+
+**Conflict Detection** (Development Safety):
+
+The utility prevents multiple stores from syncing to the same URL param:
+
+```javascript
+// Store 1: Uses 'tab' param
+const sidebar = store({ tab: 'home' }, {}, 'sidebar');
+syncUrlState(sidebar, { stateToUrl: { tab: 'sidebarTab' } });
+
+// Store 2: Tries to use same param - THROWS ERROR!
+const panel = store({ tab: 'info' }, {}, 'panel');
+syncUrlState(panel, { stateToUrl: { tab: 'sidebarTab' } });
+// ❌ Error: URL param "sidebarTab" is already used by store "signal:sidebar"
+
+// Fix: Use different param names
+syncUrlState(panel, { stateToUrl: { tab: 'panelTab' } }); // ✅ Works!
+```
+
+**Debug Utilities** (available in development):
+
+```javascript
+import { getRegisteredUrlParams, debugUrlRegistry } from './url-state-sync.mjs';
+
+// Get all registered params
+console.log(getRegisteredUrlParams());
+// → { sidebarTab: 'signal:sidebar', panelTab: 'signal:panel' }
+
+// Print debug table
+debugUrlRegistry();
+// → Console table showing all URL param registrations
+
+// Or use browser console (localhost only):
+window.__urlStateSync.debug();
+```
+
+**URL State Guidelines**:
+
+- **DO persist**: Room, channel, active tab, selected message, thread view, search query
+- **DON'T persist**: Transient UI (tooltips, dropdowns, loading states, error messages)
+- **Use `pushState: true`** for new navigation (creates history entry)
+- **Use `pushState: false`** for in-place updates (no history entry)
+- **Always sync URL ↔ UI state** automatically with `syncUrlState()`
+- **Handle missing params gracefully** with sensible defaults in `deserialize`
+
+**Shareable State Examples**:
+
+```
+# Share specific channel
+/room/myroom?channel=general
+
+# Share pinned messages view
+/room/myroom?channel=general&tab=pins
+
+# Share specific thread
+/room/myroom?channel=general&thread=msg-123
+
+# Share specific message (jump to message)
+/room/myroom?channel=general&msg=msg-456
+```
+
 ## Development Workflows
 
 ### Local Development
@@ -294,6 +428,9 @@ Use `wrangler dev` + DevTools console:
 - **Storage keys**: ISO timestamps for messages, prefixes for indexes (`thread:`, `hashtag:`, etc.)
 - **Custom elements**: Used extensively for UI components (`<chat-message>`, `<lazy-img>`, `<chat-input-component>`)
 - **Reef.js for new UI**: All new interactive UI features must use Reef.js store/component pattern (see `src/ui/mobile/channel-info.mjs`)
+- **Reactive state**: `src/ui/react/state.mjs` provides simple Proxy-based reactivity pattern (legacy, prefer Reef.js for new code)
+- **Mobile-first**: Dedicated mobile module (`src/ui/mobile.mjs`) handles page navigation, touch gestures
+- **URL state management**: All shareable UI state must be reflected in URL query parameters (room, channel, tab, message, thread)
 - **Reactive state**: `src/ui/react/state.mjs` provides simple Proxy-based reactivity pattern (legacy, prefer Reef.js for new code)
 - **Mobile-first**: Dedicated mobile module (`src/ui/mobile.mjs`) handles page navigation, touch gestures
 
