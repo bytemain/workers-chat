@@ -79,6 +79,88 @@ All network request logic must be written in `src/ui/api.mjs` (`ChatAPI` class):
 - Handles message sending, file uploads, room joining
 - Use Water.css for simple, clean styling
 
+### 6. Reef.js Reactive Framework (Critical for New UI)
+
+**All new UI components MUST use Reef.js** (https://reefjs.com/) - a lightweight reactive UI library:
+
+- **Version**: v13 (loaded from CDN: `https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js`)
+- **Core Concepts**:
+  - `store()` - Create reactive state with actions (like Redux)
+  - `component()` - Reactive components that auto-update when state changes
+  - Template functions return HTML strings (not JSX)
+  - Event delegation via container listeners (not inline handlers)
+
+**Key Pattern Example** (see `src/ui/mobile/channel-info.mjs`):
+
+```javascript
+import {
+  store,
+  component,
+} from 'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js';
+
+// 1. Create reactive store with actions
+const myState = store(
+  {
+    isOpen: false,
+    activeTab: 'messages',
+    data: [],
+  },
+  {
+    // Actions mutate state
+    open(state, param) {
+      state.isOpen = true;
+    },
+    switchTab(state, tabName) {
+      state.activeTab = tabName;
+    },
+  },
+  'myStateSignal', // Signal name for component subscription
+);
+
+// 2. Template function (returns HTML string)
+function myTemplate() {
+  const state = myState.value;
+  if (!state.isOpen) return '';
+
+  return `
+    <div class="my-component">
+      <button data-action="close">Close</button>
+      <div class="content">${state.data.map((item) => `...`).join('')}</div>
+    </div>
+  `;
+}
+
+// 3. Create component (auto-renders on state change)
+const myComponent = component(containerElement, myTemplate, {
+  signals: ['myStateSignal'],
+});
+
+// 4. Event delegation (outside component)
+containerElement.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-action="close"]');
+  if (btn) {
+    event.preventDefault();
+    myState.close(); // Call action
+  }
+});
+```
+
+**Critical Rules**:
+
+- **Never use inline event handlers** in templates (`onclick="..."` breaks after re-render)
+- **Use data attributes** for event delegation (`data-action`, `data-tab`, `data-message-id`)
+- **Call actions to mutate state**, never mutate directly
+- **Template functions must be pure** - no side effects
+- **Signal names** must match between store and component for reactivity
+
+**Mobile UI Pattern** (see `src/ui/mobile/channel-info.mjs` for reference):
+
+- Full-screen overlay pages (z-index: 2000)
+- URL-based state management (`?info=open&tab=pins`)
+- Browser history integration (`pushState`/`popstate`)
+- Tab navigation with data loading
+- Loading/error/empty states in templates
+
 ## Development Workflows
 
 ### Local Development
@@ -211,8 +293,8 @@ Use `wrangler dev` + DevTools console:
 - **Message IDs**: UUIDs for new messages, `{timestamp}-{username}` for legacy messages
 - **Storage keys**: ISO timestamps for messages, prefixes for indexes (`thread:`, `hashtag:`, etc.)
 - **Custom elements**: Used extensively for UI components (`<chat-message>`, `<lazy-img>`, `<chat-input-component>`)
-- **No framework**: Vanilla JS with Web Components, no React/Vue
-- **Reactive state**: `src/ui/react/state.mjs` provides simple Proxy-based reactivity pattern
+- **Reef.js for new UI**: All new interactive UI features must use Reef.js store/component pattern (see `src/ui/mobile/channel-info.mjs`)
+- **Reactive state**: `src/ui/react/state.mjs` provides simple Proxy-based reactivity pattern (legacy, prefer Reef.js for new code)
 - **Mobile-first**: Dedicated mobile module (`src/ui/mobile.mjs`) handles page navigation, touch gestures
 
 ## External Dependencies (Minimal)
@@ -220,6 +302,7 @@ Use `wrangler dev` + DevTools console:
 - `hono` - HTTP routing framework (used in Worker and DO)
 - `@zip.js/zip.js` - Export feature (ZIP all messages + R2 files)
 - `@chialab/rna` - UI bundler (dev dependency)
+- `reefjs` (v13) - Reactive UI library (CDN import, no build step)
 
 ## Key Design Decisions
 
