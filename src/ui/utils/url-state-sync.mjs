@@ -89,11 +89,11 @@ function unregisterUrlParams(urlParams) {
 }
 
 /**
- * Create a URL state synchronizer for a Reef.js store
+ * Create a URL state synchronizer for a Reef.js state
  *
- * @param {Object} reefStore - Reef.js store created with store()
+ * @param {Object} reefState - Reef.js state created with store() or signal()
  * @param {Object} config - Configuration object
- * @param {string} config.signalName - The signal name passed to store() (REQUIRED)
+ * @param {string} config.signalName - The signal name passed to store() or signal() (REQUIRED)
  * @param {Object} config.stateToUrl - Map of state keys to URL param names
  * @param {Object} [config.serialize] - Custom serializers for state values
  * @param {Object} [config.deserialize] - Custom deserializers for URL params
@@ -101,9 +101,9 @@ function unregisterUrlParams(urlParams) {
  * @param {boolean} [config.pushState] - Use pushState (true) or replaceState (false)
  * @param {Function} [config.onPopState] - Custom handler for popstate events
  * @returns {Object} - Sync controller with cleanup method
- * @throws {Error} if URL params conflict with another store or signalName not provided
+ * @throws {Error} if URL params conflict with another state or signalName not provided
  */
-export function syncUrlState(reefStore, config = {}) {
+export function syncUrlState(reefState, config = {}) {
   const {
     signalName,
     stateToUrl = {},
@@ -138,7 +138,21 @@ export function syncUrlState(reefStore, config = {}) {
   // Track last synced state to detect actual changes
   const lastSyncedState = {};
   for (const stateKey of Object.keys(stateToUrl)) {
-    lastSyncedState[stateKey] = reefStore.value[stateKey];
+    // Get initial value (handle both signal and store)
+    lastSyncedState[stateKey] = reefState._isSignal
+      ? reefState[stateKey]
+      : reefState.value[stateKey];
+  }
+
+  // Batching for signal updates: debounce multiple property changes in same tick
+  let pendingUrlUpdate = null;
+  function scheduleBatchedUrlUpdate() {
+    if (pendingUrlUpdate) return; // Already scheduled
+
+    pendingUrlUpdate = Promise.resolve().then(() => {
+      pendingUrlUpdate = null;
+      updateUrlFromState();
+    });
   }
 
   // Get current URL params
@@ -180,7 +194,7 @@ export function syncUrlState(reefStore, config = {}) {
 
   // Update URL from state
   function updateUrlFromState() {
-    if (isUpdatingFromUrl || !shouldSync(reefStore.value)) return;
+    if (isUpdatingFromUrl || !shouldSync(reefState.value)) return;
 
     isUpdatingFromState = true;
 
@@ -190,7 +204,10 @@ export function syncUrlState(reefStore, config = {}) {
 
       // Update each mapped state key - only if value actually changed
       for (const [stateKey, urlKey] of Object.entries(stateToUrl)) {
-        const stateValue = reefStore.value[stateKey];
+        // Get current state value (handle both signal and store)
+        const stateValue = reefState._isSignal
+          ? reefState[stateKey]
+          : reefState.value[stateKey];
 
         // Only update URL if state value changed since last sync
         if (stateValue !== lastSyncedState[stateKey]) {
@@ -231,21 +248,32 @@ export function syncUrlState(reefStore, config = {}) {
         const urlValue = urlParams.get(urlKey);
         const stateValue = deserializeValue(stateKey, urlValue);
 
+        // Get current state value (handle both signal and store)
+        const currentValue = reefState._isSignal
+          ? reefState[stateKey]
+          : reefState.value[stateKey];
+
         // Update if value changed (allow null values)
-        if (stateValue !== reefStore.value[stateKey]) {
+        if (stateValue !== currentValue) {
           updates[stateKey] = stateValue;
           lastSyncedState[stateKey] = stateValue; // Update tracking
         }
       }
 
-      // Apply updates to state via action if available
+      // Apply updates to state
       if (Object.keys(updates).length > 0) {
-        if (typeof reefStore.updateFromUrl === 'function') {
+        if (reefState._isSignal) {
+          // Direct assignment for signal
+          Object.assign(reefState, updates);
+        } else if (typeof reefState.updateFromUrl === 'function') {
           // Use action for store()
-          reefStore.updateFromUrl(updates);
+          reefState.updateFromUrl(updates);
         } else {
-          // Fallback: direct assignment for signal()
-          Object.assign(reefStore.value, updates);
+          throw new Error(
+            'syncUrlState with store() requires an updateFromUrl action.\n' +
+              'Add: updateFromUrl(state, updates) { Object.assign(state, updates); }\n' +
+              'Or consider using signal() instead of store() for URL-synced state.',
+          );
         }
       }
     } finally {
@@ -257,7 +285,7 @@ export function syncUrlState(reefStore, config = {}) {
   function handlePopState(event) {
     if (onPopState) {
       // Custom handler
-      onPopState(event, reefStore);
+      onPopState(event, reefState);
     } else {
       // Default: sync state from URL
       updateStateFromUrl();
@@ -270,7 +298,13 @@ export function syncUrlState(reefStore, config = {}) {
   // Reef.js emits 'reef:signal-{name}' events on document when store changes
   const signalEventName = `reef:signal-${signalName}`;
   function handleSignalEvent() {
-    updateUrlFromState();
+    // For signal: batch multiple property updates in same tick with Promise.resolve()
+    // For store: actions already batch updates, so update immediately
+    if (reefState._isSignal) {
+      scheduleBatchedUrlUpdate();
+    } else {
+      updateUrlFromState();
+    }
   }
 
   document.addEventListener(signalEventName, handleSignalEvent);
