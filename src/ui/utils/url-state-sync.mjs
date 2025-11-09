@@ -135,6 +135,12 @@ export function syncUrlState(reefStore, config = {}) {
   let isUpdatingFromUrl = false;
   let isUpdatingFromState = false;
 
+  // Track last synced state to detect actual changes
+  const lastSyncedState = {};
+  for (const stateKey of Object.keys(stateToUrl)) {
+    lastSyncedState[stateKey] = reefStore.value[stateKey];
+  }
+
   // Get current URL params
   function getUrlParams() {
     return new URLSearchParams(window.location.search);
@@ -180,20 +186,31 @@ export function syncUrlState(reefStore, config = {}) {
 
     try {
       const urlParams = getUrlParams();
+      let hasChanges = false;
 
-      // Update each mapped state key
+      // Update each mapped state key - only if value actually changed
       for (const [stateKey, urlKey] of Object.entries(stateToUrl)) {
         const stateValue = reefStore.value[stateKey];
-        const urlValue = serializeValue(stateKey, stateValue);
 
-        if (urlValue === null) {
-          urlParams.delete(urlKey);
-        } else {
-          urlParams.set(urlKey, urlValue);
+        // Only update URL if state value changed since last sync
+        if (stateValue !== lastSyncedState[stateKey]) {
+          const urlValue = serializeValue(stateKey, stateValue);
+
+          if (urlValue === null) {
+            urlParams.delete(urlKey);
+          } else {
+            urlParams.set(urlKey, urlValue);
+          }
+
+          lastSyncedState[stateKey] = stateValue;
+          hasChanges = true;
         }
       }
 
-      setUrlParams(urlParams, pushState);
+      // Only update URL if there were actual changes
+      if (hasChanges) {
+        setUrlParams(urlParams, pushState);
+      }
     } finally {
       isUpdatingFromState = false;
     }
@@ -214,15 +231,22 @@ export function syncUrlState(reefStore, config = {}) {
         const urlValue = urlParams.get(urlKey);
         const stateValue = deserializeValue(stateKey, urlValue);
 
-        // Only update if value changed
-        if (stateValue !== null && stateValue !== reefStore.value[stateKey]) {
+        // Update if value changed (allow null values)
+        if (stateValue !== reefStore.value[stateKey]) {
           updates[stateKey] = stateValue;
+          lastSyncedState[stateKey] = stateValue; // Update tracking
         }
       }
 
-      // Apply updates to state
+      // Apply updates to state via action if available
       if (Object.keys(updates).length > 0) {
-        Object.assign(reefStore.value, updates);
+        if (typeof reefStore.updateFromUrl === 'function') {
+          // Use action for store()
+          reefStore.updateFromUrl(updates);
+        } else {
+          // Fallback: direct assignment for signal()
+          Object.assign(reefStore.value, updates);
+        }
       }
     } finally {
       isUpdatingFromUrl = false;
@@ -239,6 +263,8 @@ export function syncUrlState(reefStore, config = {}) {
       updateStateFromUrl();
     }
   }
+  // Initial sync from URL on setup
+  updateStateFromUrl();
 
   // Listen to Reef.js signal event for state changes
   // Reef.js emits 'reef:signal-{name}' events on document when store changes
@@ -251,9 +277,6 @@ export function syncUrlState(reefStore, config = {}) {
 
   // Listen to popstate
   window.addEventListener('popstate', handlePopState);
-
-  // Initial sync from URL on setup
-  updateStateFromUrl();
 
   // Return cleanup function
   return {

@@ -56,6 +56,11 @@ export const chatState = store(
       state.channel = null;
       state.threadId = null;
     },
+
+    // Action: Update state from URL (used by syncUrlState)
+    updateFromUrl(state, updates) {
+      Object.assign(state, updates);
+    },
   },
   SignalName,
 );

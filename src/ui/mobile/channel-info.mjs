@@ -78,6 +78,10 @@ const channelInfoState = store(
       state.error = error;
       state.loading = false;
     },
+    // Action: Update state from URL (used by syncUrlState)
+    updateFromUrl(state, updates) {
+      Object.assign(state, updates);
+    },
   },
   SignalName,
 );
