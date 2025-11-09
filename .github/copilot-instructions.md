@@ -85,12 +85,85 @@ All network request logic must be written in `src/ui/api.mjs` (`ChatAPI` class):
 
 - **Version**: v13 (loaded from CDN: `https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js`)
 - **Core Concepts**:
-  - `store()` - Create reactive state with actions (like Redux)
+  - `signal()` - Create reactive state with direct property updates (RECOMMENDED)
+  - `store()` - Create reactive state with actions (like Redux, more restrictive)
   - `component()` - Reactive components that auto-update when state changes
   - Template functions return HTML strings (not JSX)
   - Event delegation via container listeners (not inline handlers)
 
-**Key Pattern Example** (see `src/ui/mobile/channel-info.mjs`):
+**When to use `signal()` vs `store()`**:
+
+- **Use `signal()` (RECOMMENDED)**:
+  - Simple state management with direct property updates
+  - URL-synced state (works seamlessly with `syncUrlState`)
+  - When you want flexibility and less boilerplate
+  - **Event behavior**: Emits event on every property assignment (`obj.prop = value`)
+  - Example: navigation state, UI toggles, filters
+- **Use `store()`**:
+  - Complex state logic requiring validation/side effects
+  - When you need explicit control over mutations
+  - Redux-like patterns with action creators
+  - **Event behavior**: Emits event once per action (after all mutations complete)
+  - Example: form validation, complex workflows
+
+**Key Pattern Example with `signal()` (RECOMMENDED)**:
+
+```javascript
+import {
+  signal,
+  component,
+} from 'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js';
+
+// 1. Create reactive signal (allows direct property updates)
+const myState = signal(
+  {
+    isOpen: false,
+    activeTab: 'messages',
+    data: [],
+  },
+  'myStateSignal', // Signal name for component subscription
+);
+
+// 2. Optional: Helper functions for semantic updates
+const myActions = {
+  open(param) {
+    myState.isOpen = true;
+    myState.data = [];
+  },
+  switchTab(tabName) {
+    myState.activeTab = tabName;
+  },
+};
+
+// 3. Template function (returns HTML string)
+function myTemplate() {
+  if (!myState.isOpen) return '';
+
+  return `
+    <div class="my-component">
+      <button data-action="close">Close</button>
+      <div class="content">${myState.data.map((item) => `...`).join('')}</div>
+    </div>
+  `;
+}
+
+// 4. Create component (auto-renders on state change)
+const myComponent = component(containerElement, myTemplate, {
+  signals: ['myStateSignal'],
+});
+
+// 5. Event delegation (outside component)
+containerElement.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-action="close"]');
+  if (btn) {
+    event.preventDefault();
+    myState.isOpen = false; // Direct property update!
+    // Or use helper: myActions.close();
+  }
+});
+```
+
+**Alternative: `store()` Pattern (for complex state logic)**:
 
 ```javascript
 import {
@@ -106,11 +179,13 @@ const myState = store(
     data: [],
   },
   {
-    // Actions mutate state
+    // Actions mutate state (with validation/side effects)
     open(state, param) {
       state.isOpen = true;
+      state.data = [];
     },
     switchTab(state, tabName) {
+      if (!state.isOpen) return; // Validation
       state.activeTab = tabName;
     },
   },
@@ -119,7 +194,7 @@ const myState = store(
 
 // 2. Template function (returns HTML string)
 function myTemplate() {
-  const state = myState.value;
+  const state = myState.value; // Note: .value getter for store()
   if (!state.isOpen) return '';
 
   return `
@@ -140,7 +215,7 @@ containerElement.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-action="close"]');
   if (btn) {
     event.preventDefault();
-    myState.close(); // Call action
+    myState.close(); // Call action (state is read-only outside actions)
   }
 });
 ```
@@ -149,9 +224,26 @@ containerElement.addEventListener('click', (event) => {
 
 - **Never use inline event handlers** in templates (`onclick="..."` breaks after re-render)
 - **Use data attributes** for event delegation (`data-action`, `data-tab`, `data-message-id`)
-- **Call actions to mutate state**, never mutate directly
+- **For signal()**: Direct property updates (`myState.isOpen = true`)
+- **For store()**: Call actions to mutate state (`myState.close()`), never mutate directly
 - **Template functions must be pure** - no side effects
-- **Signal names** must match between store and component for reactivity
+- **Signal names** must match between signal/store and component for reactivity
+- **Access state**: signal() uses direct access (`myState.isOpen`), store() uses getter (`myState.value.isOpen`)
+
+**Event Emission Pattern**:
+
+- **signal()**: Emits `reef:signal-{name}` event on **every property assignment** (even if same value)
+  ```javascript
+  myState.isOpen = true; // Event emitted
+  myState.tab = 'pins'; // Event emitted again
+  myState.loading = false; // Event emitted again
+  ```
+- **store()**: Emits `reef:signal-{name}` event **once per action** (after all mutations complete)
+  ```javascript
+  myState.open(); // Single event after all state changes in action
+  ```
+
+**Performance Note**: Signal() emits events aggressively. Use with `syncUrlState()` to automatically batch URL updates in same tick via Promise.resolve().
 
 **Mobile UI Pattern** (see `src/ui/mobile/channel-info.mjs` for reference):
 
@@ -180,16 +272,18 @@ containerElement.addEventListener('click', (event) => {
 
 **URL State Sync Utility** (`src/ui/utils/url-state-sync.mjs`):
 
-**Automatic bidirectional sync** between Reef.js store and URL params. Use this for all new features:
+**Automatic bidirectional sync** between Reef.js signal/store and URL params. Use this for all new features:
 
 ```javascript
 import { syncUrlState } from '../utils/url-state-sync.mjs';
-import { store } from 'reefjs';
+import { signal } from 'reefjs';
 
-const myState = store({ isOpen: false, tab: 'messages' }, actions, 'mySignal');
+const myState = signal({ isOpen: false, tab: 'messages' }, 'mySignal');
 
 // Set up automatic URL sync
 const sync = syncUrlState(myState, {
+  signalName: 'mySignal', // REQUIRED: must match signal/store name
+
   // Map state keys to URL param names
   stateToUrl: {
     isOpen: 'info',
@@ -215,7 +309,7 @@ const sync = syncUrlState(myState, {
   pushState: false,
 
   // Optional: custom popstate handler
-  onPopState: (event, store) => {
+  onPopState: (event, reefStore) => {
     // Handle browser back/forward
     const urlParams = new URLSearchParams(window.location.search);
     // Update state based on URL...
@@ -234,23 +328,27 @@ myState.tab = 'pins'; // URL updates to ?info=open&tab=pins
 - 🧹 **Clean code**: No manual `pushState`/`replaceState` calls scattered everywhere
 - 🔧 **Flexible**: Custom serializers, conditional sync, custom popstate handlers
 - ⚠️ **Conflict detection**: Throws error if multiple stores try to use same URL param (fail-fast development)
+- ⚡ **Batching**: Automatically batches multiple signal() property updates in same tick via Promise.resolve()
 
 **Conflict Detection** (Development Safety):
 
-The utility prevents multiple stores from syncing to the same URL param:
+The utility prevents multiple stores/signals from syncing to the same URL param:
 
 ```javascript
-// Store 1: Uses 'tab' param
-const sidebar = store({ tab: 'home' }, {}, 'sidebar');
-syncUrlState(sidebar, { stateToUrl: { tab: 'sidebarTab' } });
+// Signal 1: Uses 'tab' param
+const sidebar = signal({ tab: 'home' }, 'sidebar');
+syncUrlState(sidebar, {
+  signalName: 'sidebar',
+  stateToUrl: { tab: 'sidebarTab' },
+});
 
-// Store 2: Tries to use same param - THROWS ERROR!
-const panel = store({ tab: 'info' }, {}, 'panel');
-syncUrlState(panel, { stateToUrl: { tab: 'sidebarTab' } });
+// Signal 2: Tries to use same param - THROWS ERROR!
+const panel = signal({ tab: 'info' }, 'panel');
+syncUrlState(panel, { signalName: 'panel', stateToUrl: { tab: 'sidebarTab' } });
 // ❌ Error: URL param "sidebarTab" is already used by store "signal:sidebar"
 
 // Fix: Use different param names
-syncUrlState(panel, { stateToUrl: { tab: 'panelTab' } }); // ✅ Works!
+syncUrlState(panel, { signalName: 'panel', stateToUrl: { tab: 'panelTab' } }); // ✅ Works!
 ```
 
 **Debug Utilities** (available in development):
