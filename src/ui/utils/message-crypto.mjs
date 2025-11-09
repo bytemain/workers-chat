@@ -6,12 +6,16 @@
 import CryptoUtils from '../../common/crypto-utils.js';
 import { getCryptoPool } from '../crypto-worker-pool.js';
 import { initCryptoCompatCheck } from '../../common/crypto-compat.js';
+import { LRUCache } from './lru-cache.mjs';
 
 // Get crypto pool instance
 const cryptoPool = getCryptoPool();
 
 // Check crypto support
 const cryptoSupported = initCryptoCompatCheck();
+
+// LRU cache for decrypted messages (max 100 entries)
+const decryptionCache = new LRUCache(100);
 
 /**
  * Try to decrypt a message if it's encrypted
@@ -24,6 +28,13 @@ export async function tryDecryptMessage(data, roomKey, isRoomEncrypted) {
   let messageText = data.message;
 
   if (CryptoUtils.isEncrypted(data.message)) {
+    // Check cache first
+    const cached = decryptionCache.get(data.message);
+    if (cached !== undefined) {
+      console.log('✨ Using cached decryption');
+      return cached;
+    }
+
     // Check if crypto is supported
     if (!cryptoSupported) {
       console.warn(
@@ -50,6 +61,9 @@ export async function tryDecryptMessage(data, roomKey, isRoomEncrypted) {
           });
 
           console.log('✅ Message decrypted');
+
+          // Cache the decrypted result
+          decryptionCache.set(data.message, messageText);
         } else {
           console.error('❌ Failed to parse encrypted message');
           messageText = '[Encrypted message - failed to parse]';
@@ -75,4 +89,12 @@ export async function tryDecryptMessage(data, roomKey, isRoomEncrypted) {
  */
 export async function decryptMessageText(message, roomKey) {
   return tryDecryptMessage({ message }, roomKey, !!roomKey);
+}
+
+/**
+ * Clear the decryption cache (call when switching rooms or room key changes)
+ */
+export function clearDecryptionCache() {
+  decryptionCache.clear();
+  console.log('🗑️ Decryption cache cleared');
 }

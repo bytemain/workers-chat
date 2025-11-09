@@ -237,6 +237,29 @@ export class ChatRoom {
     this.restoreDestructionTimer();
   }
 
+  // Helper: Transform message rows to include replyTo structure
+  transformMessageRow(msg) {
+    const transformed = {
+      messageId: msg.messageId,
+      timestamp: msg.timestamp,
+      name: msg.name,
+      message: msg.message,
+      channel: msg.channel,
+      editedAt: msg.editedAt,
+    };
+
+    // Include replyTo structure with parent message for client-side decryption
+    if (msg.replyToId) {
+      transformed.replyTo = {
+        messageId: msg.replyToId,
+        username: msg.replyToUsername || null,
+        message: msg.replyToMessage || null, // Client will decrypt and generate preview
+      };
+    }
+
+    return transformed;
+  }
+
   // Initialize SQLite database schema
   initDatabase() {
     this.sql.exec(`
@@ -458,23 +481,32 @@ export class ChatRoom {
         const cursor = this.sql.exec(
           `
           SELECT 
-            message_id as messageId,
-            timestamp,
-            username as name,
-            message,
-            channel,
-            reply_to_id as replyToId,
-            edited_at as editedAt
-          FROM messages
-          WHERE channel = ?
-          ORDER BY timestamp DESC
+            m.message_id as messageId,
+            m.timestamp,
+            m.username as name,
+            m.message,
+            m.channel,
+            m.reply_to_id as replyToId,
+            m.edited_at as editedAt,
+            parent.username as replyToUsername,
+            parent.message as replyToMessage
+          FROM messages m
+          LEFT JOIN messages parent ON m.reply_to_id = parent.message_id
+          WHERE m.channel = ?
+          ORDER BY m.timestamp DESC
           LIMIT ?
         `,
           channelName,
           limit,
         );
 
-        const messages = cursor.toArray().reverse(); // Reverse to get chronological order
+        const rawMessages = cursor.toArray().reverse(); // Reverse to get chronological order
+
+        // Transform messages - include parent data for client-side preview generation
+        const messages = rawMessages.map((msg) =>
+          this.transformMessageRow(msg),
+        );
+
         return c.json({ channel: channelName, messages });
       });
 
@@ -709,37 +741,51 @@ export class ChatRoom {
                 m.message,
                 m.channel,
                 m.reply_to_id as replyToId,
-                m.edited_at as editedAt
+                m.edited_at as editedAt,
+                parent.username as replyToUsername,
+                parent.message as replyToMessage
               FROM thread_tree tt
               INNER JOIN messages m ON tt.message_id = m.message_id
+              LEFT JOIN messages parent ON m.reply_to_id = parent.message_id
               WHERE tt.depth > 0
               ORDER BY m.timestamp ASC
             `,
               messageId,
             );
 
-            const allReplies = cursor.toArray();
+            const rawReplies = cursor.toArray();
+            const allReplies = rawReplies.map((msg) =>
+              this.transformMessageRow(msg),
+            );
+
             return c.json({ replies: allReplies });
           } else {
             // Direct replies only
             const cursor = this.sql.exec(
               `
               SELECT 
-                message_id as messageId,
-                timestamp,
-                username as name,
-                message,
-                channel,
-                reply_to_id as replyToId,
-                edited_at as editedAt
-              FROM messages
-              WHERE reply_to_id = ?
-              ORDER BY timestamp ASC
+                m.message_id as messageId,
+                m.timestamp,
+                m.username as name,
+                m.message,
+                m.channel,
+                m.reply_to_id as replyToId,
+                m.edited_at as editedAt,
+                parent.username as replyToUsername,
+                parent.message as replyToMessage
+              FROM messages m
+              LEFT JOIN messages parent ON m.reply_to_id = parent.message_id
+              WHERE m.reply_to_id = ?
+              ORDER BY m.timestamp ASC
             `,
               messageId,
             );
 
-            const replies = cursor.toArray();
+            const rawReplies = cursor.toArray();
+            const replies = rawReplies.map((msg) =>
+              this.transformMessageRow(msg),
+            );
+
             return c.json({ replies });
           }
         } catch (err) {

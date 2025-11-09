@@ -4814,6 +4814,35 @@ async function addChatMessage(messageObj, options = {}) {
     isRoomEncrypted,
   );
 
+  // Handle replyTo - decrypt parent message and generate preview
+  let replyTo = messageObj.replyTo || null;
+  if (replyTo && replyTo.message) {
+    // Decrypt parent message to generate preview
+    const decryptedParent = await tryDecryptMessage(
+      { message: replyTo.message },
+      currentRoomKey,
+      isRoomEncrypted,
+    );
+
+    // Generate preview (first 50 chars)
+    let preview = decryptedParent;
+    if (preview.startsWith('FILE:')) {
+      const parts = preview.substring(5).split('|');
+      preview = parts[1] || 'File'; // Use filename as preview
+    }
+    preview = preview.substring(0, 50);
+    if (decryptedParent.length > 50) {
+      preview += '...';
+    }
+
+    // Replace replyTo with version that has preview
+    replyTo = {
+      messageId: replyTo.messageId,
+      username: replyTo.username,
+      preview: preview,
+    };
+  }
+
   // Create complete message data with decrypted content
   const messageData = {
     name: messageObj.name,
@@ -4822,7 +4851,7 @@ async function addChatMessage(messageObj, options = {}) {
     messageId:
       messageObj.messageId ||
       generateLegacyMessageId(messageObj.timestamp, messageObj.name),
-    replyTo: messageObj.replyTo || null,
+    replyTo: replyTo, // Use processed replyTo with preview
     threadInfo: messageObj.threadInfo || null,
     channel: messageObj.channel || 'general',
     editedAt: messageObj.editedAt || null,
