@@ -1,15 +1,31 @@
 import { createStore } from 'tinybase';
 import { createMergeableStore } from 'tinybase';
+import { createLocalPersister } from 'tinybase/persisters/persister-browser';
 import { createWsSynchronizer } from 'tinybase/synchronizers/synchronizer-ws-client';
 import { api } from '../api.mjs';
+import { run } from 'ruply';
+import ReconnectingWebSocket from '@opensumi/reconnecting-websocket';
 
 export async function createTinybaseStorage(roomName) {
-  const tinybaseStore = createMergeableStore();
+  const store = createMergeableStore();
   const syncUrl = api.getTinybaseSyncUrl(roomName);
-  const syncer = await createWsSynchronizer(
-    tinybaseStore,
-    new WebSocket(syncUrl),
+  await run(
+    createLocalPersister(store, 'local://tinybase_storage/' + roomName),
+    async (persister) => {
+      await persister.startAutoLoad();
+      await persister.startAutoSave();
+    },
   );
-  syncer.startSync();
-  return tinybaseStore;
+  await run(
+    createWsSynchronizer(store, new ReconnectingWebSocket(syncUrl), 1),
+    async (synchronizer) => {
+      await synchronizer.startSync();
+
+      // If the websocket reconnects in the future, do another explicit sync.
+      synchronizer.getWebSocket().addEventListener('open', () => {
+        synchronizer.load().then(() => synchronizer.save());
+      });
+    },
+  );
+  return store;
 }
