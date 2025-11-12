@@ -5,10 +5,7 @@
  * Automatically syncs with URL for deep linking and browser history
  */
 
-import {
-  store,
-  component,
-} from 'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js';
+import { store, component } from 'reefjs';
 import { syncUrlState } from './url-state-sync.mjs';
 
 const SignalName = 'chatState';

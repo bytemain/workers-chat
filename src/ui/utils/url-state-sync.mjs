@@ -31,7 +31,7 @@
  * ```
  */
 
-import { store } from 'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js';
+import { store } from 'reefjs';
 
 // Global registry to track URL param usage and prevent conflicts
 const urlParamRegistry = new Map();

@@ -3,10 +3,7 @@
  * Discord-style pinned messages viewer
  */
 
-import {
-  store,
-  component,
-} from 'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js';
+import { store, component } from 'reefjs';
 import { api } from './api.mjs';
 import { decryptMessageText } from './utils/message-crypto.mjs';
 

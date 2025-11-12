@@ -109,10 +109,7 @@ All network request logic must be written in `src/ui/api.mjs` (`ChatAPI` class):
 **Key Pattern Example with `signal()` (RECOMMENDED)**:
 
 ```javascript
-import {
-  signal,
-  component,
-} from 'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js';
+import { signal, component } from 'reefjs';
 
 // 1. Create reactive signal (allows direct property updates)
 const myState = signal(
@@ -166,10 +163,7 @@ containerElement.addEventListener('click', (event) => {
 **Alternative: `store()` Pattern (for complex state logic)**:
 
 ```javascript
-import {
-  store,
-  component,
-} from 'https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js';
+import { store, component } from 'reefjs';
 
 // 1. Create reactive store with actions
 const myState = store(

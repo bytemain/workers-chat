@@ -6,7 +6,8 @@
     "module": "ESNext",
     "target": "ESNext",
     "noEmit": true,
-    "types": ["./worker-configuration.d.ts"]
+    "types": ["./worker-configuration.d.ts"],
+    "typeRoots": ["./typings", "./node_modules/@types"]
   },
   "include": ["./src/**/*.js", "./src/**/*.mjs", "./src/**/*.ts"]
 }
