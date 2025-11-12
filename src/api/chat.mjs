@@ -191,25 +191,42 @@ export default {
 // =======================================================================================
 // SQLite-backed ChatRoom Durable Object
 
-// ChatRoom implements a Durable Object that coordinates an individual chat room. Participants
-// connect to the room using WebSockets, and the room broadcasts messages from each participant
-// to all others.
+/**
+ * ChatRoom Durable Object - coordinates an individual chat room
+ * Participants connect via WebSockets, messages are broadcast to all participants
+ * All data stored in SQLite for persistence and querying
+ */
 export class ChatRoom {
+  /**
+   * @param {DurableObjectState} state - Durable Object state
+   * @param {Object} env - Environment bindings
+   * @param {DurableObjectNamespace} env.rooms - ChatRoom namespace
+   * @param {DurableObjectNamespace} env.limiters - RateLimiter namespace
+   * @param {R2Bucket} env.CHAT_FILES - R2 bucket for file storage
+   */
   constructor(state, env) {
+    /** @type {DurableObjectState} */
     this.state = state;
+    /** @type {DurableObjectStorage} */
     this.storage = state.storage;
+    /** @type {SqlStorage} */
     this.sql = state.storage.sql;
+    /** @type {Object} */
     this.env = env;
 
     // Initialize database schema
     this.initDatabase();
 
     // Destruction timers
+    /** @type {NodeJS.Timeout | null} */
     this.destructionTimer = null;
+    /** @type {number | null} */
     this.destructionTime = null;
+    /** @type {NodeJS.Timeout | null} */
     this.destructionBroadcastInterval = null;
 
     // Track WebSocket sessions
+    /** @type {Map<WebSocket, {name?: string, limiterId: string, limiter: RateLimiterClient, blockedMessages: string[], quit?: boolean}>} */
     this.sessions = new Map();
     this.state.getWebSockets().forEach((webSocket) => {
       // The constructor may have been called when waking up from hibernation,
@@ -232,12 +249,27 @@ export class ChatRoom {
       this.sessions.set(webSocket, { ...meta, limiter, blockedMessages });
     });
 
+    /** @type {number} */
     this.lastTimestamp = 0;
+    /** @type {import('hono').Hono} */
     this.app = this.createApp();
     this.restoreDestructionTimer();
   }
 
-  // Helper: Transform message rows to include replyTo structure
+  /**
+   * Transform message row to include replyTo structure
+   * @param {Object} msg - Raw message row from database
+   * @param {string} msg.messageId - Message ID
+   * @param {number} msg.timestamp - Message timestamp
+   * @param {string} msg.name - Username
+   * @param {string} msg.message - Message content
+   * @param {string} msg.channel - Channel name
+   * @param {number} [msg.editedAt] - Edit timestamp
+   * @param {string} [msg.replyToId] - Parent message ID
+   * @param {string} [msg.replyToUsername] - Parent message username
+   * @param {string} [msg.replyToMessage] - Parent message content (encrypted)
+   * @returns {Object} Transformed message with replyTo structure
+   */
   transformMessageRow(msg) {
     const transformed = {
       messageId: msg.messageId,
@@ -260,7 +292,10 @@ export class ChatRoom {
     return transformed;
   }
 
-  // Initialize SQLite database schema
+  /**
+   * Initialize SQLite database schema
+   * Creates tables for messages, threads, edit history, room metadata, file references, and pinned messages
+   */
   initDatabase() {
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS messages (
@@ -326,7 +361,12 @@ export class ChatRoom {
     `);
   }
 
-  // Restore destruction timer
+  /**
+   * Restore destruction timer from database on startup
+   * If destruction time has passed, executes destruction immediately
+   * Otherwise, schedules destruction and starts countdown broadcast
+   * @returns {Promise<void>}
+   */
   async restoreDestructionTimer() {
     try {
       const results = this.sql
@@ -366,6 +406,11 @@ export class ChatRoom {
     }
   }
 
+  /**
+   * Create Hono app with all HTTP endpoints
+   * Handles WebSocket upgrades, file uploads, channel/message queries, and room management
+   * @returns {import('hono').Hono} Configured Hono app
+   */
   createApp() {
     return ignite((app) => {
       app.all('/websocket', async (c) => {
@@ -1109,6 +1154,11 @@ export class ChatRoom {
     });
   }
 
+  /**
+   * Fetch handler for incoming HTTP requests
+   * @param {Request} request - Incoming HTTP request
+   * @returns {Promise<Response>} HTTP response
+   */
   async fetch(request) {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
@@ -1116,6 +1166,13 @@ export class ChatRoom {
     });
   }
 
+  /**
+   * Handle new WebSocket session
+   * Accepts WebSocket, sets up rate limiter, and queues join messages
+   * @param {WebSocket} webSocket - WebSocket connection
+   * @param {string} ip - Client IP address
+   * @returns {Promise<void>}
+   */
   async handleSession(webSocket, ip) {
     this.state.acceptWebSocket(webSocket);
 
@@ -1142,6 +1199,13 @@ export class ChatRoom {
     }
   }
 
+  /**
+   * Handle incoming WebSocket message
+   * Processes user registration, rate limiting, message validation, and storage
+   * @param {WebSocket} webSocket - WebSocket connection
+   * @param {string} msg - Raw message string
+   * @returns {Promise<void>}
+   */
   async webSocketMessage(webSocket, msg) {
     try {
       let session = this.sessions.get(webSocket);
@@ -1286,6 +1350,12 @@ export class ChatRoom {
     }
   }
 
+  /**
+   * Handle WebSocket close or error
+   * Cleans up session and broadcasts quit message
+   * @param {WebSocket} webSocket - WebSocket connection
+   * @returns {Promise<void>}
+   */
   async closeOrErrorHandler(webSocket) {
     let session = this.sessions.get(webSocket) || {};
     session.quit = true;
@@ -1295,14 +1365,33 @@ export class ChatRoom {
     }
   }
 
+  /**
+   * WebSocket close handler
+   * @param {WebSocket} webSocket - WebSocket connection
+   * @param {number} code - Close code
+   * @param {string} reason - Close reason
+   * @param {boolean} wasClean - Whether close was clean
+   * @returns {Promise<void>}
+   */
   async webSocketClose(webSocket, code, reason, wasClean) {
     this.closeOrErrorHandler(webSocket);
   }
 
+  /**
+   * WebSocket error handler
+   * @param {WebSocket} webSocket - WebSocket connection
+   * @param {Error} error - Error object
+   * @returns {Promise<void>}
+   */
   async webSocketError(webSocket, error) {
     this.closeOrErrorHandler(webSocket);
   }
 
+  /**
+   * Broadcast message to all connected sessions
+   * Queues messages for sessions that haven't registered yet
+   * @param {string | Object} message - Message to broadcast (will be JSON.stringify if object)
+   */
   broadcast(message) {
     if (typeof message !== 'string') {
       message = JSON.stringify(message);
@@ -1329,6 +1418,11 @@ export class ChatRoom {
     });
   }
 
+  /**
+   * Execute room destruction
+   * Closes all WebSockets, deletes all R2 files, drops all database tables, and reinitializes schema
+   * @returns {Promise<void>}
+   */
   async executeDestruction() {
     try {
       console.log('Executing room destruction...');
@@ -1395,23 +1489,32 @@ export class ChatRoom {
 // =======================================================================================
 // The RateLimiter Durable Object class.
 
-// RateLimiter implements a Durable Object that tracks the frequency of messages from a particular
-// source and decides when messages should be dropped because the source is sending too many
-// messages.
-//
-// We utilize this in ChatRoom, above, to apply a per-IP-address rate limit. These limits are
-// global, i.e. they apply across all chat rooms, so if a user spams one chat room, they will find
-// themselves rate limited in all other chat rooms simultaneously.
+/**
+ * RateLimiter Durable Object - tracks message frequency per IP address
+ * Implements global rate limiting across all chat rooms
+ * Uses "cooldown" pattern: allows burst traffic, then enforces delay
+ *
+ * Rate: 10 messages/second with 300-second grace period
+ */
 export class RateLimiter {
+  /**
+   * @param {DurableObjectState} state - Durable Object state
+   * @param {Object} env - Environment bindings
+   */
   constructor(state, env) {
     // Timestamp at which this IP will next be allowed to send a message. Start in the distant
     // past, i.e. the IP can send a message now.
+    /** @type {number} */
     this.nextAllowedTime = 0;
   }
 
-  // Our protocol is: POST when the IP performs an action, or GET to simply read the current limit.
-  // Either way, the result is the number of seconds to wait before allowing the IP to perform its
-  // next action.
+  /**
+   * Fetch handler for rate limiter
+   * POST: Register an action and update cooldown
+   * GET: Read current cooldown
+   * @param {Request} request - Incoming HTTP request
+   * @returns {Promise<Response>} Response with cooldown seconds (text/plain)
+   */
   async fetch(request) {
     return await handleErrors(request, async () => {
       let now = Date.now() / 1000;
@@ -1431,26 +1534,33 @@ export class RateLimiter {
   }
 }
 
-// RateLimiterClient implements rate limiting logic on the caller's side.
+/**
+ * RateLimiterClient - client-side rate limiting logic
+ * Manages communication with RateLimiter Durable Object
+ * Implements cooldown tracking and automatic reconnection
+ */
 class RateLimiterClient {
-  // The constructor takes two functions:
-  // * getLimiterStub() returns a new Durable Object stub for the RateLimiter object that manages
-  //   the limit. This may be called multiple times as needed to reconnect, if the connection is
-  //   lost.
-  // * reportError(err) is called when something goes wrong and the rate limiter is broken. It
-  //   should probably disconnect the client, so that they can reconnect and start over.
+  /**
+   * @param {Function} getLimiterStub - Function that returns a RateLimiter DO stub
+   * @param {Function} reportError - Error handler function
+   */
   constructor(getLimiterStub, reportError) {
+    /** @type {Function} */
     this.getLimiterStub = getLimiterStub;
+    /** @type {Function} */
     this.reportError = reportError;
+    /** @type {DurableObjectStub} */
     this.limiter = getLimiterStub();
 
-    // When `inCooldown` is true, the rate limit is currently applied and checkLimit() will return
-    // false.
+    // When `inCooldown` is true, the rate limit is currently applied and checkLimit() will return false
+    /** @type {boolean} */
     this.inCooldown = false;
   }
 
-  // Call checkLimit() when a message is received to decide if it should be blocked due to the
-  // rate limit. Returns `true` if the message should be accepted, `false` to reject.
+  /**
+   * Check if message should be allowed or blocked by rate limit
+   * @returns {boolean} true if message should be accepted, false to reject
+   */
   checkLimit() {
     if (this.inCooldown) {
       return false;
@@ -1460,7 +1570,12 @@ class RateLimiterClient {
     return true;
   }
 
-  // callLimiter() is an internal method which talks to the rate limiter.
+  /**
+   * Internal method - communicate with RateLimiter DO
+   * Implements automatic reconnection on stub disconnect
+   * Waits for cooldown period before clearing inCooldown flag
+   * @returns {Promise<void>}
+   */
   async callLimiter() {
     try {
       let response;
