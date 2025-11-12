@@ -53,7 +53,7 @@ Characteristics:
 ❌ High server load (every read = network request)
 ```
 
-### Proposed Architecture (Local-First with RxDB)
+### Proposed Architecture (Local-First with TinyBase + Workbox)
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -67,7 +67,7 @@ Characteristics:
 │           │ Reactive subscriptions (instant)              │
 │           ▼                                                │
 │  ┌──────────────────┐                                     │
-│  │   RxDB Database  │◄─── Persistent across sessions     │
+│  │   TinyBase Store │◄─── Persistent across sessions     │
 │  │   (IndexedDB)    │                                     │
 │  │                  │                                     │
 │  │  Collections:    │                                     │
@@ -146,7 +146,7 @@ Total: 100-500ms
 ```
 User scrolls to view messages
         ↓
-Query RxDB (IndexedDB)
+Query TinyBase (IndexedDB)
         ↓
 Retrieve encrypted messages (1-10ms)
         ↓
@@ -159,7 +159,7 @@ Render UI (instant)
                 ↓
             Pull from server (if online)
                 ↓
-            Update RxDB
+            Update TinyBase
                 ↓
             UI auto-refreshes (reactive)
 
@@ -194,7 +194,7 @@ User types message
         ↓
 Encrypt message
         ↓
-Insert into RxDB (local)
+Insert into TinyBase (local)
         ↓
 UI updates immediately (1-10ms)
         ↓
@@ -209,7 +209,7 @@ UI updates immediately (1-10ms)
                 ↓
             Other clients pull update via SSE
                 ↓
-            Other clients update RxDB
+            Other clients update TinyBase
                 ↓
             Other UIs auto-refresh
 
@@ -246,7 +246,7 @@ Client                                  Server
   │  }                                    │
   │←──────────────────────────────────────│
   │                                       │
-  │  Insert/update in RxDB               │
+  │  Insert/update in TinyBase               │
   │  (IndexedDB)                          │
   │                                       │
   │  UI auto-refreshes                   │
@@ -261,7 +261,7 @@ Client                                  Server
   │                                       │
   │  User creates/edits message          │
   │  ↓                                    │
-  │  Insert into RxDB                    │
+  │  Insert into TinyBase                    │
   │  ↓                                    │
   │  UI updates (instant)                │
   │  ↓                                    │
@@ -312,7 +312,7 @@ Client                                  Server
   │  data: {"id": "msg-456", ...}         │
   │←──────────────────────────────────────│
   │                                       │
-  │  Upsert into RxDB                    │
+  │  Upsert into TinyBase                    │
   │  ↓                                    │
   │  UI auto-refreshes                   │
   │  (reactive)                           │
@@ -356,9 +356,9 @@ Plaintext Message: "Hello World"
         ↓
 E2EE Ciphertext: "xK9mP2..."
         ↓
-    Store in RxDB
+    Store in TinyBase
         ↓
-    Layer 2: RxDB Storage Encryption
+    Layer 2: TinyBase Storage Encryption
     Key: Device-specific derived key
         ↓
 Storage Ciphertext: "aB3cD4..."
@@ -376,7 +376,7 @@ Storage Ciphertext: "aB3cD4..."
                 ↓
             Plaintext Message: "Hello World"
                 ↓
-            Layer 2: RxDB Storage Encryption
+            Layer 2: TinyBase Storage Encryption
                 ↓
             Write to their IndexedDB
 
@@ -408,7 +408,7 @@ Mobile Safari       ~50-500MB       Very strict
 
 ```
 ┌─────────────────────────────────────────┐
-│  RxDB Database                           │
+│  TinyBase Database                           │
 │                                          │
 │  Current: 1200 messages                 │
 │  Limit:   1000 messages                 │
@@ -493,7 +493,7 @@ Strategies:
 ### Latency Comparison
 
 ```
-Operation          Current (WebSocket)    Proposed (RxDB)    Improvement
+Operation          Current (WebSocket)    Proposed (TinyBase)    Improvement
 ─────────────────────────────────────────────────────────────────────
 Read message       100-500ms              1-10ms             10-50x
 Write message      100-500ms              1-10ms             10-50x
@@ -553,7 +553,7 @@ User visits chat
     ↓
 Check URL param: ?localFirst=true
     ↓
-    ├─→ Yes: Initialize RxDB
+    ├─→ Yes: Initialize TinyBase
     │        Set up replication
     │        Render with reactive queries
     │
@@ -590,7 +590,7 @@ Benefits:
 ### Phase 3: Full Rollout (Week 5+)
 
 ```
-All users → RxDB enabled by default
+All users → TinyBase enabled by default
     ↓
 Monitor metrics:
 - IndexedDB quota errors
