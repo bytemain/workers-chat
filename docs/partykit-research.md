@@ -4,24 +4,31 @@
 
 This document analyzes **PartyKit** (recently acquired by Cloudflare) and compares it with **TinyBase** and **RxDB** for implementing local-first architecture in Workers Chat.
 
-### Quick Verdict
+### ⚠️ CRITICAL FINDING: Deployment Limitation
 
-**PartyKit is the most mature, production-ready solution** - but it's actually complementary to TinyBase/RxDB rather than a replacement.
+**PartyKit cannot integrate with existing Wrangler-based Workers projects.**
 
-| Solution | Best For | Recommendation |
-|----------|----------|----------------|
-| **PartyKit** | Complete platform (server + client) | ✅ **Use for server-side** |
-| **TinyBase** | Lightweight local data store | ✅ **Use for client-side** |
-| **RxDB** | Heavy-duty offline database | ⚠️ Alternative if needed |
+PartyKit uses its own deployment platform and CLI, making it **unsuitable for migrating existing Workers Chat**. It's excellent for **new projects** but requires a complete deployment rewrite for existing ones.
 
-### Recommended Architecture: **PartyKit + TinyBase**
+### Quick Verdict for Workers Chat
 
-**Why this combination?**
-- PartyKit handles real-time sync infrastructure (server-side)
-- TinyBase handles local data storage (client-side)
-- Official integration exists (built by both teams)
-- Minimal bundle size (~25KB total)
-- Battle-tested in production
+**Do NOT use PartyKit** for this migration due to deployment incompatibility.
+
+| Solution | Best For | Recommendation for Workers Chat |
+|----------|----------|--------------------------------|
+| **PartyKit** | New projects from scratch | ❌ **NOT suitable** (deployment conflict) |
+| **TinyBase** | Existing projects (client-side) | ✅ **Use this** |
+| **Workbox** | Offline app loading | ✅ **Use this** |
+| **Current Server** | Keep as-is | ✅ **No changes needed** |
+
+### Recommended Architecture: **Workbox + TinyBase (No PartyKit)**
+
+**Why this is better**:
+- TinyBase works with existing WebSocket server (no migration)
+- Workbox provides offline app loading
+- No deployment platform changes
+- Keep existing Wrangler setup
+- Lower risk, faster implementation
 
 ---
 
@@ -42,7 +49,150 @@ Unlike TinyBase (client library) or RxDB (client database), **PartyKit is primar
 
 ---
 
-## PartyKit Architecture
+## ⚠️ Critical Limitation: Deployment Incompatibility
+
+### The Problem
+
+**PartyKit uses its own deployment platform and cannot integrate with existing Wrangler-based projects.**
+
+**Two deployment options**:
+
+1. **PartyKit Cloud** (`npx partykit deploy`):
+   - Deploys to `yourapp.partykit.dev`
+   - Separate platform from Cloudflare Workers
+   - Different CLI from Wrangler
+
+2. **Cloud-Prem** (`npx partykit deploy --domain your.domain.com`):
+   - Deploys to your Cloudflare account
+   - **Still uses PartyKit CLI, not Wrangler**
+   - Cannot coexist with `wrangler.toml` projects
+   - Requires separate deployment pipeline
+
+### Impact on Workers Chat
+
+**Workers Chat currently uses**:
+- `wrangler.toml` for configuration
+- `wrangler dev` for local development
+- `wrangler deploy` for production deployment
+- Integrated with GitHub Actions/CI
+
+**Migrating to PartyKit would require**:
+- ❌ Rewriting deployment configuration
+- ❌ Switching from Wrangler CLI to PartyKit CLI
+- ❌ Separate deployment from other Workers
+- ❌ Different local development workflow
+- ❌ Rewriting CI/CD pipelines
+
+### Conclusion
+
+**PartyKit is NOT suitable for Workers Chat migration** due to deployment incompatibility.
+
+**Better approach**: Use TinyBase client-side with existing WebSocket server (no server migration needed).
+
+---
+
+## Updated Recommendation for Workers Chat
+
+### ✅ Use: Workbox + TinyBase (Without PartyKit)
+
+**Architecture**:
+```
+Client-Side Only Changes:
+1. Workbox (15KB) - Offline app loading
+2. TinyBase (20KB) - Local data storage
+3. Existing WebSocket - No changes to server!
+
+Server-Side:
+Keep current Hono + Durable Objects setup (no migration!)
+```
+
+**Why this is better than PartyKit**:
+- ✅ No deployment migration (keep Wrangler)
+- ✅ No server rewrite needed
+- ✅ Smaller bundle (+35KB vs +40KB)
+- ✅ Faster implementation (7 weeks vs 9 weeks)
+- ✅ Lower risk (client-side only)
+- ✅ Same performance benefits
+
+**Implementation**:
+1. Add Workbox for offline app loading (3 weeks)
+2. Add TinyBase with IndexedDB persistence (2 weeks)
+3. Connect TinyBase to existing WebSocket (2 weeks)
+4. No server changes needed!
+
+**Total**: 7 weeks, no deployment changes
+
+---
+
+## TinyBase + Existing WebSocket Integration
+
+### How to Use TinyBase Without PartyKit
+
+```typescript
+// Client: TinyBase with existing WebSocket
+import { createStore } from "tinybase";
+import { createIndexedDbPersister } from "tinybase/persisters/indexed-db";
+
+// 1. Create local store
+const store = createStore();
+
+// 2. Add IndexedDB persistence
+const persister = createIndexedDbPersister(store, 'chat-db');
+await persister.startAutoSave();
+
+// 3. Connect to EXISTING WebSocket (no server changes!)
+const ws = new WebSocket(`wss://${location.host}/api/room/${roomName}`);
+
+// 4. Listen to server messages
+ws.addEventListener('message', (event) => {
+  const data = JSON.parse(event.data);
+  
+  // Update local store (triggers React re-render)
+  store.setRow('messages', data.messageId, data);
+});
+
+// 5. Send messages to server
+const sendMessage = (text: string) => {
+  const msg = {
+    messageId: generateId(),
+    message: text,
+    timestamp: Date.now(),
+  };
+  
+  // Update local store first (instant UI)
+  store.setRow('messages', msg.messageId, msg);
+  
+  // Then send to server (no protocol changes!)
+  ws.send(JSON.stringify(msg));
+};
+
+// 6. Use React hooks
+import { useTable } from "tinybase/ui-react";
+
+const Messages = () => {
+  const messages = useTable('messages', store);
+  return Object.entries(messages).map(([id, msg]) => (
+    <div key={id}>{msg.message}</div>
+  ));
+};
+```
+
+**Benefits**:
+- Works with ANY WebSocket server
+- No server migration required
+- Instant local updates
+- Offline persistence
+- Reactive React components
+
+---
+
+## PartyKit Reference Documentation (Not Recommended for This Project)
+
+The following sections document PartyKit for reference and comparison purposes. **For Workers Chat, use TinyBase + existing WebSocket instead.**
+
+---
+
+## PartyKit Architecture (Reference Only)
 
 ### Server-Side (PartyServer)
 
