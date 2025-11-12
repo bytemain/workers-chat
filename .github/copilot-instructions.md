@@ -529,7 +529,6 @@ Use `wrangler dev` + DevTools console:
 ## External Dependencies (Minimal)
 
 - `hono` - HTTP routing framework (used in Worker and DO)
-- `@zip.js/zip.js` - Export feature (ZIP all messages + R2 files)
 - `@chialab/rna` - UI bundler (dev dependency)
 - `reefjs` (v13) - Reactive UI library (CDN import, no build step)
 

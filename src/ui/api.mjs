@@ -98,16 +98,6 @@ class ChatAPI {
     return `${wss}${this.hostname}/tinybase/${roomName}`;
   }
 
-  async exportData(roomName) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/export`, {
-      method: 'GET',
-    });
-    if (!response.ok) {
-      throw new Error('Failed to export data');
-    }
-    return await response.json();
-  }
-
   // destruction/start
   async destroyRoom(roomName, minutes) {
     const response = await fetch(`/api/room/${roomName}/destruction/start`, {

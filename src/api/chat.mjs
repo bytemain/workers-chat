@@ -954,53 +954,6 @@ export class ChatRoom {
         }
       });
 
-      app.get('/export', async (c) => {
-        try {
-          const nameCursor = this.sql.exec(
-            `SELECT value FROM room_metadata WHERE key = 'name'`,
-          );
-          const noteCursor = this.sql.exec(
-            `SELECT value FROM room_metadata WHERE key = 'note'`,
-          );
-
-          const roomInfo = {};
-          try {
-            const nameResult = nameCursor.one();
-            if (nameResult) roomInfo.name = nameResult.value;
-          } catch (e) {}
-
-          try {
-            const noteResult = noteCursor.one();
-            if (noteResult) roomInfo.note = noteResult.value;
-          } catch (e) {}
-
-          const messagesCursor = this.sql.exec(`
-            SELECT 
-              message_id as messageId,
-              timestamp,
-              username as name,
-              message,
-              channel,
-              reply_to_id as replyToId,
-              edited_at as editedAt,
-              created_at as createdAt
-            FROM messages
-            ORDER BY timestamp ASC
-          `);
-
-          const messages = messagesCursor.toArray();
-
-          return c.json({
-            roomInfo,
-            messages,
-            exportedAt: Date.now(),
-          });
-        } catch (err) {
-          console.error('Export error:', err);
-          return c.json({ error: err.message }, 500);
-        }
-      });
-
       // Pin a message
       app.post('/pin', async (c) => {
         try {
