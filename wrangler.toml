@@ -3,7 +3,7 @@ compatibility_date = "2025-09-15"
 
 main = "src/api/chat.mjs"
 workers_dev = false
-preview_urls = true
+preview_urls = false
 
 [placement]
 mode = "smart"
@@ -43,3 +43,7 @@ not_found_handling = "single-page-application"
 command = "npm run ui"
 cwd = "."
 watch_dir = "src/ui"
+
+[env.production]
+[env.production.build]
+command = "npm run ui:prod"
