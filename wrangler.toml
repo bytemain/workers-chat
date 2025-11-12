@@ -44,6 +44,6 @@ command = "npm run ui"
 cwd = "."
 watch_dir = "src/ui"
 
-[env.production]
-[env.production.build]
+[env.prod]
+[env.prod.build]
 command = "npm run ui:prod"
