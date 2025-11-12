@@ -93,6 +93,11 @@ class ChatAPI {
     return `${wss}${this.hostname}/api/room/${roomName}/websocket`;
   }
 
+  getTinybaseSyncUrl(roomName) {
+    const wss = window.location.protocol === 'http:' ? 'ws://' : 'wss://';
+    return `${wss}${this.hostname}/tinybase/${roomName}`;
+  }
+
   async exportData(roomName) {
     const response = await fetch(`${this.baseUrl}/room/${roomName}/export`, {
       method: 'GET',

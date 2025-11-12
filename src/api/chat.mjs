@@ -6,6 +6,12 @@ import {
   MAX_FILE_SIZE_BYTES,
 } from '../common/constants.mjs';
 import { getPath, splitPath } from 'hono/utils/url';
+import {
+  TinyBaseStorageDurableObject,
+  fetch as fetchTinyBase,
+} from './tinybase.mjs';
+
+export { TinyBaseStorageDurableObject };
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -125,7 +131,19 @@ const app = ignite((app) => {
     return api;
   }
 
+  function tinybaseRoutes() {
+    const tinybase = new Hono();
+    tinybase.all('/*', async (c, next) => {
+      const request = c.req.raw;
+      console.log('Forwarding to TinyBase with path:', c.req.url.toString());
+      return fetchTinyBase(request, c.env);
+    });
+
+    return tinybase;
+  }
+
   app.route('/api', apiRoutes());
+  app.route('/tinybase', tinybaseRoutes());
 
   app.get('/files/*', async (c) => {
     const { env, req } = c;

@@ -25,6 +25,7 @@ import {
 } from './pinned-messages.mjs';
 import { tryDecryptMessage } from './utils/message-crypto.mjs';
 import { chatState, initChatState } from './utils/chat-state.mjs';
+import { createTinybaseStorage } from './tinybase/index.mjs';
 
 // Check Crypto API compatibility early
 const cryptoSupported = initCryptoCompatCheck();
@@ -1855,6 +1856,19 @@ class UserMessageAPI {
 
     currentWebSocket.send(JSON.stringify(payload));
 
+    // TinyBase test: Write message data to store
+    if (window.store) {
+      try {
+        const messageId = `msg_${Date.now()}`;
+        window.store.setCell('messages', messageId, 'text', message);
+        window.store.setCell('messages', messageId, 'channel', currentChannel);
+        window.store.setCell('messages', messageId, 'timestamp', Date.now());
+        console.log('📝 TinyBase store updated:', window.store.getTables());
+      } catch (error) {
+        console.error('Failed to update TinyBase store:', error);
+      }
+    }
+
     // Scroll to bottom whenever sending a message
     chatlog.scrollBy(0, 1e8);
     // Set flag to scroll when we receive our own message back
@@ -3277,6 +3291,14 @@ async function startChat() {
     console.error('❌ Failed to setup encryption:', error);
     addSystemMessage('❌: Failed to setup encryption: ' + error.message);
   }
+  window.store = await createTinybaseStorage(roomname);
+
+  // Test: Print TinyBase store tables every 5 seconds
+  setInterval(() => {
+    if (window.store) {
+      console.log('🔄 TinyBase store tables:', window.store.getTables());
+    }
+  }, 5000);
 
   // Save to room history
   addToRoomHistory(roomname);

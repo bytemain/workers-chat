@@ -12,6 +12,7 @@ mode = "smart"
 bindings = [
   { name = "rooms", class_name = "ChatRoom" },
   { name = "limiters", class_name = "RateLimiter" },
+  { name = "tinybase", class_name = "TinyBaseStorageDurableObject" },
 ]
 
 [observability]
@@ -28,6 +29,9 @@ bucket_name = "edge-chat-files"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ChatRoom", "RateLimiter"]
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TinyBaseStorageDurableObject"]
 
 [assets]
 directory = "./dist/ui"
