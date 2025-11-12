@@ -41,5 +41,16 @@ watch_dir = "src/ui"
 [env.prod]
 name = "edge-chat"
 
+[env.prod.durable_objects]
+bindings = [
+  { name = "rooms", class_name = "ChatRoom" },
+  { name = "limiters", class_name = "RateLimiter" },
+  { name = "tinybase", class_name = "TinyBaseStorageDurableObject" },
+]
+
+[[env.prod.r2_buckets]]
+binding = "CHAT_FILES"
+bucket_name = "edge-chat-files"
+
 [env.prod.build]
 command = "npm run ui:prod"
