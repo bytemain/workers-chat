@@ -7,10 +7,11 @@ import { run } from 'ruply';
 import ReconnectingWebSocket from '@opensumi/reconnecting-websocket';
 
 export async function createTinybaseStorage(roomName) {
+  const storeName = 'messages';
   const store = createMergeableStore();
-  const syncUrl = api.getTinybaseSyncUrl(roomName);
+  const syncUrl = api.getTinybaseSyncUrl(`${storeName}/${roomName}`);
   await run(
-    createLocalPersister(store, 'local://tinybase_storage/' + roomName),
+    createLocalPersister(store, `local://tinybase/${storeName}/${roomName}`),
     async (persister) => {
       await persister.startAutoLoad();
       await persister.startAutoSave();

@@ -28,6 +28,7 @@ import { createTinybaseStorage } from './tinybase/index.mjs';
 import { initMessageList } from './components/message-list.mjs';
 import { initChannelList } from './components/channel-list.mjs';
 import { listenReefEvent } from './utils/reef-helpers.mjs';
+import { createReadStatusStore } from './tinybase/read-status.mjs';
 
 // Check Crypto API compatibility early
 const cryptoSupported = initCryptoCompatCheck();
@@ -2395,49 +2396,6 @@ async function loadChannelMessages(channel) {
   }
 }
 
-async function loadChannels() {
-  try {
-    const data = await api.getChannels(roomname);
-    const serverChannels = data.channels || [];
-
-    // Merge server channels with temporary channels
-    const channelMap = new Map();
-
-    // Add all server channels
-    serverChannels.forEach((ch) => {
-      channelMap.set(ch.channel.toLowerCase(), ch);
-    });
-
-    // Add temporary channels that don't exist on server yet
-    temporaryChannels.forEach((tempChannel) => {
-      const key = tempChannel.toLowerCase();
-      if (!channelMap.has(key)) {
-        channelMap.set(key, {
-          channel: tempChannel,
-          count: 0,
-          lastUsed: Date.now(),
-        });
-      }
-    });
-
-    // Ensure 'general' channel always exists (even if no messages yet)
-    if (!channelMap.has('general')) {
-      channelMap.set('general', {
-        channel: 'general',
-        count: 0,
-        lastUsed: Date.now(),
-      });
-    }
-
-    // Update mobile channel list if on mobile
-    if (isMobile()) {
-      updateMobileChannelList();
-    }
-  } catch (err) {
-    console.error('Failed to load channels:', err);
-  }
-}
-
 // Switch to a channel (sets it as current for sending messages)
 async function switchToChannel(channel) {
   // Normalize DM channel names: if it's a DM, ensure username case matches
@@ -3195,6 +3153,10 @@ async function startChat() {
   window.store = await createTinybaseStorage(roomname);
   console.log('✅ TinyBase store initialized');
 
+  // Initialize read status store (local only)
+  window.readStatusStore = await createReadStatusStore();
+  console.log('✅ Read status store initialized');
+
   // Resolve store ready promise
   if (isStoreReady) {
     isStoreReady.resolve();
@@ -3219,6 +3181,8 @@ async function startChat() {
       },
       messagesCache, // 传入全局消息缓存
       updateThreadInfo, // 传入线程信息更新函数
+      window.readStatusStore, // 传入已读状态 store
+      roomname, // 传入房间名
     );
     console.log('✅ Message list component initialized');
 
@@ -3265,6 +3229,8 @@ async function startChat() {
   // Test: Print TinyBase store tables every 5 seconds
   setInterval(() => {
     if (window.store) {
+      console.log('--- TinyBase Store Debug Info ---');
+      console.log('🔄 TinyBase store values:', window.store.getValues());
       console.log('🔄 TinyBase store tables:', window.store.getTables());
     }
   }, 5000);
@@ -4126,7 +4092,6 @@ function join() {
     } else if (data.ready) {
       // Session is ready
       isSessionReady.resolve();
-      isInitialLoad = false;
 
       if (isReconnecting) {
         updateConnectionStatus('connected');
@@ -4162,33 +4127,31 @@ function join() {
     rejoin();
   });
 
-  // Load channels from server into TinyBase
+  // Initialize channel UI features (data already in TinyBase)
   if (window.channelList) {
-    window.channelList.loadFromServer(api, roomname).then(async () => {
-      // Initialize channel add button
-      initChannelAddButton();
-      // Initialize channel info bar
-      initChannelInfoBar();
-      // Initialize channel panel features
-      initChannelPanel();
+    // Initialize channel add button
+    initChannelAddButton();
+    // Initialize channel info bar
+    initChannelInfoBar();
+    // Initialize channel panel features
+    initChannelPanel();
 
-      // Check if there's a channel filter in the URL
-      const urlParams = new URLSearchParams(window.location.search);
-      const channelParam = urlParams.get('channel');
-      if (channelParam) {
-        // Switch to the channel from URL (will load messages)
-        await switchToChannel(channelParam);
-      } else {
-        // No channel specified, load messages for default channel
-        await loadChannelMessages(currentChannel);
-      }
+    // Check if there's a channel filter in the URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const channelParam = urlParams.get('channel');
+    if (channelParam) {
+      // Switch to the channel from URL (will load messages)
+      switchToChannel(channelParam);
+    } else {
+      // No channel specified, load messages for default channel
+      loadChannelMessages(currentChannel);
+    }
 
-      // Check if there's a thread ID in the URL
-      const threadParam = urlParams.get('thread');
-      if (threadParam) {
-        window.openThread(threadParam);
-      }
-    });
+    // Check if there's a thread ID in the URL
+    const threadParam = urlParams.get('thread');
+    if (threadParam) {
+      window.openThread(threadParam);
+    }
   }
 }
 
@@ -4499,16 +4462,14 @@ function setChannelUnreadCount(channelName, count) {
   }
 }
 
-// Increment unread count for a channel
-function incrementChannelUnreadCount(channelName) {
-  const current = getChannelUnreadCount(channelName);
-  setChannelUnreadCount(channelName, current + 1);
-}
-
 // Clear unread count for a channel
 function clearChannelUnreadCount(channelName) {
   setChannelUnreadCount(channelName, 0);
 }
+
+// Expose unread count functions to window (for message-list component)
+window.setChannelUnreadCount = setChannelUnreadCount;
+window.getChannelUnreadCount = getChannelUnreadCount;
 
 // Update room list UI - Now using isolated room-list component
 function updateRoomListUI() {
@@ -4700,16 +4661,8 @@ function showMobileChannelList() {
   // Reset to general channel (don't set to null)
   currentChannel = 'general';
 
-  // Ensure channels are loaded and update channel list content
-  if (window.channelList && window.channelList.signal.items.length === 0) {
-    // If channels haven't been loaded yet, load them
-    window.channelList.loadFromServer(api, roomname).then(() => {
-      updateMobileChannelList();
-    });
-  } else {
-    // Channels already loaded, just update the display
-    updateMobileChannelList();
-  }
+  // Update channel list display (data already in TinyBase)
+  updateMobileChannelList();
 }
 
 // Show mobile chat page

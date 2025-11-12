@@ -134,7 +134,12 @@ const app = ignite((app) => {
     tinybase.all('/*', async (c, next) => {
       const request = c.req.raw;
       console.log('Forwarding to TinyBase with path:', c.req.url.toString());
-      return fetchTinyBase(request, c.env);
+
+      // Create new request with normalized URL to ensure consistent database routing
+      // Use a fixed domain to prevent different domains from syncing to different databases
+      const normalizedUrl = new URL(c.req.url, 'http://tinybase-sync.local');
+      const newReq = new Request(normalizedUrl.toString(), request);
+      return fetchTinyBase(newReq, c.env);
     });
 
     return tinybase;

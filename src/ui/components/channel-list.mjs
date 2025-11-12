@@ -44,19 +44,6 @@ export function initChannelList(
   }
 
   /**
-   * Get unread count for a channel
-   */
-  function getChannelUnreadCount(channelName) {
-    try {
-      const key = `unread_${channelName}`;
-      const count = localStorage.getItem(key);
-      return count ? parseInt(count, 10) : 0;
-    } catch (error) {
-      return 0;
-    }
-  }
-
-  /**
    * Sync TinyBase channels 表 → Signal
    */
   function syncTinybaseToSignal() {
@@ -144,7 +131,7 @@ export function initChannelList(
     return sortedChannels
       .map((item) => {
         const isActive = item.channel === currentChannel;
-        const unreadCount = getChannelUnreadCount(item.channel);
+        const unreadCount = window.getChannelUnreadCount(item.channel);
         const showUnreadBadge = unreadCount > 0 && !isActive;
 
         return `
@@ -156,7 +143,6 @@ export function initChannelList(
           <span class="channel-icon"><i class="ri-hashtag"></i></span>
           <span class="channel-name">${item.channel}</span>
           ${showUnreadBadge ? `<span class="channel-unread-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}
-          <span class="channel-count">${item.count || 0}</span>
         </div>
       `;
       })
@@ -254,29 +240,6 @@ export function initChannelList(
     touchChannel(channelName);
   }
 
-  /**
-   * Helper: 从服务器加载频道列表（初始化或刷新）
-   */
-  async function loadFromServer(api, roomname) {
-    channelsSignal.loading = true;
-    try {
-      const data = await api.getChannels(roomname);
-      const serverChannels = data.channels || [];
-
-      // 批量写入 TinyBase
-      serverChannels.forEach((ch) => {
-        upsertChannel(ch.channel, ch.count);
-      });
-
-      console.log(`✅ Loaded ${serverChannels.length} channels from server`);
-    } catch (error) {
-      console.error('Failed to load channels from server:', error);
-      channelsSignal.error = error.message;
-    } finally {
-      channelsSignal.loading = false;
-    }
-  }
-
   return {
     component: channelsComponent,
     signal: channelsSignal,
@@ -286,7 +249,6 @@ export function initChannelList(
     touchChannel,
     deleteChannel,
     setCurrentChannel,
-    loadFromServer,
     syncNow: syncTinybaseToSignal,
   };
 }

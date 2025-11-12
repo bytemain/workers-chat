@@ -16,15 +16,6 @@ class ChatAPI {
     return await response.text();
   }
 
-  // Get channels for a room
-  async getChannels(roomName) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/channels`);
-    if (!response.ok) {
-      throw new Error('Failed to load channels');
-    }
-    return await response.json();
-  }
-
   // Get room info
   async getRoomInfo(roomName) {
     const response = await fetch(`${this.baseUrl}/room/${roomName}/info`);
@@ -93,9 +84,9 @@ class ChatAPI {
     return `${wss}${this.hostname}/api/room/${roomName}/websocket`;
   }
 
-  getTinybaseSyncUrl(roomName) {
+  getTinybaseSyncUrl(storeName) {
     const wss = window.location.protocol === 'http:' ? 'ws://' : 'wss://';
-    return `${wss}${this.hostname}/tinybase/${roomName}`;
+    return `${wss}${this.hostname}/tinybase/${storeName}`;
   }
 
   // destruction/start

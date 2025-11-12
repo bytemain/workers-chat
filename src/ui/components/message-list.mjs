@@ -12,6 +12,7 @@ import { signal, component } from 'reefjs';
 import { listenReefRender } from '../utils/reef-helpers.mjs';
 import { tryDecryptMessage } from '../utils/message-crypto.mjs';
 import CryptoUtils from '../../common/crypto-utils.js';
+import { markChannelAsRead, getUnreadCount } from '../tinybase/read-status.mjs';
 
 /**
  * Initialize message list component
@@ -22,6 +23,8 @@ import CryptoUtils from '../../common/crypto-utils.js';
  * @param {Object} encryptionContext - Encryption context { currentRoomKey, isRoomEncrypted }
  * @param {Map} messagesCache - Global messages cache for legacy features (threads, etc.)
  * @param {Function} updateThreadInfo - Function to update thread info for reply messages
+ * @param {Object} readStatusStore - TinyBase store for read status tracking
+ * @param {string} roomName - Current room name
  * @returns {Object} Component instance and helper functions
  */
 export function initMessageList(
@@ -32,6 +35,8 @@ export function initMessageList(
   encryptionContext,
   messagesCache,
   updateThreadInfo,
+  readStatusStore,
+  roomName,
 ) {
   // Reef.js Signal - 响应式消息数据
   const messagesSignal = signal(
@@ -43,9 +48,6 @@ export function initMessageList(
     },
     'messagesSignal',
   );
-
-  // Track if this is the initial sync (to avoid counting all messages as unread)
-  let isInitialSync = true;
 
   /**
    * Sync TinyBase → Signal
@@ -69,6 +71,9 @@ export function initMessageList(
           editedAt: data.editedAt || null,
           encrypted: CryptoUtils.isEncrypted(data.text || ''),
         }))
+        .filter(
+          (msg) => msg.channel.toLowerCase() === currentChannel.toLowerCase(),
+        ) // 只保留当前 channel 的消息
         .sort((a, b) => a.timestamp - b.timestamp);
 
       // 解密所有消息（并行处理）
@@ -143,32 +148,47 @@ export function initMessageList(
         messagesCache.set(msg.messageId, msg);
       });
 
-      // Check for new messages in other channels and increment unread count
-      // Skip this check on initial sync to avoid counting all messages as unread
-      if (!isInitialSync) {
-        const previousMessageIds = new Set(
-          messagesSignal.items.map((m) => m.messageId),
-        );
+      // Update unread counts using read status store
+      if (readStatusStore && roomName) {
+        // Get all messages from TinyBase
+        const allMessages = Object.entries(
+          tinybaseStore.getTable('messages') || {},
+        ).map(([id, data]) => ({
+          messageId: id,
+          channel: data.channel || 'general',
+        }));
 
-        messagesList.forEach((msg) => {
-          // New message that wasn't in previous list
-          if (!previousMessageIds.has(msg.messageId)) {
-            // If message is not in current channel, increment unread count
-            if (msg.channel.toLowerCase() !== currentChannel.toLowerCase()) {
-              // Call global function to increment unread count
-              if (window.incrementChannelUnreadCount) {
-                window.incrementChannelUnreadCount(msg.channel);
-                console.log(
-                  `📬 New message in #${msg.channel}, incremented unread count`,
-                );
-              }
-            }
+        // Update unread count for each channel
+        const channelsSet = new Set(allMessages.map((m) => m.channel));
+        channelsSet.forEach((channel) => {
+          const unreadCount = getUnreadCount(
+            readStatusStore,
+            roomName,
+            channel,
+            allMessages,
+          );
+
+          // Update UI - call global function to set unread count
+          if (window.setChannelUnreadCount) {
+            window.setChannelUnreadCount(channel, unreadCount);
           }
         });
-      } else {
-        // After first sync, mark as no longer initial
-        isInitialSync = false;
-        console.log('📊 Initial sync completed, unread counting enabled');
+
+        // Mark current channel messages as read
+        const currentChannelMessages = messagesList.filter(
+          (msg) => msg.channel.toLowerCase() === currentChannel.toLowerCase(),
+        );
+        if (currentChannelMessages.length > 0) {
+          markChannelAsRead(
+            readStatusStore,
+            roomName,
+            currentChannel,
+            currentChannelMessages,
+          );
+          console.log(
+            `✅ Marked ${currentChannelMessages.length} messages in #${currentChannel} as read`,
+          );
+        }
       }
 
       // 更新 Signal（触发 Reef.js 重新渲染）
