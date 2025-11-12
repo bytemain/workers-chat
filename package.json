@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@opensumi/reconnecting-websocket": "^4.4.0",
-    "hono": "^4.10.2",
+    "hono": "^4.10.5",
     "ruply": "^1.0.1",
     "tinybase": "^6.7.2"
   },

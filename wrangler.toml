@@ -39,5 +39,7 @@ cwd = "."
 watch_dir = "src/ui"
 
 [env.prod]
+name = "edge-chat"
+
 [env.prod.build]
 command = "npm run ui:prod"
