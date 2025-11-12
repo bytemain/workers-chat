@@ -30,7 +30,7 @@ bucket_name = "edge-chat-files"
 tag = "v1"
 new_sqlite_classes = ["ChatRoom", "RateLimiter"]
 [[migrations]]
-tag = "v1"
+tag = "v2"
 new_sqlite_classes = ["TinyBaseStorageDurableObject"]
 
 [assets]
