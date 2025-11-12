@@ -135,6 +135,15 @@ const app = ignite((app) => {
       const request = c.req.raw;
       console.log('Forwarding to TinyBase with path:', c.req.url.toString());
 
+      // Check if tinybase binding exists
+      if (!c.env.tinybase) {
+        console.error(
+          'TinyBase Durable Object binding not found in env:',
+          Object.keys(c.env),
+        );
+        return c.json({ error: 'TinyBase service not available' }, 503);
+      }
+
       // Create new request with normalized URL to ensure consistent database routing
       // Use a fixed domain to prevent different domains from syncing to different databases
       const normalizedUrl = new URL(c.req.url, 'http://tinybase-sync.local');

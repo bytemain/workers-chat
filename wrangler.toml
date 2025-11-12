@@ -5,9 +5,6 @@ main = "src/api/chat.mjs"
 workers_dev = false
 preview_urls = false
 
-[placement]
-mode = "smart"
-
 [durable_objects]
 bindings = [
   { name = "rooms", class_name = "ChatRoom" },
