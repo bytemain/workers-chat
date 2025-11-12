@@ -28,10 +28,7 @@ bucket_name = "edge-chat-files"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["ChatRoom", "RateLimiter"]
-[[migrations]]
-tag = "v2"
-new_sqlite_classes = ["TinyBaseStorageDurableObject"]
+new_sqlite_classes = ["ChatRoom", "RateLimiter", "TinyBaseStorageDurableObject"]
 
 [assets]
 directory = "./dist/ui"
