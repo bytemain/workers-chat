@@ -26,6 +26,9 @@ import {
 import { tryDecryptMessage } from './utils/message-crypto.mjs';
 import { chatState, initChatState } from './utils/chat-state.mjs';
 import { createTinybaseStorage } from './tinybase/index.mjs';
+import { initMessageList } from './components/message-list.mjs';
+import { initChannelList } from './components/channel-list.mjs';
+import { listenReefEvent } from './utils/reef-helpers.mjs';
 
 // Check Crypto API compatibility early
 const cryptoSupported = initCryptoCompatCheck();
@@ -1452,7 +1455,6 @@ function formatTimestamp(timestamp) {
 // Thread state
 // Note: currentThreadId is now managed by chatState (see line ~1307)
 let messagesCache = new Map(); // messageId -> message data
-let threadsCache = new Map(); // messageId -> array of reply messages
 
 // Reply state for main chat input
 let currentReplyTo = null; // {messageId, username, preview, rootMessageId}
@@ -1782,7 +1784,7 @@ async function setupRoomEncryption(roomId, password) {
   }
 }
 
-// User message API - handles sending messages through WebSocket
+// User message API - handles sending messages through TinyBase
 class UserMessageAPI {
   /**
    * Send a text message
@@ -1790,13 +1792,24 @@ class UserMessageAPI {
    * @param {object} replyTo - Optional reply information {messageId, username, preview}
    */
   async sendMessage(message, replyTo = null) {
-    if (!currentWebSocket || !message || message.length === 0) {
+    if (!message || message.length === 0) {
       return false;
     }
 
     // Wait for WebSocket session to be ready (server has confirmed username)
     if (isSessionReady && isSessionReady.promise) {
       await isSessionReady.promise;
+    }
+
+    // Wait for TinyBase store to be ready
+    if (isStoreReady && isStoreReady.promise) {
+      await isStoreReady.promise;
+    }
+
+    // Check if TinyBase store is ready
+    if (!window.store || !window.messageList) {
+      console.error('TinyBase store not ready');
+      return false;
     }
 
     // Check if room is encrypted but user doesn't have the key
@@ -1840,38 +1853,26 @@ class UserMessageAPI {
       return false;
     }
 
-    const payload = {
-      message: messageToSend,
-      channel: currentChannel, // Include current channel
-    };
-
-    // Include replyTo information if provided
-    if (replyTo) {
-      payload.replyTo = {
-        messageId: replyTo.messageId,
-        username: replyTo.username,
-        preview: replyTo.preview,
-      };
-    }
-
-    currentWebSocket.send(JSON.stringify(payload));
-
-    // TinyBase test: Write message data to store
-    if (window.store) {
-      try {
-        const messageId = `msg_${Date.now()}`;
-        window.store.setCell('messages', messageId, 'text', message);
-        window.store.setCell('messages', messageId, 'channel', currentChannel);
-        window.store.setCell('messages', messageId, 'timestamp', Date.now());
-        console.log('📝 TinyBase store updated:', window.store.getTables());
-      } catch (error) {
-        console.error('Failed to update TinyBase store:', error);
-      }
+    // Write message to TinyBase (will auto-sync via WsSynchronizer to other clients)
+    try {
+      const messageId = window.messageList.sendMessage(
+        messageToSend, // Use encrypted message if encryption is enabled
+        username,
+        currentChannel,
+        {
+          encrypted: isRoomEncrypted,
+          replyToId: replyTo?.messageId || null,
+        },
+      );
+      console.log('📝 Message sent via TinyBase (will auto-sync):', messageId);
+    } catch (error) {
+      console.error('Failed to send message via TinyBase:', error);
+      alert('Failed to send message. Please try again.');
+      return false;
     }
 
     // Scroll to bottom whenever sending a message
     chatlog.scrollBy(0, 1e8);
-    // Set flag to scroll when we receive our own message back
     isAtBottom = true;
 
     return true;
@@ -2030,43 +2031,28 @@ function countTotalReplies(messageId) {
 
 async function loadThreadReplies(messageId) {
   try {
-    // Load all thread replies from server in one request
-    // Server should return all nested replies in a flat array
-    const data = await api.getThreadReplies(roomname, messageId, true);
-    const allReplies = data.replies || [];
+    // All messages are already in messagesCache (synced from TinyBase)
+    // Just need to find all replies to this message (including nested)
+    const allReplies = [];
+    const visited = new Set();
 
-    // Decrypt all replies if needed (in parallel for better performance)
-    await Promise.all(
-      allReplies.map(async (reply) => {
-        const decryptedMessage = await tryDecryptMessage(
-          reply,
-          currentRoomKey,
-          isRoomEncrypted,
-        );
-        reply.message = decryptedMessage;
-      }),
-    );
+    // Recursive function to collect all replies
+    function collectReplies(parentId) {
+      if (visited.has(parentId)) return; // Prevent infinite loops
+      visited.add(parentId);
 
-    // Cache all replies in messagesCache and organize by parent
-    const replyMap = new Map();
-    allReplies.forEach((reply) => {
-      // Cache the message
-      messagesCache.set(reply.messageId, reply);
-
-      // Organize by parent messageId for threadsCache
-      const parentId = reply.replyTo?.messageId;
-      if (parentId) {
-        if (!replyMap.has(parentId)) {
-          replyMap.set(parentId, []);
+      // Find direct replies to this parent
+      for (const [msgId, msg] of messagesCache.entries()) {
+        if (msg.replyTo && msg.replyTo.messageId === parentId) {
+          allReplies.push(msg);
+          // Recursively collect replies to this reply
+          collectReplies(msgId);
         }
-        replyMap.get(parentId).push(reply);
       }
-    });
+    }
 
-    // Update threadsCache with organized replies
-    replyMap.forEach((replies, parentId) => {
-      threadsCache.set(parentId, replies);
-    });
+    // Start collecting from the root message
+    collectReplies(messageId);
 
     // Update root message with total reply count
     const rootMessage = messagesCache.get(messageId);
@@ -2095,10 +2081,70 @@ async function loadThreadReplies(messageId) {
 
     // Scroll to bottom
     threadReplies.scrollTop = threadReplies.scrollHeight;
+
+    console.log(
+      `✅ Loaded ${allReplies.length} thread replies from messagesCache`,
+    );
   } catch (err) {
     console.error('Failed to load thread replies:', err);
     threadReplies.innerHTML =
       '<p style="color:#999;padding:16px;text-align:center;">Failed to load replies</p>';
+  }
+}
+
+/**
+ * Update thread info for a reply message
+ * Called after rendering messages to update thread counts and thread panel
+ * @param {Object} messageData - Message data with replyTo information
+ */
+function updateThreadInfo(messageData) {
+  if (!messageData.replyTo) return;
+
+  // Find the root message of this reply
+  let rootId = messageData.replyTo.messageId;
+  let parentMsg = messagesCache.get(rootId);
+  while (parentMsg && parentMsg.replyTo) {
+    rootId = parentMsg.replyTo.messageId;
+    parentMsg = messagesCache.get(rootId);
+  }
+
+  // Update root message's reply count
+  const rootMessage = messagesCache.get(rootId);
+  if (rootMessage) {
+    const totalReplies = countTotalReplies(rootId);
+    rootMessage.threadInfo = rootMessage.threadInfo || {};
+    rootMessage.threadInfo.replyCount = totalReplies;
+    rootMessage.threadInfo.lastReplyTime = messageData.timestamp;
+
+    // Update the message in main chat list (thread count badge)
+    const mainChatMsg = document.querySelector(`[data-message-id="${rootId}"]`);
+    if (mainChatMsg) {
+      const chatMessage = mainChatMsg.querySelector('chat-message');
+      if (chatMessage) {
+        chatMessage.setAttribute('thread-count', String(totalReplies));
+        chatMessage.render();
+      }
+    }
+  }
+
+  // If this reply belongs to the currently open thread, add it to thread panel
+  if (currentThreadId === rootId) {
+    // Check if this reply is already in the thread panel
+    const existingReply = threadReplies.querySelector(
+      `[data-message-id="${messageData.messageId}"]`,
+    );
+    if (!existingReply) {
+      const threadReplyElement = createMessageElement(messageData, true);
+      threadReplies.appendChild(threadReplyElement);
+      threadReplies.scrollTop = threadReplies.scrollHeight;
+
+      // Update thread count on the top message in thread panel
+      if (rootMessage) {
+        threadOriginalMessage.innerHTML = '';
+        const msgElement = createMessageElement(rootMessage, false, true);
+        threadOriginalMessage.appendChild(msgElement);
+      }
+    }
   }
 }
 
@@ -2241,9 +2287,16 @@ function createMessageElement(
       e.stopPropagation();
       if (confirm('Delete this message? This action cannot be undone.')) {
         try {
-          await api.deleteMessage(roomname, data.messageId, username);
-          // Show re-edit banner with the deleted message content
-          showReEditBanner(data.message);
+          // Delete from TinyBase (will auto-sync to other clients)
+          if (window.messageList) {
+            window.messageList.deleteMessage(data.messageId);
+            console.log('✅ Message deleted via TinyBase');
+
+            // Show re-edit banner with the deleted message content
+            showReEditBanner(data.message);
+          } else {
+            throw new Error('Message list not initialized');
+          }
         } catch (err) {
           console.error('Error deleting message:', err);
           alert(err.message || 'Failed to delete message');
@@ -2284,45 +2337,6 @@ function createMessageElement(
   return wrapper;
 }
 
-// Update time display based on whether this is the first message in a group
-function updateTimeDisplayForMessage(messageElement) {
-  const username = messageElement.getAttribute('data-username');
-  const timestamp = messageElement.getAttribute('data-timestamp');
-  const timeSpan = messageElement.querySelector('.msg-time-outside-actions');
-
-  if (!timeSpan || !username || !timestamp) return;
-
-  // Check if previous message is from the same user
-  // Skip over date dividers and system messages
-  let prevWrapper = messageElement.previousElementSibling;
-  while (prevWrapper && !prevWrapper.classList.contains('message-wrapper')) {
-    prevWrapper = prevWrapper.previousElementSibling;
-  }
-
-  let isFirstInGroup = true;
-
-  if (prevWrapper && prevWrapper.classList.contains('message-wrapper')) {
-    const prevUsername = prevWrapper.getAttribute('data-username');
-    const prevTimestamp = prevWrapper.getAttribute('data-timestamp');
-
-    // If same user and within 5 minutes, it's not the first in group
-    if (prevUsername === username && prevTimestamp) {
-      const timeDiff = Number(timestamp) - Number(prevTimestamp);
-      if (timeDiff < 5 * 60 * 1000) {
-        // 5 minutes
-        isFirstInGroup = false;
-      }
-    }
-  }
-
-  // Update time display
-  if (isFirstInGroup) {
-    timeSpan.setAttribute('data-first-message', 'true');
-  } else {
-    timeSpan.removeAttribute('data-first-message');
-  }
-}
-
 // Locate and highlight a message in the main chat area
 function locateMessageInMainChat(messageId) {
   // Find the message in main chat
@@ -2346,34 +2360,23 @@ function locateMessageInMainChat(messageId) {
   }
 }
 
-// Load messages for a specific channel from backend
+// Load messages for a specific channel from TinyBase (no server request needed)
 async function loadChannelMessages(channel) {
-  console.log('Loading messages for channel:', channel);
-  try {
-    // Show loading indicator
-    chatlog.innerHTML =
-      '<p style="text-align:center;color:#999;padding:20px;">Loading messages...</p>';
+  console.log('📂 Switching to channel (TinyBase auto-synced):', channel);
 
-    // Fetch messages from backend
-    const data = await api.getChannelMessages(roomname, channel);
-    const messages = data.messages || [];
-
-    // Clear chatlog and reset date tracker
-    chatlog.innerHTML = '';
-    lastMsgDateStr = null;
-
-    // Process and render all messages using addChatMessage for consistency
-    for (const msg of messages) {
-      // Use addChatMessage to render (this will also cache and handle date separators)
-      // addChatMessage now handles decryption internally
-      await addChatMessage(msg, { updateChannels: false });
+  if (window.messageList && window.messageList.syncNow) {
+    try {
+      window.messageList.syncNow();
+      console.log('✅ Channel view updated from TinyBase');
+    } catch (error) {
+      console.error('Failed to sync messages from TinyBase:', error);
     }
+  }
 
-    // Scroll to bottom
-    chatlog.scrollTop = chatlog.scrollHeight;
-    isAtBottom = true;
-
-    // Add welcome messages AFTER loading channel messages
+  // Show welcome messages only on initial channel load
+  // Check if this is the first time showing messages
+  const isFirstLoad = !document.querySelector('.system-message');
+  if (isFirstLoad) {
     addSystemMessage('* Hello ' + username + '!');
     addSystemMessage(
       '* This is a app built with Cloudflare Workers Durable Objects. The source code ' +
@@ -2381,7 +2384,7 @@ async function loadChannelMessages(channel) {
     );
     addSystemMessage(
       '* WARNING: Participants in this chat are random people on the internet. ' +
-        'Names are not authenticated; anyone can pretend to be anyone.Chat history is saved.',
+        'Names are not authenticated; anyone can pretend to be anyone. Chat history is saved.',
     );
     if (roomname.length == 64) {
       addSystemMessage(
@@ -2390,10 +2393,6 @@ async function loadChannelMessages(channel) {
     } else {
       addSystemMessage('* Welcome to ' + documentTitlePrefix + '. Say hi!');
     }
-  } catch (err) {
-    console.error('Failed to load channel messages:', err);
-    chatlog.innerHTML =
-      '<p style="text-align:center;color:#dc3545;padding:20px;">Failed to load messages</p>';
   }
 }
 
@@ -2431,10 +2430,6 @@ async function loadChannels() {
       });
     }
 
-    // Convert back to array
-    allChannels = Array.from(channelMap.values());
-    renderChannelList();
-
     // Update mobile channel list if on mobile
     if (isMobile()) {
       updateMobileChannelList();
@@ -2442,95 +2437,6 @@ async function loadChannels() {
   } catch (err) {
     console.error('Failed to load channels:', err);
   }
-}
-
-function renderChannelList() {
-  const channelList = document.querySelector('#channel-list');
-  if (!channelList) return;
-
-  // Get hidden channels from localStorage
-  const hiddenChannels = getHiddenChannels();
-
-  channelList.innerHTML = '';
-
-  // Filter out hidden channels AND DM channels (dm- prefix)
-  const visibleChannels = allChannels.filter(
-    (item) =>
-      !hiddenChannels.includes(item.channel) &&
-      !item.channel.toLowerCase().startsWith('dm-'),
-  );
-
-  if (visibleChannels.length === 0) {
-    channelList.innerHTML =
-      '<div style="color:var(--text-muted);font-size:0.85em;padding:8px;text-align:center;">No channels yet</div>';
-    return;
-  }
-
-  // Sort channels: 'general' at the top, others by lastUsed descending
-  const sortedChannels = [...visibleChannels].sort((a, b) => {
-    const aIsGeneral = a.channel.toLowerCase() === 'general';
-    const bIsGeneral = b.channel.toLowerCase() === 'general';
-
-    // If one is 'general', it comes first
-    if (aIsGeneral && !bIsGeneral) return -1;
-    if (!aIsGeneral && bIsGeneral) return 1;
-
-    // Both are general or neither is general, sort by lastUsed
-    return (b.lastUsed || 0) - (a.lastUsed || 0);
-  });
-
-  sortedChannels.forEach((item) => {
-    const div = document.createElement('div');
-    div.className = 'channel-item';
-    div.dataset.channel = item.channel;
-
-    if (currentChannel === item.channel) {
-      div.classList.add('current');
-    }
-
-    // Channel icon
-    const icon = document.createElement('span');
-    icon.className = 'channel-icon';
-    icon.innerHTML = '<i class="ri-hashtag"></i>';
-
-    // Channel name
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'channel-name';
-    nameSpan.textContent = item.channel;
-
-    // Unread badge (only show if not current channel and has unread)
-    const unreadCount = getChannelUnreadCount(item.channel);
-    let unreadBadge = null;
-    if (unreadCount > 0 && currentChannel !== item.channel) {
-      unreadBadge = document.createElement('span');
-      unreadBadge.className = 'channel-unread-badge';
-      unreadBadge.textContent = unreadCount > 99 ? '99+' : unreadCount;
-    }
-
-    // Channel count
-    const countSpan = document.createElement('span');
-    countSpan.className = 'channel-count';
-    countSpan.textContent = item.count || 0;
-
-    div.appendChild(icon);
-    div.appendChild(nameSpan);
-    if (unreadBadge) {
-      div.appendChild(unreadBadge);
-    }
-    div.appendChild(countSpan);
-
-    div.onclick = () => {
-      switchToChannel(item.channel);
-    };
-
-    // Right-click context menu
-    div.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      showChannelContextMenu(e, item.channel);
-    });
-
-    channelList.appendChild(div);
-  });
 }
 
 // Switch to a channel (sets it as current for sending messages)
@@ -2556,6 +2462,11 @@ async function switchToChannel(channel) {
 
   currentChannel = normalizedChannel;
   window.currentChannel = normalizedChannel; // Update global for pinned-messages
+
+  // Update channelList current channel (Reef.js will auto re-render)
+  if (window.channelList) {
+    window.channelList.setCurrentChannel(normalizedChannel);
+  }
 
   // Update state - URL sync happens automatically via chatState
   if (chatState) {
@@ -2591,23 +2502,22 @@ async function switchToChannel(channel) {
   }
 
   // Check if this channel exists in the current channel list
-  const channelExists = allChannels.some(
-    (c) => c.channel.toLowerCase() === normalizedChannel.toLowerCase(),
-  );
+  const channelExists = window.channelList
+    ? window.channelList.signal.items.some(
+        (c) => c.channel.toLowerCase() === normalizedChannel.toLowerCase(),
+      )
+    : false;
 
   // If channel doesn't exist in the list, add it temporarily (frontend only)
   // It will be created on backend when first message is sent
   if (!channelExists && !normalizedChannel.startsWith('dm-')) {
-    // Add to temporary channels set
-    temporaryChannels.add(normalizedChannel);
+    // Add to TinyBase (will trigger Reef.js re-render)
+    if (window.channelList) {
+      window.channelList.upsertChannel(normalizedChannel, 0);
+    }
 
-    // Add to allChannels array for immediate display
-    allChannels.push({
-      channel: normalizedChannel,
-      count: 0,
-      lastUsed: Date.now(),
-    });
-    renderChannelList();
+    // Fallback: Add to temporary channels set
+    temporaryChannels.add(normalizedChannel);
   }
 
   // Update visual state for both channels and DMs
@@ -2710,7 +2620,6 @@ function hideChannel(channel) {
     hiddenChannels.push(channel);
     saveHiddenChannels(hiddenChannels);
   }
-  renderChannelList();
 }
 
 // Get hidden channels from localStorage
@@ -2724,17 +2633,6 @@ function getHiddenChannels() {
 function saveHiddenChannels(channels) {
   const key = `hiddenChannels:${roomname}`;
   localStorage.setItem(key, JSON.stringify(channels));
-}
-
-function updateChannelsOnNewMessage(channel) {
-  // If this was a temporary channel, it's now been created on the server
-  // Remove it from temporary set (it will come from server in next load)
-  if (temporaryChannels.has(channel)) {
-    temporaryChannels.delete(channel);
-  }
-
-  // Reload channels after a short delay to get updated counts
-  setTimeout(() => loadChannels(), 500);
 }
 
 // Create a new channel (show prompt and switch to it)
@@ -3244,6 +3142,9 @@ async function startChat() {
   // Hide room selector and show chat interface
   hideRoomSelector();
 
+  // Create new deferred promise for store ready
+  isStoreReady = createPromiseResolvers();
+
   // Reset state for new room
   encryptionState.initialized = false;
   encryptionState.roomKey = null;
@@ -3291,7 +3192,77 @@ async function startChat() {
     console.error('❌ Failed to setup encryption:', error);
     addSystemMessage('❌: Failed to setup encryption: ' + error.message);
   }
+
+  // Initialize TinyBase store
   window.store = await createTinybaseStorage(roomname);
+  console.log('✅ TinyBase store initialized');
+
+  // Resolve store ready promise
+  if (isStoreReady) {
+    isStoreReady.resolve();
+  }
+
+  // Initialize message list component (TinyBase + Reef.js)
+  let messageListComponent = null;
+  try {
+    messageListComponent = initMessageList(
+      window.store,
+      '#chatlog',
+      () => currentChannel,
+      createMessageElement, // 传入 createMessageElement 函数
+      {
+        // 加密上下文
+        get currentRoomKey() {
+          return currentRoomKey;
+        },
+        get isRoomEncrypted() {
+          return isRoomEncrypted;
+        },
+      },
+      messagesCache, // 传入全局消息缓存
+      updateThreadInfo, // 传入线程信息更新函数
+    );
+    console.log('✅ Message list component initialized');
+
+    // Expose to window for testing
+    window.messageList = messageListComponent;
+
+    // 监听 loading 状态变化，更新 channel info bar 的 loading 指示器
+    const channelLoadingIndicator = document.getElementById(
+      'channel-loading-indicator',
+    );
+    if (channelLoadingIndicator) {
+      // 使用 Reef.js 的 signal 事件监听
+      listenReefEvent('messagesSignal', () => {
+        if (window.messageList.signal.loading) {
+          channelLoadingIndicator.style.display = 'inline';
+        } else {
+          channelLoadingIndicator.style.display = 'none';
+        }
+      });
+    }
+  } catch (error) {
+    console.error('❌ Failed to initialize message list:', error);
+  }
+
+  // Initialize channel list component (TinyBase + Reef.js)
+  let channelListComponent = null;
+  try {
+    channelListComponent = initChannelList(
+      window.store,
+      '#channel-list',
+      (channelName) => {
+        console.log('📌 Channel clicked:', channelName);
+        switchToChannel(channelName);
+      },
+    );
+    console.log('✅ Channel list component initialized');
+
+    // Expose to window for testing
+    window.channelList = channelListComponent;
+  } catch (error) {
+    console.error('❌ Failed to initialize channel list:', error);
+  }
 
   // Test: Print TinyBase store tables every 5 seconds
   setInterval(() => {
@@ -3806,7 +3777,7 @@ async function startChat() {
     }
 
     // Handle submit events from the component
-    chatInputComponent.addEventListener('submit', (event) => {
+    chatInputComponent.addEventListener('submit', async (event) => {
       const message = event.detail.message;
 
       if (message.length > 0) {
@@ -3816,8 +3787,8 @@ async function startChat() {
           return;
         }
 
-        // Send message using userApi
-        const sent = userApi.sendMessage(message, currentReplyTo);
+        // Send message using userApi (await the promise!)
+        const sent = await userApi.sendMessage(message, currentReplyTo);
 
         if (sent && currentReplyTo) {
           // Clear reply state after sending
@@ -4079,8 +4050,8 @@ async function startChat() {
       preview: originalMessage.message.substring(0, 100),
     };
 
-    // Send reply using userApi
-    const sent = userApi.sendMessage(message, replyTo);
+    // Send reply using userApi (await the promise!)
+    const sent = await userApi.sendMessage(message, replyTo);
 
     if (sent) {
       threadInputComponent.clear();
@@ -4194,50 +4165,9 @@ function createPromiseResolvers() {
 }
 
 let isSessionReady = null; // Promise that resolves when server confirms session is ready
-let pendingMessages = []; // Queue for messages during initial load (legacy, may not be used)
-let isInitialLoad = true; // Flag to distinguish initial load from real-time messages
-
-// Process pending messages in order by timestamp (legacy support)
-// Note: Server no longer sends backlog, so this is mainly for edge cases
-async function processPendingMessages() {
-  if (pendingMessages.length === 0) {
-    return;
-  }
-
-  console.log(
-    `Processing ${pendingMessages.length} pending messages (legacy backlog)`,
-  );
-
-  // Sort messages by timestamp to ensure correct order
-  pendingMessages.sort((a, b) => a.timestamp - b.timestamp);
-
-  // Process all pending messages
-  for (const data of pendingMessages) {
-    if (data.timestamp > lastSeenTimestamp) {
-      const messageChannel = data.channel || 'general';
-
-      // Only add if it's for the current channel
-      if (messageChannel.toLowerCase() === currentChannel.toLowerCase()) {
-        // addChatMessage now handles decryption internally
-        await addChatMessage(data);
-      }
-      lastSeenTimestamp = data.timestamp;
-    }
-  }
-
-  // Clear the queue after processing
-  pendingMessages = [];
-
-  // Scroll to bottom
-  if (isAtBottom) {
-    chatlog.scrollBy(0, 1e8);
-  }
-}
+let isStoreReady = null; // Promise that resolves when TinyBase store is initialized
 
 function join() {
-  // Clear pending messages and reset flags when starting a new connection
-  pendingMessages = [];
-  isInitialLoad = true;
   // Create new deferred promise for session ready
   isSessionReady = createPromiseResolvers();
 
@@ -4280,39 +4210,11 @@ function join() {
   ws.addEventListener('message', async (event) => {
     let data = JSON.parse(event.data);
 
+    // NOTE: Regular chat messages are now handled by TinyBase WsSynchronizer
+    // This WebSocket only handles system events
+
     if (data.error) {
       addSystemMessage('* Error: ' + data.error);
-    } else if (data.threadUpdate) {
-      // Thread info has been updated
-      const msgElement = document.querySelector(
-        `[data-message-id="${data.threadUpdate.messageId}"]`,
-      );
-      if (msgElement) {
-        const chatMessage = msgElement.querySelector('chat-message');
-        if (chatMessage && data.threadUpdate.threadInfo) {
-          chatMessage.setAttribute(
-            'thread-count',
-            String(data.threadUpdate.threadInfo.replyCount),
-          );
-          chatMessage.render(); // Re-render to show updated thread count
-        }
-      }
-
-      // Update cache
-      const cachedMsg = messagesCache.get(data.threadUpdate.messageId);
-      if (cachedMsg) {
-        cachedMsg.threadInfo = data.threadUpdate.threadInfo;
-      }
-
-      // If this is the current open thread, update the top message display
-      if (currentThreadId === data.threadUpdate.messageId) {
-        const rootMessage = messagesCache.get(currentThreadId);
-        if (rootMessage) {
-          threadOriginalMessage.innerHTML = '';
-          const msgElement = createMessageElement(rootMessage, false, true);
-          threadOriginalMessage.appendChild(msgElement);
-        }
-      }
     } else if (data.roomInfoUpdate) {
       // Room info has been updated, refresh the display
       const info = data.roomInfoUpdate;
@@ -4338,67 +4240,6 @@ function join() {
     } else if (data.pinUpdate) {
       // Handle pin/unpin updates
       handlePinUpdate(data.pinUpdate);
-    } else if (data.messageDeleted) {
-      // Handle message deletion broadcast
-      const deletedMessageId = data.messageDeleted;
-
-      // Remove from main chat
-      const mainChatMsg = chatlog.querySelector(
-        `[data-message-id="${deletedMessageId}"]`,
-      );
-      if (mainChatMsg) {
-        mainChatMsg.remove();
-      }
-
-      // Remove from thread panel if open
-      const threadMsg = threadReplies.querySelector(
-        `[data-message-id="${deletedMessageId}"]`,
-      );
-      if (threadMsg) {
-        threadMsg.remove();
-      }
-
-      // Remove from cache
-      messagesCache.delete(deletedMessageId);
-    } else if (data.messageEdited) {
-      // Handle message edit broadcast
-      const editData = data.messageEdited;
-      const messageId = editData.messageId;
-
-      // Update in cache
-      const cachedMsg = messagesCache.get(messageId);
-      if (cachedMsg) {
-        cachedMsg.message = editData.message;
-        cachedMsg.editedAt = editData.editedAt;
-      }
-
-      // Update in main chat
-      const mainChatMsg = chatlog.querySelector(
-        `[data-message-id="${messageId}"]`,
-      );
-      if (mainChatMsg) {
-        const chatMessage = mainChatMsg.querySelector('chat-message');
-        if (chatMessage) {
-          chatMessage.setAttribute('message', editData.message);
-          chatMessage.setAttribute('edited-at', String(editData.editedAt));
-          // Trigger re-render
-          chatMessage.render();
-        }
-      }
-
-      // Update in thread panel if open
-      const threadMsg = threadReplies.querySelector(
-        `[data-message-id="${messageId}"]`,
-      );
-      if (threadMsg) {
-        const chatMessage = threadMsg.querySelector('chat-message');
-        if (chatMessage) {
-          chatMessage.setAttribute('message', editData.message);
-          chatMessage.setAttribute('edited-at', String(editData.editedAt));
-          // Trigger re-render
-          chatMessage.render();
-        }
-      }
     } else if (data.joined) {
       // Check if user is already in the roster (prevent duplicates)
       let alreadyInRoster = false;
@@ -4461,57 +4302,15 @@ function join() {
       }
       addSystemMessage(`* ${data.quit} has left the room`);
     } else if (data.ready) {
-      // All pre-join messages have been delivered.
-      // Note: Server no longer sends backlog, we load channel messages via REST API
-      isSessionReady.resolve(); // Resolve the promise to unblock any waiting operations
-      await processPendingMessages();
-
-      // Mark initial load as complete - subsequent messages will be processed immediately
+      // Session is ready
+      isSessionReady.resolve();
       isInitialLoad = false;
 
       if (isReconnecting) {
-        // Show connected status if this is a reconnection
         updateConnectionStatus('connected');
-        // Reset reconnecting flag (status already updated in 'open' event)
         isReconnecting = false;
 
-        // Reload current channel messages after reconnection
-        if (currentChannel) {
-          await loadChannelMessages(currentChannel);
-        }
-      }
-    } else {
-      // A regular chat message.
-      if (isInitialLoad) {
-        // During initial load, add to queue for batch processing
-        pendingMessages.push(data);
-      } else {
-        // After initial load, process real-time messages immediately
-        if (data.timestamp > lastSeenTimestamp) {
-          const messageChannel = data.channel || 'general';
-
-          // Only display message if it belongs to the current channel
-          if (messageChannel.toLowerCase() === currentChannel.toLowerCase()) {
-            // addChatMessage now handles decryption internally
-            await addChatMessage(data);
-
-            // Scroll to bottom if we were at bottom (includes our own messages)
-            if (isAtBottom) {
-              chatlog.scrollBy(0, 1e8);
-            }
-          } else {
-            // Message is for a different channel, increment unread count
-            incrementChannelUnreadCount(messageChannel);
-            console.log(
-              `Message for #${messageChannel}, not displaying in current channel #${currentChannel}`,
-            );
-          }
-
-          lastSeenTimestamp = data.timestamp;
-
-          // Update channel list to reflect new message count
-          setTimeout(() => loadChannels(), 500);
-        }
+        console.log('🔄 Reconnected - TinyBase will auto-sync messages');
       }
     }
   });
@@ -4541,35 +4340,35 @@ function join() {
     rejoin();
   });
 
-  loadChannels().then(async () => {
-    // Initialize channel add button
-    initChannelAddButton();
-    // Initialize channel info bar
-    initChannelInfoBar();
-    // Initialize channel panel features
-    initChannelPanel();
+  // Load channels from server into TinyBase
+  if (window.channelList) {
+    window.channelList.loadFromServer(api, roomname).then(async () => {
+      // Initialize channel add button
+      initChannelAddButton();
+      // Initialize channel info bar
+      initChannelInfoBar();
+      // Initialize channel panel features
+      initChannelPanel();
 
-    // Check if there's a channel filter in the URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const channelParam = urlParams.get('channel');
-    if (channelParam) {
-      // Switch to the channel from URL (will load messages)
-      await switchToChannel(channelParam);
-    } else {
-      // No channel specified, load messages for default channel
-      await loadChannelMessages(currentChannel);
-    }
+      // Check if there's a channel filter in the URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const channelParam = urlParams.get('channel');
+      if (channelParam) {
+        // Switch to the channel from URL (will load messages)
+        await switchToChannel(channelParam);
+      } else {
+        // No channel specified, load messages for default channel
+        await loadChannelMessages(currentChannel);
+      }
 
-    // Check if there's a thread ID in the URL
-    const threadParam = urlParams.get('thread');
-    if (threadParam) {
-      window.openThread(threadParam);
-    }
-  });
+      // Check if there's a thread ID in the URL
+      const threadParam = urlParams.get('thread');
+      if (threadParam) {
+        window.openThread(threadParam);
+      }
+    });
+  }
 }
-
-// Global variable for cross-day pagination
-let lastMsgDateStr = null;
 
 function addSystemMessage(text) {
   let p = document.createElement('p');
@@ -4777,15 +4576,15 @@ function showEditDialog(messageData) {
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
 
-      await api.editMessage(
-        roomname,
-        messageData.messageId,
-        username,
-        newMessage,
-      );
+      // Edit message in TinyBase (will auto-sync to other clients)
+      if (window.messageList) {
+        window.messageList.editMessage(messageData.messageId, newMessage);
+        console.log('✅ Message edited via TinyBase');
+      } else {
+        throw new Error('Message list not initialized');
+      }
 
       overlay.remove();
-      // Message will be updated via WebSocket broadcast
     } catch (err) {
       console.error('Error editing message:', err);
       alert(err.message || 'Failed to edit message');
@@ -4818,154 +4617,6 @@ function showEditDialog(messageData) {
     }
   };
   document.addEventListener('keydown', escHandler);
-}
-
-// Add a chat message to the log
-// Now accepts a message object directly
-async function addChatMessage(messageObj, options = {}) {
-  // messageObj should have: { name, message, timestamp, messageId, replyTo, threadInfo, channel, editedAt }
-  // options: { updateChannels: true } - whether to update channel list
-
-  // Default options
-  const updateChannels = options.updateChannels !== false;
-
-  // Decrypt message if encrypted
-  const decryptedMessage = await tryDecryptMessage(
-    messageObj,
-    currentRoomKey,
-    isRoomEncrypted,
-  );
-
-  // Handle replyTo - decrypt parent message and generate preview
-  let replyTo = messageObj.replyTo || null;
-  if (replyTo && replyTo.message) {
-    // Decrypt parent message to generate preview
-    const decryptedParent = await tryDecryptMessage(
-      { message: replyTo.message },
-      currentRoomKey,
-      isRoomEncrypted,
-    );
-
-    // Generate preview (first 50 chars)
-    let preview = decryptedParent;
-    if (preview.startsWith('FILE:')) {
-      const parts = preview.substring(5).split('|');
-      preview = parts[1] || 'File'; // Use filename as preview
-    }
-    preview = preview.substring(0, 50);
-    if (decryptedParent.length > 50) {
-      preview += '...';
-    }
-
-    // Replace replyTo with version that has preview
-    replyTo = {
-      messageId: replyTo.messageId,
-      username: replyTo.username,
-      preview: preview,
-    };
-  }
-
-  // Create complete message data with decrypted content
-  const messageData = {
-    name: messageObj.name,
-    message: decryptedMessage, // Use decrypted message
-    timestamp: messageObj.timestamp,
-    messageId:
-      messageObj.messageId ||
-      generateLegacyMessageId(messageObj.timestamp, messageObj.name),
-    replyTo: replyTo, // Use processed replyTo with preview
-    threadInfo: messageObj.threadInfo || null,
-    channel: messageObj.channel || 'general',
-    editedAt: messageObj.editedAt || null,
-  };
-
-  // Cache the message
-  messagesCache.set(messageData.messageId, messageData);
-
-  const date = new Date(messageData.timestamp);
-  const dateStr =
-    date.getFullYear() +
-    '-' +
-    String(date.getMonth() + 1).padStart(2, '0') +
-    '-' +
-    String(date.getDate()).padStart(2, '0');
-
-  // Insert date divider if day changes
-  if (lastMsgDateStr !== dateStr) {
-    lastMsgDateStr = dateStr;
-    const divider = document.createElement('div');
-    divider.className = 'date-divider';
-    divider.textContent = dateStr;
-    divider.style.textAlign = 'center';
-    divider.style.color = '#aaa';
-    divider.style.fontSize = '0.9em';
-    divider.style.margin = '16px 0 8px 0';
-    chatlog.appendChild(divider);
-  }
-
-  // Create message element using new function
-  const messageElement = createMessageElement(messageData, false);
-
-  // Append message to main chat
-  chatlog.appendChild(messageElement);
-
-  // Update time display based on message grouping
-  updateTimeDisplayForMessage(messageElement);
-
-  // If this is a reply and the thread is open, also add to thread panel
-  if (messageData.replyTo) {
-    // Find the root message of this reply
-    let rootId = messageData.replyTo.messageId;
-    let parentMsg = messagesCache.get(rootId);
-    while (parentMsg && parentMsg.replyTo) {
-      rootId = parentMsg.replyTo.messageId;
-      parentMsg = messagesCache.get(rootId);
-    }
-
-    // Update root message's reply count
-    const rootMessage = messagesCache.get(rootId);
-    if (rootMessage) {
-      const totalReplies = countTotalReplies(rootId);
-      rootMessage.threadInfo = rootMessage.threadInfo || {};
-      rootMessage.threadInfo.replyCount = totalReplies;
-      rootMessage.threadInfo.lastReplyTime = messageData.timestamp;
-
-      // Update the message in main chat list
-      const mainChatMsg = document.querySelector(
-        `[data-message-id="${rootId}"]`,
-      );
-      if (mainChatMsg) {
-        const chatMessage = mainChatMsg.querySelector('chat-message');
-        if (chatMessage) {
-          chatMessage.setAttribute('thread-count', String(totalReplies));
-          chatMessage.render();
-        }
-      }
-    }
-
-    // If this reply belongs to the currently open thread, add it
-    if (currentThreadId === rootId) {
-      const threadReplyElement = createMessageElement(messageData, true);
-      threadReplies.appendChild(threadReplyElement);
-      threadReplies.scrollTop = threadReplies.scrollHeight;
-
-      // Update thread count on the top message in thread panel
-      if (rootMessage) {
-        threadOriginalMessage.innerHTML = '';
-        const msgElement = createMessageElement(rootMessage, false, true);
-        threadOriginalMessage.appendChild(msgElement);
-      }
-    }
-  }
-
-  if (isAtBottom) {
-    chatlog.scrollBy(0, 1e8);
-  }
-
-  // Update channels list with the new message's channel (only if requested)
-  if (updateChannels) {
-    updateChannelsOnNewMessage(messageData.channel || 'general');
-  }
 }
 
 // NOTE: Browser back/forward navigation is now handled by chat-state.mjs
@@ -5021,7 +4672,6 @@ function setChannelUnreadCount(channelName, count) {
   } else {
     channelUnreadCounts.set(key, count);
   }
-  renderChannelList();
   if (isMobile()) {
     updateMobileChannelList();
   }
@@ -5229,9 +4879,9 @@ function showMobileChannelList() {
   currentChannel = 'general';
 
   // Ensure channels are loaded and update channel list content
-  if (allChannels.length === 0) {
+  if (window.channelList && window.channelList.signal.items.length === 0) {
     // If channels haven't been loaded yet, load them
-    loadChannels().then(() => {
+    window.channelList.loadFromServer(api, roomname).then(() => {
       updateMobileChannelList();
     });
   } else {

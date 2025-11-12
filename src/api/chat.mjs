@@ -76,9 +76,7 @@ const app = ignite((app) => {
 
     api.all('/room/*', async (c, next) => {
       const path = getPath(c.req);
-      console.log('Processing path:', path);
       const segments = splitPath(path);
-      console.log('Segments:', segments);
       const name = segments[2];
       if (!name) {
         return new Response('You must specify a room name', { status: 401 });

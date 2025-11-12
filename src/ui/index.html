@@ -14,7 +14,13 @@
       rel="stylesheet"
     />
     <script type="importmap">
-      { "imports": { "tinybase": "https://esm.sh/tinybase@6.7.2" } }
+      {
+        "imports": {
+          "tinybase": "https://esm.sh/tinybase@6.7.2",
+          "tinybase/": "https://esm.sh/tinybase@6.7.2/",
+          "reefjs": "https://cdn.jsdelivr.net/npm/reefjs@13/dist/reef.es.min.js"
+        }
+      }
     </script>
     <script
       type="module"
@@ -130,6 +136,16 @@
         font-weight: 600;
         color: var(--text-main);
         flex-shrink: 0;
+      }
+
+      /* Channel loading indicator animation */
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
       }
 
       #channel-topic {
@@ -302,6 +318,70 @@
         chat-message {
           font-size: 16px;
           line-height: 1.4;
+        }
+
+        /* TinyBase + Reef.js Message List Styles */
+        .messages-container {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .message-item {
+          padding: 8px 12px;
+          border-radius: var(--border-radius);
+          transition: var(--transition);
+        }
+
+        .message-item:hover {
+          background: var(--background-alt);
+        }
+
+        .message-header {
+          display: flex;
+          align-items: baseline;
+          gap: 8px;
+          margin-bottom: 4px;
+        }
+
+        .message-username {
+          font-weight: 600;
+          color: var(--links);
+        }
+
+        .message-time {
+          font-size: 0.85em;
+          color: var(--text-muted);
+        }
+
+        .message-edited {
+          font-size: 0.75em;
+          color: var(--text-muted);
+          font-style: italic;
+        }
+
+        .message-body {
+          color: var(--text-main);
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+        }
+
+        .message-reply-indicator {
+          font-size: 0.85em;
+          color: var(--text-muted);
+          margin-top: 4px;
+        }
+
+        .message-loading,
+        .message-error,
+        .message-empty {
+          padding: 2rem;
+          text-align: center;
+          color: var(--text-muted);
+        }
+
+        .message-error {
+          color: #dc3545;
         }
 
         /* Better spacing for reply indicators */
@@ -2062,6 +2142,21 @@
           <div id="channel-info-left">
             <span class="channel-hash">#</span>
             <span id="channel-name-display">general</span>
+            <span
+              id="channel-loading-indicator"
+              style="
+                display: none;
+                margin-left: 8px;
+                color: #999;
+                font-size: 0.85em;
+              "
+            >
+              <i
+                class="ri-loader-4-line"
+                style="animation: spin 1s linear infinite"
+              ></i>
+              Loading...
+            </span>
             <span id="channel-topic"></span>
           </div>
           <div id="channel-info-actions">
