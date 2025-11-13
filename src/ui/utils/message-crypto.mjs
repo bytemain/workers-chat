@@ -5,17 +5,11 @@
 
 import CryptoUtils from '../../common/crypto-utils.js';
 import { getCryptoPool } from '../crypto-worker-pool.js';
-import { initCryptoCompatCheck } from '../../common/crypto-compat.js';
+import { isCryptoSupported } from '../../common/crypto-compat.js';
 import { LRUCache } from './lru-cache.mjs';
 
 // Get crypto pool instance
 const cryptoPool = getCryptoPool();
-
-// Check crypto support (async - may load polyfill)
-let cryptoSupported = false;
-(async () => {
-  cryptoSupported = await initCryptoCompatCheck();
-})();
 
 // LRU cache for decrypted messages (max 100 entries)
 const decryptionCache = new LRUCache(100);
@@ -39,7 +33,7 @@ export async function tryDecryptMessage(data, roomKey, isRoomEncrypted) {
     }
 
     // Check if crypto is supported
-    if (!cryptoSupported) {
+    if (!isCryptoSupported()) {
       console.warn(
         '⚠️ Received encrypted message but crypto API is not supported',
       );

@@ -230,7 +230,7 @@ export function showCryptoNotSupportedDialog(supportInfo) {
  * Attempts to load polyfill if native support is incomplete
  * @returns {Promise<boolean>} true if crypto is supported, false otherwise
  */
-export async function initCryptoCompatCheck() {
+async function doInitCryptoCompatCheck() {
   // First check if we need polyfill
   let supportInfo = checkCryptoSupport();
 
@@ -271,8 +271,26 @@ export async function initCryptoCompatCheck() {
   return true;
 }
 
+// Check Crypto API compatibility early (async - may load polyfill)
+let cryptoSupported = false;
+
+export async function initCryptoCompatCheck() {
+  cryptoSupported = await doInitCryptoCompatCheck();
+  if (!cryptoSupported) {
+    console.warn(
+      '⚠️ Crypto API not supported, encryption features will be disabled',
+    );
+  }
+  return cryptoSupported;
+}
+
+export function isCryptoSupported() {
+  return cryptoSupported;
+}
+
 export default {
   checkCryptoSupport,
   showCryptoNotSupportedDialog,
   initCryptoCompatCheck,
+  isCryptoSupported,
 };
