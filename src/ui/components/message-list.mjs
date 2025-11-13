@@ -14,6 +14,8 @@ import { tryDecryptMessage } from '../utils/message-crypto.mjs';
 import CryptoUtils from '../../common/crypto-utils.js';
 import { markChannelAsRead, getUnreadCount } from '../tinybase/read-status.mjs';
 
+const SignalName = 'messagesSignal';
+
 /**
  * Initialize message list component
  * @param {Object} tinybaseStore - TinyBase store instance
@@ -46,7 +48,7 @@ export function initMessageList(
       error: null, // 错误信息
       version: 0, // 版本号，用于强制重新渲染
     },
-    'messagesSignal',
+    SignalName || 'messagesSignal',
   );
 
   /**
@@ -263,7 +265,7 @@ export function initMessageList(
   }
 
   const messagesComponent = component(container, messagesTemplate, {
-    signals: ['messagesSignal'],
+    signals: [SignalName || 'messagesSignal'],
   });
 
   // 监听 Reef.js 渲染完成事件，使用 createMessageElement 渲染消息

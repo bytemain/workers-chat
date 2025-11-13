@@ -7,6 +7,8 @@
 
 import { signal, component } from 'reefjs';
 
+const SignalName = 'channelsSignal';
+
 /**
  * Initialize channel list component
  * @param {Object} tinybaseStore - TinyBase store instance
@@ -27,7 +29,7 @@ export function initChannelList(
       error: null,
       currentChannel: 'general', // 当前选中的频道
     },
-    'channelsSignal',
+    SignalName,
   );
 
   /**
@@ -156,7 +158,7 @@ export function initChannelList(
   }
 
   const channelsComponent = component(container, channelsTemplate, {
-    signals: ['channelsSignal'],
+    signals: [SignalName],
   });
 
   // Event delegation - 频道点击
