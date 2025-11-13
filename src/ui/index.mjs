@@ -32,14 +32,6 @@ import { createReadStatusStore } from './tinybase/read-status.mjs';
 
 // Check Crypto API compatibility early (async - may load polyfill)
 let cryptoSupported = false;
-(async () => {
-  cryptoSupported = await initCryptoCompatCheck();
-  if (!cryptoSupported) {
-    console.warn(
-      '⚠️ Crypto API not supported, encryption features will be disabled',
-    );
-  }
-})();
 
 const cryptoPool = getCryptoPool();
 
@@ -2821,7 +2813,14 @@ function removeFromRoomHistory(roomName) {
   updateRoomListUI();
 }
 
-export function startNameChooser() {
+export async function main() {
+  cryptoSupported = await initCryptoCompatCheck();
+  if (!cryptoSupported) {
+    console.warn(
+      '⚠️ Crypto API not supported, encryption features will be disabled',
+    );
+  }
+
   // Check if username is saved in localStorage
   let savedUsername = localStorage.getItem('chatUsername');
 
