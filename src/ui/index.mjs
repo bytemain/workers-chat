@@ -2864,8 +2864,15 @@ function initChannelAddButton() {
   }
 }
 
+// Track if channel info bar has been initialized (prevent duplicate listeners)
+let channelInfoBarInitialized = false;
+
 // Initialize channel info bar buttons
 function initChannelInfoBar() {
+  // Prevent duplicate event listeners
+  if (channelInfoBarInitialized) return;
+  channelInfoBarInitialized = true;
+
   // Toggle members panel
   const btnToggleMembers = document.getElementById('btn-toggle-members');
   if (btnToggleMembers) {
@@ -2886,7 +2893,7 @@ function initChannelInfoBar() {
     });
   }
 
-  // Search messages (TODO: implement later)
+  // Search messages
   const btnSearchMessages = document.getElementById('btn-search-messages');
   if (btnSearchMessages) {
     btnSearchMessages.addEventListener('click', () => {
@@ -2896,7 +2903,15 @@ function initChannelInfoBar() {
 
   // Search modal and functionality
   function showSearchModal() {
+    // Check if modal already exists
+    const existingModal = document.querySelector('.search-modal-overlay');
+    if (existingModal) {
+      console.log('Search modal already open');
+      return;
+    }
+
     const modal = document.createElement('div');
+    modal.className = 'search-modal-overlay';
     modal.style.cssText = `
       position: fixed;
       top: 0;
@@ -3121,7 +3136,7 @@ function initChannelInfoBar() {
         );
 
         return {
-          messageId: result.messageId,
+          messageId: msgId,
           username: result.username,
           text: decryptedText,
           timestamp: result.timestamp,
@@ -3196,8 +3211,17 @@ function initChannelInfoBar() {
       console.log(`Switching to channel #${channel} to show message`);
       await window.switchToChannel(channel);
 
-      // Wait a bit for messages to render
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Wait for messages to render (check up to 10 times)
+      let attempts = 0;
+      while (attempts < 10) {
+        const msgElement = chatlog.querySelector(
+          `[data-message-id="${messageId}"]`,
+        );
+        if (msgElement) break;
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        attempts++;
+      }
     }
 
     // Find the message element
@@ -3218,9 +3242,7 @@ function initChannelInfoBar() {
       }, 2000);
 
       // Close search modal
-      const modal = document.querySelector(
-        'div[style*="position: fixed"][style*="z-index: 10000"]',
-      );
+      const modal = document.querySelector('.search-modal-overlay');
       if (modal) document.body.removeChild(modal);
     } else {
       console.warn(`Message ${messageId} not found in current view`);
