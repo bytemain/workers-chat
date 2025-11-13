@@ -30,6 +30,7 @@ import { initMessageList } from './components/message-list.mjs';
 import { initChannelList } from './components/channel-list.mjs';
 import { listenReefEvent } from './utils/reef-helpers.mjs';
 import { createReadStatusStore } from './tinybase/read-status.mjs';
+import { createQueries } from 'tinybase';
 
 // Check Crypto API compatibility early (async - may load polyfill)
 let cryptoSupported = false;
@@ -2889,10 +2890,343 @@ function initChannelInfoBar() {
   const btnSearchMessages = document.getElementById('btn-search-messages');
   if (btnSearchMessages) {
     btnSearchMessages.addEventListener('click', () => {
-      console.log('Search messages - to be implemented');
-      // TODO: Implement search modal
+      showSearchModal();
     });
   }
+
+  // Search modal and functionality
+  function showSearchModal() {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    `;
+
+    modal.innerHTML = `
+      <div style="
+        background: white;
+        border-radius: 8px;
+        padding: 24px;
+        max-width: 600px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      ">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0;">🔍 Search Messages</h3>
+          <button id="search-modal-close" style="
+            border: none;
+            background: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+          ">×</button>
+        </div>
+
+        <input
+          type="text"
+          id="search-input"
+          placeholder="Search... (Try: from:username, in:channel, has:link)"
+          style="
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+            margin-bottom: 16px;
+          "
+        />
+
+        <div style="
+          background: #f5f5f5;
+          padding: 12px;
+          border-radius: 4px;
+          margin-bottom: 16px;
+          font-size: 12px;
+          color: #666;
+        ">
+          <strong>Search Filters:</strong><br>
+          <code>from:username</code> - Filter by user<br>
+          <code>in:channel</code> - Filter by channel<br>
+          <code>has:link</code> - Messages with links<br>
+          <code>has:file</code> - Messages with files<br>
+          <code>pinned:true</code> - Pinned messages only
+        </div>
+
+        <div id="search-results" style="
+          max-height: 400px;
+          overflow-y: auto;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          padding: 12px;
+        ">
+          <p style="color: #999; text-align: center;">Enter search query above</p>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const searchInput = modal.querySelector('#search-input');
+    const searchResults = modal.querySelector('#search-results');
+    const closeBtn = modal.querySelector('#search-modal-close');
+
+    // Close modal
+    closeBtn.onclick = () => document.body.removeChild(modal);
+    modal.onclick = (e) => {
+      if (e.target === modal) document.body.removeChild(modal);
+    };
+
+    // Search on input
+    let searchTimeout;
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        performSearch(e.target.value, searchResults);
+      }, 300);
+    });
+
+    searchInput.focus();
+  }
+
+  // Parse Discord-style search filters
+  function parseSearchQuery(query) {
+    const filters = {
+      text: '', // Plain text search
+      from: null, // from:username
+      in: null, // in:channel
+      has: null, // has:link | has:file
+      pinned: null, // pinned:true | pinned:false
+    };
+
+    // Extract filters
+    const fromMatch = query.match(/from:(\S+)/);
+    const inMatch = query.match(/in:(\S+)/);
+    const hasMatch = query.match(/has:(\S+)/);
+    const pinnedMatch = query.match(/pinned:(true|false)/);
+
+    if (fromMatch) filters.from = fromMatch[1];
+    if (inMatch) filters.in = inMatch[1];
+    if (hasMatch) filters.has = hasMatch[1];
+    if (pinnedMatch) filters.pinned = pinnedMatch[1] === 'true';
+
+    // Remove filters from text search
+    filters.text = query
+      .replace(/from:\S+/g, '')
+      .replace(/in:\S+/g, '')
+      .replace(/has:\S+/g, '')
+      .replace(/pinned:(true|false)/g, '')
+      .trim();
+
+    return filters;
+  }
+
+  // Perform search using TinyBase Queries
+  async function performSearch(query, resultsContainer) {
+    if (!query.trim()) {
+      resultsContainer.innerHTML =
+        '<p style="color: #999; text-align: center;">Enter search query above</p>';
+      return;
+    }
+
+    const filters = parseSearchQuery(query);
+    const queries = createQueries(window.store);
+
+    // Show loading state
+    resultsContainer.innerHTML =
+      '<p style="color: #999; text-align: center;">Searching...</p>';
+
+    // ✅ Use TinyBase Queries with dynamic WHERE conditions!
+    // Re-define the query with current search filters
+    queries.setQueryDefinition(
+      'searchMessages',
+      'messages',
+      ({ select, where }) => {
+        select('messageId');
+        select('username');
+        select('text');
+        select('timestamp');
+        select('channel');
+
+        // Dynamic WHERE filters using callback functions
+        if (filters.from) {
+          where('username', filters.from); // Exact match
+        }
+
+        if (filters.in) {
+          where('channel', filters.in); // Exact match
+        }
+
+        if (filters.has === 'link') {
+          where((getCell) => {
+            const text = getCell('text') || '';
+            return text.includes('http');
+          });
+        }
+
+        if (filters.has === 'file') {
+          where((getCell) => {
+            const text = getCell('text') || '';
+            return text.startsWith('FILE:');
+          });
+        }
+
+        // Note: Text search will be done after decryption for encrypted messages
+        // So we don't apply text filter here if room is encrypted
+        if (filters.text && !isRoomEncrypted) {
+          where((getCell) => {
+            const text = getCell('text') || '';
+            return text.toLowerCase().includes(filters.text.toLowerCase());
+          });
+        }
+      },
+    );
+
+    // Get results sorted by timestamp (newest first)
+    const resultIds = queries.getResultSortedRowIds(
+      'searchMessages',
+      'timestamp',
+      true, // descending
+      0, // offset
+      50, // limit to 50 results
+    );
+
+    // Render results
+    if (resultIds.length === 0) {
+      resultsContainer.innerHTML =
+        '<p style="color: #999; text-align: center;">No messages found</p>';
+      return;
+    }
+
+    // Decrypt messages if room is encrypted
+    const matchingMessages = await Promise.all(
+      resultIds.map(async (msgId) => {
+        const result = queries.getResultRow('searchMessages', msgId);
+
+        // Use shared decryption utility (with cache!)
+        const decryptedText = await tryDecryptMessage(
+          { message: result.text },
+          currentRoomKey,
+          isRoomEncrypted,
+        );
+
+        return {
+          messageId: result.messageId,
+          username: result.username,
+          text: decryptedText,
+          timestamp: result.timestamp,
+          channel: result.channel,
+        };
+      }),
+    );
+
+    // Filter by text after decryption (if encrypted room)
+    let finalResults = matchingMessages;
+    if (filters.text && isRoomEncrypted) {
+      finalResults = matchingMessages.filter((msg) =>
+        msg.text.toLowerCase().includes(filters.text.toLowerCase()),
+      );
+    }
+
+    if (finalResults.length === 0) {
+      resultsContainer.innerHTML =
+        '<p style="color: #999; text-align: center;">No messages found</p>';
+      return;
+    }
+
+    resultsContainer.innerHTML = finalResults
+      .map(
+        (msg) => `
+        <div style="
+          border-bottom: 1px solid #eee;
+          padding: 8px 0;
+          cursor: pointer;
+        " onclick="window.jumpToMessage('${msg.messageId}', '${msg.channel}')">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <strong style="color: #333;">${msg.username}</strong>
+            <span style="color: #999; font-size: 12px;">
+              ${formatTimestamp(msg.timestamp)} • #${msg.channel}
+            </span>
+          </div>
+          <div style="color: #666; font-size: 14px;">
+            ${highlightText(msg.text, filters.text)}
+          </div>
+        </div>
+      `,
+      )
+      .join('');
+  }
+
+  // Highlight search text in results
+  function highlightText(text, searchText) {
+    if (!searchText || text.startsWith('FILE:')) return escapeHtml(text);
+
+    const escaped = escapeHtml(text);
+    const regex = new RegExp(`(${escapeRegex(searchText)})`, 'gi');
+    return escaped.replace(
+      regex,
+      '<mark style="background: #fff59d;">$1</mark>',
+    );
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function escapeRegex(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // Jump to message in chat
+  window.jumpToMessage = async function (messageId, channel = null) {
+    // If channel is provided and different from current, switch to it first
+    if (channel && channel !== currentChannel) {
+      console.log(`Switching to channel #${channel} to show message`);
+      await window.switchToChannel(channel);
+
+      // Wait a bit for messages to render
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+
+    // Find the message element
+    const msgElement = chatlog.querySelector(
+      `[data-message-id="${messageId}"]`,
+    );
+
+    if (msgElement) {
+      // Scroll to message
+      msgElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Highlight message
+      msgElement.style.background = '#fff59d';
+      msgElement.style.transition = 'background 0.3s ease';
+
+      setTimeout(() => {
+        msgElement.style.background = '';
+      }, 2000);
+
+      // Close search modal
+      const modal = document.querySelector(
+        'div[style*="position: fixed"][style*="z-index: 10000"]',
+      );
+      if (modal) document.body.removeChild(modal);
+    } else {
+      console.warn(`Message ${messageId} not found in current view`);
+      alert('Message not found in current view');
+    }
+  };
 
   // Room settings - placeholder for future features
   const btnRoomSettings = document.getElementById('btn-room-settings');
@@ -3371,12 +3705,11 @@ async function startChat() {
   }
 
   // Initialize TinyBase store and indexes
-  const { store, relationships, indexes } =
-    await createTinybaseStorage(roomname);
+  const { store, indexes, queries } = await createTinybaseStorage(roomname);
   window.store = store;
-  window.relationships = relationships;
-  window.indexes = indexes; // Expose indexes for debugging
-  console.log('✅ TinyBase store, relationships, and indexes initialized');
+  window.indexes = indexes;
+  window.queries = queries;
+  console.log('✅ TinyBase store, indexes, and queries initialized');
 
   // Initialize pin listener after TinyBase is ready
   initPinListener();
