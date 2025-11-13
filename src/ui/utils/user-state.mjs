@@ -40,20 +40,6 @@ export const userState = store(
       localStorage.removeItem('chatUsername');
       window.currentUsername = null;
     },
-
-    // Action: Initialize from localStorage or generate random
-    initUsername(state) {
-      let savedUsername = localStorage.getItem('chatUsername');
-
-      // If no saved username, generate a random one (but don't save yet)
-      if (!savedUsername) {
-        savedUsername = generateRandomUsername();
-        // Don't save here - wait until user enters a room
-      }
-
-      state.username = savedUsername;
-      window.currentUsername = savedUsername;
-    },
   },
   SignalName,
 );
@@ -87,7 +73,13 @@ listenReefEvent(SignalName, () => {
 
 // Initialize user state on module load
 export function initUserState() {
-  userState.initUsername();
+  let savedUsername = localStorage.getItem('chatUsername');
+
+  if (!savedUsername) {
+    savedUsername = generateRandomUsername();
+  }
+
+  userState.setUsername(savedUsername);
   console.log('✅ User state initialized:', userState.value.username);
 }
 
