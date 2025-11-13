@@ -43,3 +43,22 @@ Once you've enabled Durable Objects on your account and have Wrangler installed 
 If you get an error saying "Cannot create binding for class [...] because it is not currently configured to implement durable objects", you need to update your version of Wrangler.
 
 This command will deploy the app to your account under the name `edge-chat`.
+
+## Browser Compatibility
+
+This chat application uses the Web Crypto API for end-to-end encryption. While modern browsers have good support for this API, some browsers (particularly WeChat browser and older browsers) may have incomplete implementations.
+
+To ensure broad compatibility, the app automatically loads a polyfill ([webcrypto-liner](https://github.com/PeculiarVentures/webcrypto-liner)) when it detects missing crypto functionality. The polyfill:
+
+- **Loads on-demand**: Only downloaded when the native API is incomplete
+- **Seamless fallback**: Automatically uses native implementations when available
+- **Broad algorithm support**: Supports AES-GCM, PBKDF2, SHA-256, and other algorithms used by the app
+
+### Supported Browsers
+- ✅ Chrome/Edge (latest versions)
+- ✅ Firefox (latest versions)
+- ✅ Safari (latest versions)
+- ✅ WeChat browser (with polyfill)
+- ✅ Most modern mobile browsers
+
+If a browser cannot support crypto operations even with the polyfill, the app will display a user-friendly error message with instructions.
