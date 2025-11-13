@@ -7,6 +7,7 @@
 
 import { store } from 'reefjs';
 import { generateRandomUsername } from './random.mjs';
+import { listenReefEvent } from './reef-helpers.mjs';
 
 const SignalName = 'userState';
 
@@ -43,19 +44,46 @@ export const userState = store(
     // Action: Initialize from localStorage or generate random
     initUsername(state) {
       let savedUsername = localStorage.getItem('chatUsername');
-      
+
       // If no saved username, generate a random one (but don't save yet)
       if (!savedUsername) {
         savedUsername = generateRandomUsername();
         // Don't save here - wait until user enters a room
       }
-      
+
       state.username = savedUsername;
       window.currentUsername = savedUsername;
     },
   },
   SignalName,
 );
+
+// Update user info card
+function updateUserInfoCard(username) {
+  const userAvatar = document.querySelector('#user-avatar');
+  const userNameDisplay = document.querySelector('#user-name-display');
+
+  if (userAvatar && username) {
+    userAvatar.setAttribute('name', username);
+  }
+
+  if (userNameDisplay && username) {
+    userNameDisplay.textContent = username;
+  }
+}
+window.updateUserInfoCard = updateUserInfoCard;
+
+listenReefEvent(SignalName, () => {
+  const newUsername = userState.value.username;
+
+  // Update room selector name input if it exists
+  const selectorNameInput = document.getElementById('selector-name-input');
+  if (selectorNameInput) {
+    selectorNameInput.value = newUsername;
+  }
+
+  updateUserInfoCard(newUsername);
+});
 
 // Initialize user state on module load
 export function initUserState() {

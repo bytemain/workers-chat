@@ -1301,7 +1301,6 @@ let replyIndicatorClose = replyIndicator.querySelector(
 // Is the chatlog scrolled to the bottom?
 let isAtBottom = true;
 
-let username;
 let roomname;
 let currentChannel = 'general'; // Current channel for sending messages (DEPRECATED: use chatState)
 let currentThreadId = null; // Current thread ID (DEPRECATED: use chatState)
@@ -1852,7 +1851,7 @@ class UserMessageAPI {
     try {
       const messageId = window.messageList.sendMessage(
         messageToSend, // Use encrypted message if encryption is enabled
-        username,
+        userState.value.username,
         currentChannel,
         {
           encrypted: isRoomEncrypted,
@@ -2259,7 +2258,7 @@ function createMessageElement(
   }
 
   // Add Delete button if user owns this message
-  if (data.name === username) {
+  if (data.name === userState.value.username) {
     // Add Edit button (only for non-file messages)
     if (!data.message.startsWith('FILE:')) {
       const editBtn = document.createElement('button');
@@ -2456,7 +2455,10 @@ function showMobileContextMenu(
   }
 
   // Edit button (if user owns the message)
-  if (data.name === username && !data.message.startsWith('FILE:')) {
+  if (
+    data.name === userState.value.username &&
+    !data.message.startsWith('FILE:')
+  ) {
     menuItems.push({
       icon: 'ri-edit-line',
       text: 'Edit',
@@ -2468,7 +2470,7 @@ function showMobileContextMenu(
   }
 
   // Delete button (if user owns the message)
-  if (data.name === username) {
+  if (data.name === userState.value.username) {
     menuItems.push({
       icon: 'ri-delete-bin-line',
       text: 'Delete',
@@ -2572,7 +2574,7 @@ async function loadChannelMessages(channel) {
   // Check if this is the first time showing messages
   const isFirstLoad = !document.querySelector('.system-message');
   if (isFirstLoad) {
-    addSystemMessage('* Hello ' + username + '!');
+    addSystemMessage('* Hello ' + userState.value.username + '!');
     addSystemMessage(
       '* This is a app built with Cloudflare Workers Durable Objects. The source code ' +
         'can be found at: https://github.com/bytemain/workers-chat',
@@ -2602,11 +2604,12 @@ async function switchToChannel(channel) {
 
     // Check if this matches current user (case-insensitive)
     if (
-      username &&
-      dmUsernameFromChannel.toLowerCase() === username.toLowerCase()
+      userState.value.username &&
+      dmUsernameFromChannel.toLowerCase() ===
+        userState.value.username.toLowerCase()
     ) {
       // Normalize to use actual username case
-      normalizedChannel = `dm-${username}`;
+      normalizedChannel = `dm-${userState.value.username}`;
     }
     // Note: For DMs with other users, we'd need to look up their actual username
     // For now, this handles the self-DM case which is the reported bug
@@ -2638,7 +2641,9 @@ async function switchToChannel(channel) {
     if (isDM) {
       const dmUsername = normalizedChannel.replace('dm-', '');
       channelNameDisplay.textContent =
-        dmUsername === username ? `${dmUsername} (you)` : dmUsername;
+        dmUsername === userState.value.username
+          ? `${dmUsername} (you)`
+          : dmUsername;
     } else {
       channelNameDisplay.textContent = normalizedChannel;
     }
@@ -2706,7 +2711,9 @@ async function switchToChannel(channel) {
       if (isDM) {
         const dmUsername = normalizedChannel.substring(3);
         chatTitle.textContent =
-          dmUsername === username ? `${username} (you)` : dmUsername;
+          dmUsername === userState.value.username
+            ? `${userState.value.username} (you)`
+            : dmUsername;
       } else {
         chatTitle.textContent = '#' + normalizedChannel;
       }
@@ -2911,14 +2918,14 @@ function initChannelPanel() {
 // Render DM list
 function renderDMList() {
   const dmList = document.getElementById('dm-list');
-  if (!dmList || !username) return;
+  if (!dmList || !userState.value.username) return;
 
   dmList.innerHTML = '';
 
   // Add self DM
   const selfDM = document.createElement('div');
   selfDM.className = 'channel-item dm-item';
-  selfDM.dataset.user = username;
+  selfDM.dataset.user = userState.value.username;
 
   // Avatar icon
   const icon = document.createElement('span');
@@ -2928,14 +2935,14 @@ function renderDMList() {
   // User name
   const nameSpan = document.createElement('span');
   nameSpan.className = 'channel-name';
-  nameSpan.textContent = `${username} (you)`;
+  nameSpan.textContent = `${userState.value.username} (you)`;
 
   selfDM.appendChild(icon);
   selfDM.appendChild(nameSpan);
 
   selfDM.onclick = () => {
     // Switch to self DM channel
-    const selfChannelName = `dm-${username}`;
+    const selfChannelName = `dm-${userState.value.username}`;
     switchToChannel(selfChannelName);
   };
 
@@ -3024,11 +3031,6 @@ export async function main() {
 
   // Initialize user state (replaces direct localStorage access)
   initUserState();
-  // Set global username for backward compatibility
-  username = userState.value.username;
-
-  // Update user info card in left sidebar
-  updateUserInfoCard();
 
   // Go directly to room chooser
   startRoomChooser();
@@ -3039,7 +3041,7 @@ function startRoomChooser() {
   if (roomFromURL) {
     roomname = roomFromURL;
     // Save username to localStorage when directly entering via URL
-    userState.setUsername(username);
+    userState.setUsername(userState.value.username);
     startChat();
     return;
   }
@@ -3070,15 +3072,13 @@ function startRoomChooser() {
   const selectorPrivateBtn = document.getElementById('selector-private-btn');
 
   if (selectorNameInput) {
-    selectorNameInput.value = username;
+    selectorNameInput.value = userState.value.username;
     selectorNameInput.addEventListener('input', (event) => {
       if (event.currentTarget.value.length > 32) {
         event.currentTarget.value = event.currentTarget.value.slice(0, 32);
       }
       const newUsername = event.currentTarget.value.trim();
       userState.setUsername(newUsername);
-      username = newUsername; // Update global for backward compatibility
-      updateUserInfoCard();
     });
   }
 
@@ -3100,14 +3100,14 @@ function startRoomChooser() {
 
   if (selectorJoinBtn) {
     selectorJoinBtn.addEventListener('click', () => {
-      const newUsername = selectorNameInput?.value.trim() || username;
+      const newUsername =
+        selectorNameInput?.value.trim() || userState.value.username;
       if (newUsername.length === 0) {
         selectorNameInput?.focus();
         alert('Please enter your name');
         return;
       }
       userState.setUsername(newUsername);
-      username = newUsername; // Update global for backward compatibility
 
       roomname = selectorRoomInput?.value.trim() || '';
       if (roomname.length > 0) {
@@ -3118,14 +3118,14 @@ function startRoomChooser() {
 
   if (selectorPrivateBtn) {
     selectorPrivateBtn.addEventListener('click', async () => {
-      const newUsername = selectorNameInput?.value.trim() || username;
+      const newUsername =
+        selectorNameInput?.value.trim() || userState.value.username;
       if (newUsername.length === 0) {
         selectorNameInput?.focus();
         alert('Please enter your name');
         return;
       }
       userState.setUsername(newUsername);
-      username = newUsername; // Update global for backward compatibility
 
       selectorPrivateBtn.disabled = true;
       selectorPrivateBtn.textContent = 'Creating...';
@@ -4194,7 +4194,7 @@ function join() {
     currentWebSocket = ws;
 
     // Send user info message.
-    ws.send(JSON.stringify({ name: username }));
+    ws.send(JSON.stringify({ name: userState.value.username }));
   });
 
   ws.addEventListener('message', async (event) => {
@@ -4248,11 +4248,12 @@ function join() {
 
         let userName = document.createElement('span');
         userName.innerText =
-          data.joined + (data.joined === username ? ' (me)' : '');
+          data.joined +
+          (data.joined === userState.value.username ? ' (me)' : '');
         userItem.appendChild(userName);
 
         // Add logout button only for current user
-        if (data.joined === username) {
+        if (data.joined === userState.value.username) {
           let logoutBtn = document.createElement('button');
           logoutBtn.className = 'logout-btn';
           logoutBtn.innerText = '×';
@@ -4261,7 +4262,6 @@ function join() {
             e.stopPropagation();
             // Clear saved username using userState
             userState.clearUsername();
-            username = null; // Update global for backward compatibility
             // Close WebSocket
             if (currentWebSocket) {
               currentWebSocket.close();
@@ -4314,7 +4314,6 @@ function join() {
     } else if (event.code === 1009) {
       // Name too long or invalid - clear saved username using userState
       userState.clearUsername();
-      username = null; // Update global for backward compatibility
       addSystemMessage('* Connection closed: ' + event.reason);
     } else if (event.code !== 1000) {
       // Unexpected closure, try to reconnect
@@ -4782,20 +4781,6 @@ function showRoomContextMenu(event, targetRoomName) {
   }, 10);
 }
 
-// Update user info card
-function updateUserInfoCard() {
-  const userAvatar = document.querySelector('#user-avatar');
-  const userNameDisplay = document.querySelector('#user-name-display');
-
-  if (userAvatar && username) {
-    userAvatar.setAttribute('name', username);
-  }
-
-  if (userNameDisplay && username) {
-    userNameDisplay.textContent = username;
-  }
-}
-
 // Initialize user action buttons
 function initUserActionButtons() {
   const settingsBtn = document.querySelector('#user-settings-btn');
@@ -4838,11 +4823,11 @@ function initUserProfileModal() {
     userInfoCard.addEventListener('click', (e) => {
       // Don't open if clicking on action buttons (though they're hidden now)
       if (e.target.closest('.user-action-btn')) return;
-      
+
       if (modal && usernameInput && previewAvatar) {
         modal.classList.add('visible');
-        usernameInput.value = username || '';
-        previewAvatar.setAttribute('name', username || 'User');
+        usernameInput.value = userState.value.username || '';
+        previewAvatar.setAttribute('name', userState.value.username || 'User');
       }
     });
   }
@@ -4895,8 +4880,7 @@ function initUserProfileModal() {
       const newUsername = usernameInput.value.trim();
       if (newUsername && newUsername.length > 0 && newUsername.length <= 32) {
         userState.setUsername(newUsername);
-        username = newUsername; // Update global for backward compatibility
-        updateUserInfoCard();
+        userState.value.username = newUsername; // Update global for backward compatibility
         modal.classList.remove('visible');
       } else {
         alert('Please enter a valid username (1-32 characters)');
@@ -4933,7 +4917,6 @@ window.navigateToRoom = navigateToRoom;
 window.incrementUnreadCount = incrementUnreadCount;
 window.clearUnreadCount = clearUnreadCount;
 window.updateRoomListUI = updateRoomListUI;
-window.updateUserInfoCard = updateUserInfoCard;
 window.initializeLeftSidebar = initializeLeftSidebar;
 window.hideLeftSidebar = hideLeftSidebar;
 
@@ -5009,7 +4992,9 @@ function showMobileChatPage() {
     if (isDM) {
       const dmUsername = currentChannel.substring(3);
       chatTitle.textContent =
-        dmUsername === username ? `${username} (you)` : dmUsername;
+        dmUsername === userState.value.username
+          ? `${userState.value.username} (you)`
+          : dmUsername;
     } else {
       chatTitle.textContent = '#' + currentChannel;
     }
@@ -5097,7 +5082,7 @@ function updateMobileChannelList() {
   }
 
   // Render DMs (self DM)
-  if (username) {
+  if (userState.value.username) {
     const selfDM = document.createElement('div');
     selfDM.className = 'mobile-channel-item';
 
@@ -5106,7 +5091,7 @@ function updateMobileChannelList() {
         <i class="ri-user-3-line"></i>
       </div>
       <div class="mobile-channel-item-content">
-        <div class="mobile-channel-item-name">${username} (you)</div>
+        <div class="mobile-channel-item-name">${userState.value.username} (you)</div>
         <div class="mobile-channel-item-count">Personal space</div>
       </div>
       <div class="mobile-channel-item-arrow">
@@ -5115,7 +5100,7 @@ function updateMobileChannelList() {
     `;
 
     selfDM.onclick = () => {
-      const selfChannelName = `dm-${username}`;
+      const selfChannelName = `dm-${userState.value.username}`;
       switchToChannel(selfChannelName);
       showMobileChatPage();
     };
