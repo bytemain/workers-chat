@@ -4825,12 +4825,86 @@ function initUserActionButtons() {
   }
 }
 
+// Initialize user profile modal
+function initUserProfileModal() {
+  const userInfoCard = document.querySelector('#user-info-card');
+  const modal = document.querySelector('#user-profile-modal');
+  const closeBtn = document.querySelector('#close-user-profile');
+  const usernameInput = document.querySelector('#username-input');
+  const previewAvatar = document.querySelector('#preview-avatar');
+  const saveBtn = document.querySelector('#save-username-btn');
+
+  // Open modal when clicking on user info card
+  if (userInfoCard) {
+    userInfoCard.addEventListener('click', (e) => {
+      // Don't open if clicking on action buttons (though they're hidden now)
+      if (e.target.closest('.user-action-btn')) return;
+      
+      if (modal && usernameInput && previewAvatar) {
+        modal.classList.add('visible');
+        usernameInput.value = username || '';
+        previewAvatar.setAttribute('name', username || 'User');
+      }
+    });
+  }
+
+  // Close modal
+  if (closeBtn && modal) {
+    closeBtn.addEventListener('click', () => {
+      modal.classList.remove('visible');
+    });
+  }
+
+  // Close modal when clicking outside
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.classList.remove('visible');
+      }
+    });
+  }
+
+  // Update preview avatar as user types
+  if (usernameInput && previewAvatar) {
+    usernameInput.addEventListener('input', (e) => {
+      const newName = e.target.value.trim() || 'User';
+      previewAvatar.setAttribute('name', newName);
+    });
+  }
+
+  // Save username
+  if (saveBtn && usernameInput && modal) {
+    saveBtn.addEventListener('click', () => {
+      const newUsername = usernameInput.value.trim();
+      if (newUsername && newUsername.length > 0 && newUsername.length <= 32) {
+        username = newUsername;
+        window.currentUsername = newUsername;
+        localStorage.setItem('chatUsername', newUsername);
+        updateUserInfoCard();
+        modal.classList.remove('visible');
+      } else {
+        alert('Please enter a valid username (1-32 characters)');
+      }
+    });
+  }
+
+  // Allow Enter key to save
+  if (usernameInput) {
+    usernameInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        saveBtn?.click();
+      }
+    });
+  }
+}
+
 // Initialize room dropdown and user info when chat starts
 function initializeLeftSidebar() {
   initRoomDropdown();
   updateRoomListUI();
   updateUserInfoCard();
   initUserActionButtons();
+  initUserProfileModal();
 }
 
 // Hide left sidebar when showing room form (no longer needed, but keep for compatibility)
