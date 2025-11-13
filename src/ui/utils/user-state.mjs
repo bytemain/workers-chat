@@ -1,0 +1,97 @@
+/**
+ * User State Management
+ *
+ * Centralized Reef.js store for user information (username)
+ * Automatically syncs with localStorage for persistence
+ */
+
+import { store } from 'reefjs';
+import { generateRandomUsername } from './random.mjs';
+import { listenReefEvent } from './reef-helpers.mjs';
+
+const SignalName = 'userState';
+
+/**
+ * User state
+ * This replaces global variable: username, window.currentUsername
+ */
+export const userState = store(
+  {
+    // Current username
+    username: null,
+  },
+  {
+    // Action: Set username
+    setUsername(state, newUsername) {
+      if (newUsername && newUsername.length > 0 && newUsername.length <= 32) {
+        state.username = newUsername;
+        // Sync to localStorage
+        localStorage.setItem('chatUsername', newUsername);
+        // Update global for backward compatibility
+        window.currentUsername = newUsername;
+        return true;
+      }
+      return false;
+    },
+
+    // Action: Clear username (logout)
+    clearUsername(state) {
+      state.username = null;
+      localStorage.removeItem('chatUsername');
+      window.currentUsername = null;
+    },
+  },
+  SignalName,
+);
+
+// Update user info card
+function updateUserInfoCard(username) {
+  const userAvatar = document.querySelector('#user-avatar');
+  const userNameDisplay = document.querySelector('#user-name-display');
+
+  if (userAvatar && username) {
+    userAvatar.setAttribute('name', username);
+  }
+
+  if (userNameDisplay && username) {
+    userNameDisplay.textContent = username;
+  }
+}
+window.updateUserInfoCard = updateUserInfoCard;
+
+listenReefEvent(SignalName, () => {
+  const newUsername = userState.value.username;
+
+  // Update room selector name input if it exists
+  const selectorNameInput = document.getElementById('selector-name-input');
+  if (selectorNameInput) {
+    selectorNameInput.value = newUsername;
+  }
+
+  updateUserInfoCard(newUsername);
+});
+
+// Initialize user state on module load
+export function initUserState() {
+  let savedUsername = localStorage.getItem('chatUsername');
+
+  if (!savedUsername) {
+    savedUsername = generateRandomUsername();
+  }
+
+  userState.setUsername(savedUsername);
+  console.log('✅ User state initialized:', userState.value.username);
+}
+
+// Export helpers for backward compatibility
+export function getUsername() {
+  return userState.value.username;
+}
+
+export function setUsername(newUsername) {
+  return userState.setUsername(newUsername);
+}
+
+export function clearUsername() {
+  userState.clearUsername();
+}

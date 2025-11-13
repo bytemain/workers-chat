@@ -19,6 +19,7 @@ const SignalName = 'messagesSignal';
 /**
  * Initialize message list component
  * @param {Object} tinybaseStore - TinyBase store instance
+ * @param {Object} tinybaseIndexes - TinyBase indexes instance for O(log n) filtering
  * @param {string} containerSelector - CSS selector for container element
  * @param {Function} getCurrentChannel - Function to get current channel
  * @param {Function} createMessageElement - Function to create message DOM element
@@ -31,6 +32,7 @@ const SignalName = 'messagesSignal';
  */
 export function initMessageList(
   tinybaseStore,
+  tinybaseIndexes,
   containerSelector,
   getCurrentChannel,
   createMessageElement,
@@ -58,25 +60,34 @@ export function initMessageList(
    */
   async function syncTinybaseToSignal() {
     try {
-      const messagesTable = tinybaseStore.getTable('messages');
       const currentChannel = getCurrentChannel();
 
-      // 转换为数组格式，按时间戳排序（原始加密数据）
-      const rawMessagesList = Object.entries(messagesTable || {})
-        .map(([id, data]) => ({
-          messageId: id,
-          name: data.username || 'Anonymous',
-          message: data.text || '', // 可能是加密的
-          timestamp: data.timestamp || Date.now(),
-          channel: data.channel || 'general',
-          replyToId: data.replyToId || null,
-          editedAt: data.editedAt || null,
-          encrypted: CryptoUtils.isEncrypted(data.text || ''),
-        }))
-        .filter(
-          (msg) => msg.channel.toLowerCase() === currentChannel.toLowerCase(),
-        ) // 只保留当前 channel 的消息
-        .sort((a, b) => a.timestamp - b.timestamp);
+      // ✅ Use index for O(log n) query - much faster than O(n) filter!
+      // Get message IDs for current channel from pre-built index
+      const messageIds = tinybaseIndexes.getSliceRowIds(
+        'messagesByChannel',
+        currentChannel,
+      );
+
+      console.log(
+        `📇 Index query: found ${messageIds.length} messages in #${currentChannel}`,
+      );
+
+      // Convert to message objects (原始加密数据)
+      const rawMessagesList = messageIds.map((messageId) => {
+        const row = tinybaseStore.getRow('messages', messageId);
+        return {
+          messageId: messageId,
+          name: row.username || 'Anonymous',
+          message: row.text || '',
+          timestamp: row.timestamp || Date.now(),
+          channel: row.channel || 'general',
+          replyToId: row.replyToId || null,
+          editedAt: row.editedAt || null,
+          encrypted: CryptoUtils.isEncrypted(row.text || ''),
+        };
+      });
+      // Note: Already sorted by timestamp via index definition!
 
       // 解密所有消息（并行处理）
       const decryptionPromises = rawMessagesList.map(async (msg) => {

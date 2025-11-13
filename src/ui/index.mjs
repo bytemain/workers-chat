@@ -24,11 +24,13 @@ import {
 } from './pinned-messages.mjs';
 import { tryDecryptMessage } from './utils/message-crypto.mjs';
 import { chatState, initChatState } from './utils/chat-state.mjs';
+import { userState, initUserState } from './utils/user-state.mjs';
 import { createTinybaseStorage } from './tinybase/index.mjs';
 import { initMessageList } from './components/message-list.mjs';
 import { initChannelList } from './components/channel-list.mjs';
 import { listenReefEvent } from './utils/reef-helpers.mjs';
 import { createReadStatusStore } from './tinybase/read-status.mjs';
+import { createQueries } from 'tinybase';
 
 // Check Crypto API compatibility early (async - may load polyfill)
 let cryptoSupported = false;
@@ -1300,7 +1302,6 @@ let replyIndicatorClose = replyIndicator.querySelector(
 // Is the chatlog scrolled to the bottom?
 let isAtBottom = true;
 
-let username;
 let roomname;
 let currentChannel = 'general'; // Current channel for sending messages (DEPRECATED: use chatState)
 let currentThreadId = null; // Current thread ID (DEPRECATED: use chatState)
@@ -1851,7 +1852,7 @@ class UserMessageAPI {
     try {
       const messageId = window.messageList.sendMessage(
         messageToSend, // Use encrypted message if encryption is enabled
-        username,
+        userState.value.username,
         currentChannel,
         {
           encrypted: isRoomEncrypted,
@@ -2025,28 +2026,50 @@ function countTotalReplies(messageId) {
 
 async function loadThreadReplies(messageId) {
   try {
-    // All messages are already in messagesCache (synced from TinyBase)
-    // Just need to find all replies to this message (including nested)
-    const allReplies = [];
-    const visited = new Set();
+    // ✅ Use index for efficient thread reply lookup - O(log n)
+    // getSliceRowIds returns all messages where replyToId = messageId
+    const replyIds = window.indexes
+      ? window.indexes.getSliceRowIds('repliesByParent', messageId)
+      : [];
 
-    // Recursive function to collect all replies
-    function collectReplies(parentId) {
-      if (visited.has(parentId)) return; // Prevent infinite loops
+    console.log(
+      `📇 Index query: found ${replyIds.length} direct replies to ${messageId}`,
+    );
+
+    // Get all reply messages (already sorted by timestamp via index)
+    const allReplies = replyIds
+      .map((replyId) => messagesCache.get(replyId))
+      .filter((msg) => msg); // Filter out undefined entries
+
+    // Collect nested replies recursively (for multi-level threads)
+    const visited = new Set([messageId]);
+    function collectNestedReplies(parentId) {
+      if (visited.has(parentId)) return []; // Prevent infinite loops
       visited.add(parentId);
 
-      // Find direct replies to this parent
-      for (const [msgId, msg] of messagesCache.entries()) {
-        if (msg.replyTo && msg.replyTo.messageId === parentId) {
-          allReplies.push(msg);
-          // Recursively collect replies to this reply
-          collectReplies(msgId);
+      const nestedIds = window.indexes
+        ? window.indexes.getSliceRowIds('repliesByParent', parentId)
+        : [];
+
+      const nested = [];
+      nestedIds.forEach((nestedId) => {
+        const msg = messagesCache.get(nestedId);
+        if (msg && !visited.has(nestedId)) {
+          nested.push(msg);
+          nested.push(...collectNestedReplies(nestedId)); // Recursively collect deeper replies
         }
-      }
+      });
+      return nested;
     }
 
-    // Start collecting from the root message
-    collectReplies(messageId);
+    // Add nested replies
+    allReplies.forEach((reply) => {
+      const nestedReplies = collectNestedReplies(reply.messageId);
+      allReplies.push(...nestedReplies);
+    });
+
+    // Sort by timestamp (in case of nested replies)
+    allReplies.sort((a, b) => a.timestamp - b.timestamp);
 
     // Update root message with total reply count
     const rootMessage = messagesCache.get(messageId);
@@ -2258,7 +2281,7 @@ function createMessageElement(
   }
 
   // Add Delete button if user owns this message
-  if (data.name === username) {
+  if (data.name === userState.value.username) {
     // Add Edit button (only for non-file messages)
     if (!data.message.startsWith('FILE:')) {
       const editBtn = document.createElement('button');
@@ -2455,7 +2478,10 @@ function showMobileContextMenu(
   }
 
   // Edit button (if user owns the message)
-  if (data.name === username && !data.message.startsWith('FILE:')) {
+  if (
+    data.name === userState.value.username &&
+    !data.message.startsWith('FILE:')
+  ) {
     menuItems.push({
       icon: 'ri-edit-line',
       text: 'Edit',
@@ -2467,7 +2493,7 @@ function showMobileContextMenu(
   }
 
   // Delete button (if user owns the message)
-  if (data.name === username) {
+  if (data.name === userState.value.username) {
     menuItems.push({
       icon: 'ri-delete-bin-line',
       text: 'Delete',
@@ -2571,7 +2597,7 @@ async function loadChannelMessages(channel) {
   // Check if this is the first time showing messages
   const isFirstLoad = !document.querySelector('.system-message');
   if (isFirstLoad) {
-    addSystemMessage('* Hello ' + username + '!');
+    addSystemMessage('* Hello ' + userState.value.username + '!');
     addSystemMessage(
       '* This is a app built with Cloudflare Workers Durable Objects. The source code ' +
         'can be found at: https://github.com/bytemain/workers-chat',
@@ -2601,11 +2627,12 @@ async function switchToChannel(channel) {
 
     // Check if this matches current user (case-insensitive)
     if (
-      username &&
-      dmUsernameFromChannel.toLowerCase() === username.toLowerCase()
+      userState.value.username &&
+      dmUsernameFromChannel.toLowerCase() ===
+        userState.value.username.toLowerCase()
     ) {
       // Normalize to use actual username case
-      normalizedChannel = `dm-${username}`;
+      normalizedChannel = `dm-${userState.value.username}`;
     }
     // Note: For DMs with other users, we'd need to look up their actual username
     // For now, this handles the self-DM case which is the reported bug
@@ -2637,7 +2664,9 @@ async function switchToChannel(channel) {
     if (isDM) {
       const dmUsername = normalizedChannel.replace('dm-', '');
       channelNameDisplay.textContent =
-        dmUsername === username ? `${dmUsername} (you)` : dmUsername;
+        dmUsername === userState.value.username
+          ? `${dmUsername} (you)`
+          : dmUsername;
     } else {
       channelNameDisplay.textContent = normalizedChannel;
     }
@@ -2705,7 +2734,9 @@ async function switchToChannel(channel) {
       if (isDM) {
         const dmUsername = normalizedChannel.substring(3);
         chatTitle.textContent =
-          dmUsername === username ? `${username} (you)` : dmUsername;
+          dmUsername === userState.value.username
+            ? `${userState.value.username} (you)`
+            : dmUsername;
       } else {
         chatTitle.textContent = '#' + normalizedChannel;
       }
@@ -2833,8 +2864,15 @@ function initChannelAddButton() {
   }
 }
 
+// Track if channel info bar has been initialized (prevent duplicate listeners)
+let channelInfoBarInitialized = false;
+
 // Initialize channel info bar buttons
 function initChannelInfoBar() {
+  // Prevent duplicate event listeners
+  if (channelInfoBarInitialized) return;
+  channelInfoBarInitialized = true;
+
   // Toggle members panel
   const btnToggleMembers = document.getElementById('btn-toggle-members');
   if (btnToggleMembers) {
@@ -2855,14 +2893,362 @@ function initChannelInfoBar() {
     });
   }
 
-  // Search messages (TODO: implement later)
+  // Search messages
   const btnSearchMessages = document.getElementById('btn-search-messages');
   if (btnSearchMessages) {
     btnSearchMessages.addEventListener('click', () => {
-      console.log('Search messages - to be implemented');
-      // TODO: Implement search modal
+      showSearchModal();
     });
   }
+
+  // Search modal and functionality
+  function showSearchModal() {
+    // Check if modal already exists
+    const existingModal = document.querySelector('.search-modal-overlay');
+    if (existingModal) {
+      console.log('Search modal already open');
+      return;
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'search-modal-overlay';
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    `;
+
+    modal.innerHTML = `
+      <div style="
+        background: white;
+        border-radius: 8px;
+        padding: 24px;
+        max-width: 600px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      ">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="margin: 0;">🔍 Search Messages</h3>
+          <button id="search-modal-close" style="
+            border: none;
+            background: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+          ">×</button>
+        </div>
+
+        <input
+          type="text"
+          id="search-input"
+          placeholder="Search... (Try: from:username, in:channel, has:link)"
+          style="
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+            margin-bottom: 16px;
+          "
+        />
+
+        <div style="
+          background: #f5f5f5;
+          padding: 12px;
+          border-radius: 4px;
+          margin-bottom: 16px;
+          font-size: 12px;
+          color: #666;
+        ">
+          <strong>Search Filters:</strong><br>
+          <code>from:username</code> - Filter by user<br>
+          <code>in:channel</code> - Filter by channel<br>
+          <code>has:link</code> - Messages with links<br>
+          <code>has:file</code> - Messages with files<br>
+          <code>pinned:true</code> - Pinned messages only
+        </div>
+
+        <div id="search-results" style="
+          max-height: 400px;
+          overflow-y: auto;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          padding: 12px;
+        ">
+          <p style="color: #999; text-align: center;">Enter search query above</p>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const searchInput = modal.querySelector('#search-input');
+    const searchResults = modal.querySelector('#search-results');
+    const closeBtn = modal.querySelector('#search-modal-close');
+
+    // Close modal
+    closeBtn.onclick = () => document.body.removeChild(modal);
+    modal.onclick = (e) => {
+      if (e.target === modal) document.body.removeChild(modal);
+    };
+
+    // Search on input
+    let searchTimeout;
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        performSearch(e.target.value, searchResults);
+      }, 300);
+    });
+
+    searchInput.focus();
+  }
+
+  // Parse Discord-style search filters
+  function parseSearchQuery(query) {
+    const filters = {
+      text: '', // Plain text search
+      from: null, // from:username
+      in: null, // in:channel
+      has: null, // has:link | has:file
+      pinned: null, // pinned:true | pinned:false
+    };
+
+    // Extract filters
+    const fromMatch = query.match(/from:(\S+)/);
+    const inMatch = query.match(/in:(\S+)/);
+    const hasMatch = query.match(/has:(\S+)/);
+    const pinnedMatch = query.match(/pinned:(true|false)/);
+
+    if (fromMatch) filters.from = fromMatch[1];
+    if (inMatch) filters.in = inMatch[1];
+    if (hasMatch) filters.has = hasMatch[1];
+    if (pinnedMatch) filters.pinned = pinnedMatch[1] === 'true';
+
+    // Remove filters from text search
+    filters.text = query
+      .replace(/from:\S+/g, '')
+      .replace(/in:\S+/g, '')
+      .replace(/has:\S+/g, '')
+      .replace(/pinned:(true|false)/g, '')
+      .trim();
+
+    return filters;
+  }
+
+  // Perform search using TinyBase Queries
+  async function performSearch(query, resultsContainer) {
+    if (!query.trim()) {
+      resultsContainer.innerHTML =
+        '<p style="color: #999; text-align: center;">Enter search query above</p>';
+      return;
+    }
+
+    const filters = parseSearchQuery(query);
+    const queries = createQueries(window.store);
+
+    // Show loading state
+    resultsContainer.innerHTML =
+      '<p style="color: #999; text-align: center;">Searching...</p>';
+
+    // ✅ Use TinyBase Queries with dynamic WHERE conditions!
+    // Re-define the query with current search filters
+    queries.setQueryDefinition(
+      'searchMessages',
+      'messages',
+      ({ select, where }) => {
+        select('messageId');
+        select('username');
+        select('text');
+        select('timestamp');
+        select('channel');
+
+        // Dynamic WHERE filters using callback functions
+        if (filters.from) {
+          where('username', filters.from); // Exact match
+        }
+
+        if (filters.in) {
+          where('channel', filters.in); // Exact match
+        }
+
+        if (filters.has === 'link') {
+          where((getCell) => {
+            const text = getCell('text') || '';
+            return text.includes('http');
+          });
+        }
+
+        if (filters.has === 'file') {
+          where((getCell) => {
+            const text = getCell('text') || '';
+            return text.startsWith('FILE:');
+          });
+        }
+
+        // Note: Text search will be done after decryption for encrypted messages
+        // So we don't apply text filter here if room is encrypted
+        if (filters.text && !isRoomEncrypted) {
+          where((getCell) => {
+            const text = getCell('text') || '';
+            return text.toLowerCase().includes(filters.text.toLowerCase());
+          });
+        }
+      },
+    );
+
+    // Get results sorted by timestamp (newest first)
+    const resultIds = queries.getResultSortedRowIds(
+      'searchMessages',
+      'timestamp',
+      true, // descending
+      0, // offset
+      50, // limit to 50 results
+    );
+
+    // Render results
+    if (resultIds.length === 0) {
+      resultsContainer.innerHTML =
+        '<p style="color: #999; text-align: center;">No messages found</p>';
+      return;
+    }
+
+    // Decrypt messages if room is encrypted
+    const matchingMessages = await Promise.all(
+      resultIds.map(async (msgId) => {
+        const result = queries.getResultRow('searchMessages', msgId);
+
+        // Use shared decryption utility (with cache!)
+        const decryptedText = await tryDecryptMessage(
+          { message: result.text },
+          currentRoomKey,
+          isRoomEncrypted,
+        );
+
+        return {
+          messageId: msgId,
+          username: result.username,
+          text: decryptedText,
+          timestamp: result.timestamp,
+          channel: result.channel,
+        };
+      }),
+    );
+
+    // Filter by text after decryption (if encrypted room)
+    let finalResults = matchingMessages;
+    if (filters.text && isRoomEncrypted) {
+      finalResults = matchingMessages.filter((msg) =>
+        msg.text.toLowerCase().includes(filters.text.toLowerCase()),
+      );
+    }
+
+    if (finalResults.length === 0) {
+      resultsContainer.innerHTML =
+        '<p style="color: #999; text-align: center;">No messages found</p>';
+      return;
+    }
+
+    resultsContainer.innerHTML = finalResults
+      .map(
+        (msg) => `
+        <div style="
+          border-bottom: 1px solid #eee;
+          padding: 8px 0;
+          cursor: pointer;
+        " onclick="window.jumpToMessage('${msg.messageId}', '${msg.channel}')">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <strong style="color: #333;">${msg.username}</strong>
+            <span style="color: #999; font-size: 12px;">
+              ${formatTimestamp(msg.timestamp)} • #${msg.channel}
+            </span>
+          </div>
+          <div style="color: #666; font-size: 14px;">
+            ${highlightText(msg.text, filters.text)}
+          </div>
+        </div>
+      `,
+      )
+      .join('');
+  }
+
+  // Highlight search text in results
+  function highlightText(text, searchText) {
+    if (!searchText || text.startsWith('FILE:')) return escapeHtml(text);
+
+    const escaped = escapeHtml(text);
+    const regex = new RegExp(`(${escapeRegex(searchText)})`, 'gi');
+    return escaped.replace(
+      regex,
+      '<mark style="background: #fff59d;">$1</mark>',
+    );
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function escapeRegex(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // Jump to message in chat
+  window.jumpToMessage = async function (messageId, channel = null) {
+    // If channel is provided and different from current, switch to it first
+    if (channel && channel !== currentChannel) {
+      console.log(`Switching to channel #${channel} to show message`);
+      await window.switchToChannel(channel);
+
+      // Wait for messages to render (check up to 10 times)
+      let attempts = 0;
+      while (attempts < 10) {
+        const msgElement = chatlog.querySelector(
+          `[data-message-id="${messageId}"]`,
+        );
+        if (msgElement) break;
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        attempts++;
+      }
+    }
+
+    // Find the message element
+    const msgElement = chatlog.querySelector(
+      `[data-message-id="${messageId}"]`,
+    );
+
+    if (msgElement) {
+      // Scroll to message
+      msgElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Highlight message
+      msgElement.style.background = '#fff59d';
+      msgElement.style.transition = 'background 0.3s ease';
+
+      setTimeout(() => {
+        msgElement.style.background = '';
+      }, 2000);
+
+      // Close search modal
+      const modal = document.querySelector('.search-modal-overlay');
+      if (modal) document.body.removeChild(modal);
+    } else {
+      console.warn(`Message ${messageId} not found in current view`);
+      alert('Message not found in current view');
+    }
+  };
 
   // Room settings - placeholder for future features
   const btnRoomSettings = document.getElementById('btn-room-settings');
@@ -2910,14 +3296,14 @@ function initChannelPanel() {
 // Render DM list
 function renderDMList() {
   const dmList = document.getElementById('dm-list');
-  if (!dmList || !username) return;
+  if (!dmList || !userState.value.username) return;
 
   dmList.innerHTML = '';
 
   // Add self DM
   const selfDM = document.createElement('div');
   selfDM.className = 'channel-item dm-item';
-  selfDM.dataset.user = username;
+  selfDM.dataset.user = userState.value.username;
 
   // Avatar icon
   const icon = document.createElement('span');
@@ -2927,14 +3313,14 @@ function renderDMList() {
   // User name
   const nameSpan = document.createElement('span');
   nameSpan.className = 'channel-name';
-  nameSpan.textContent = `${username} (you)`;
+  nameSpan.textContent = `${userState.value.username} (you)`;
 
   selfDM.appendChild(icon);
   selfDM.appendChild(nameSpan);
 
   selfDM.onclick = () => {
     // Switch to self DM channel
-    const selfChannelName = `dm-${username}`;
+    const selfChannelName = `dm-${userState.value.username}`;
     switchToChannel(selfChannelName);
   };
 
@@ -3021,21 +3407,8 @@ export async function main() {
     );
   }
 
-  // Check if username is saved in localStorage
-  let savedUsername = localStorage.getItem('chatUsername');
-
-  // If no saved username, generate a random one (but don't save yet)
-  if (!savedUsername) {
-    savedUsername = generateRandomUsername();
-    // Don't save here - wait until user enters a room
-  }
-
-  // Set username
-  username = savedUsername;
-  window.currentUsername = savedUsername; // Update global for pinned-messages
-
-  // Update user info card in left sidebar
-  updateUserInfoCard();
+  // Initialize user state (replaces direct localStorage access)
+  initUserState();
 
   // Go directly to room chooser
   startRoomChooser();
@@ -3046,7 +3419,7 @@ function startRoomChooser() {
   if (roomFromURL) {
     roomname = roomFromURL;
     // Save username to localStorage when directly entering via URL
-    localStorage.setItem('chatUsername', username);
+    userState.setUsername(userState.value.username);
     startChat();
     return;
   }
@@ -3077,13 +3450,13 @@ function startRoomChooser() {
   const selectorPrivateBtn = document.getElementById('selector-private-btn');
 
   if (selectorNameInput) {
-    selectorNameInput.value = username;
+    selectorNameInput.value = userState.value.username;
     selectorNameInput.addEventListener('input', (event) => {
       if (event.currentTarget.value.length > 32) {
         event.currentTarget.value = event.currentTarget.value.slice(0, 32);
       }
-      username = event.currentTarget.value.trim();
-      updateUserInfoCard();
+      const newUsername = event.currentTarget.value.trim();
+      userState.setUsername(newUsername);
     });
   }
 
@@ -3105,13 +3478,14 @@ function startRoomChooser() {
 
   if (selectorJoinBtn) {
     selectorJoinBtn.addEventListener('click', () => {
-      username = selectorNameInput?.value.trim() || username;
-      if (username.length === 0) {
+      const newUsername =
+        selectorNameInput?.value.trim() || userState.value.username;
+      if (newUsername.length === 0) {
         selectorNameInput?.focus();
         alert('Please enter your name');
         return;
       }
-      localStorage.setItem('chatUsername', username);
+      userState.setUsername(newUsername);
 
       roomname = selectorRoomInput?.value.trim() || '';
       if (roomname.length > 0) {
@@ -3122,13 +3496,14 @@ function startRoomChooser() {
 
   if (selectorPrivateBtn) {
     selectorPrivateBtn.addEventListener('click', async () => {
-      username = selectorNameInput?.value.trim() || username;
-      if (username.length === 0) {
+      const newUsername =
+        selectorNameInput?.value.trim() || userState.value.username;
+      if (newUsername.length === 0) {
         selectorNameInput?.focus();
         alert('Please enter your name');
         return;
       }
-      localStorage.setItem('chatUsername', username);
+      userState.setUsername(newUsername);
 
       selectorPrivateBtn.disabled = true;
       selectorPrivateBtn.textContent = 'Creating...';
@@ -3351,9 +3726,12 @@ async function startChat() {
     addSystemMessage('❌: Failed to setup encryption: ' + error.message);
   }
 
-  // Initialize TinyBase store
-  window.store = await createTinybaseStorage(roomname);
-  console.log('✅ TinyBase store initialized');
+  // Initialize TinyBase store and indexes
+  const { store, indexes, queries } = await createTinybaseStorage(roomname);
+  window.store = store;
+  window.indexes = indexes;
+  window.queries = queries;
+  console.log('✅ TinyBase store, indexes, and queries initialized');
 
   // Initialize pin listener after TinyBase is ready
   initPinListener();
@@ -3373,6 +3751,7 @@ async function startChat() {
   try {
     messageListComponent = initMessageList(
       window.store,
+      window.indexes, // Pass indexes for efficient querying
       '#chatlog',
       () => currentChannel,
       createMessageElement, // 传入 createMessageElement 函数
@@ -4197,7 +4576,7 @@ function join() {
     currentWebSocket = ws;
 
     // Send user info message.
-    ws.send(JSON.stringify({ name: username }));
+    ws.send(JSON.stringify({ name: userState.value.username }));
   });
 
   ws.addEventListener('message', async (event) => {
@@ -4251,19 +4630,20 @@ function join() {
 
         let userName = document.createElement('span');
         userName.innerText =
-          data.joined + (data.joined === username ? ' (me)' : '');
+          data.joined +
+          (data.joined === userState.value.username ? ' (me)' : '');
         userItem.appendChild(userName);
 
         // Add logout button only for current user
-        if (data.joined === username) {
+        if (data.joined === userState.value.username) {
           let logoutBtn = document.createElement('button');
           logoutBtn.className = 'logout-btn';
           logoutBtn.innerText = '×';
           logoutBtn.title = 'Logout and change username';
           logoutBtn.onclick = (e) => {
             e.stopPropagation();
-            // Clear saved username
-            localStorage.removeItem('chatUsername');
+            // Clear saved username using userState
+            userState.clearUsername();
             // Close WebSocket
             if (currentWebSocket) {
               currentWebSocket.close();
@@ -4314,8 +4694,8 @@ function join() {
       // Don't reconnect since the new connection is already active
       addSystemMessage('* Connection replaced by a new session');
     } else if (event.code === 1009) {
-      // Name too long or invalid - clear saved username
-      localStorage.removeItem('chatUsername');
+      // Name too long or invalid - clear saved username using userState
+      userState.clearUsername();
       addSystemMessage('* Connection closed: ' + event.reason);
     } else if (event.code !== 1000) {
       // Unexpected closure, try to reconnect
@@ -4783,20 +5163,6 @@ function showRoomContextMenu(event, targetRoomName) {
   }, 10);
 }
 
-// Update user info card
-function updateUserInfoCard() {
-  const userAvatar = document.querySelector('#user-avatar');
-  const userNameDisplay = document.querySelector('#user-name-display');
-
-  if (userAvatar && username) {
-    userAvatar.setAttribute('name', username);
-  }
-
-  if (userNameDisplay && username) {
-    userNameDisplay.textContent = username;
-  }
-}
-
 // Initialize user action buttons
 function initUserActionButtons() {
   const settingsBtn = document.querySelector('#user-settings-btn');
@@ -4825,12 +5191,102 @@ function initUserActionButtons() {
   }
 }
 
+// Initialize user profile modal
+function initUserProfileModal() {
+  const userInfoCard = document.querySelector('#user-info-card');
+  const modal = document.querySelector('#user-profile-modal');
+  const closeBtn = document.querySelector('#close-user-profile');
+  const usernameInput = document.querySelector('#username-input');
+  const previewAvatar = document.querySelector('#preview-avatar');
+  const saveBtn = document.querySelector('#save-username-btn');
+
+  // Open modal when clicking on user info card
+  if (userInfoCard) {
+    userInfoCard.addEventListener('click', (e) => {
+      // Don't open if clicking on action buttons (though they're hidden now)
+      if (e.target.closest('.user-action-btn')) return;
+
+      if (modal && usernameInput && previewAvatar) {
+        modal.classList.add('visible');
+        usernameInput.value = userState.value.username || '';
+        previewAvatar.setAttribute('name', userState.value.username || 'User');
+      }
+    });
+  }
+
+  // Close modal
+  if (closeBtn && modal) {
+    closeBtn.addEventListener('click', () => {
+      modal.classList.remove('visible');
+    });
+  }
+
+  // Close modal when clicking outside
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.classList.remove('visible');
+      }
+    });
+  }
+
+  // Update preview avatar as user types
+  if (usernameInput && previewAvatar) {
+    usernameInput.addEventListener('input', (e) => {
+      const newName = e.target.value.trim() || 'User';
+      previewAvatar.setAttribute('name', newName);
+    });
+  }
+
+  // Random username button
+  const randomUsernameBtn = document.querySelector('#random-username-btn');
+  if (randomUsernameBtn && usernameInput && previewAvatar) {
+    randomUsernameBtn.addEventListener('click', () => {
+      const randomName = generateRandomUsername();
+      usernameInput.value = randomName;
+      previewAvatar.setAttribute('name', randomName);
+      // Add a small animation effect to the icon, not the button
+      const icon = randomUsernameBtn.querySelector('i');
+      if (icon) {
+        icon.style.transform = 'rotate(180deg)';
+        setTimeout(() => {
+          icon.style.transform = 'rotate(0deg)';
+        }, 300);
+      }
+    });
+  }
+
+  // Save username
+  if (saveBtn && usernameInput && modal) {
+    saveBtn.addEventListener('click', () => {
+      const newUsername = usernameInput.value.trim();
+      if (newUsername && newUsername.length > 0 && newUsername.length <= 32) {
+        userState.setUsername(newUsername);
+        userState.value.username = newUsername; // Update global for backward compatibility
+        modal.classList.remove('visible');
+      } else {
+        alert('Please enter a valid username (1-32 characters)');
+      }
+    });
+  }
+
+  // Allow Enter key to save
+  if (usernameInput) {
+    usernameInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        saveBtn?.click();
+      }
+    });
+  }
+}
+
 // Initialize room dropdown and user info when chat starts
 function initializeLeftSidebar() {
   initRoomDropdown();
   updateRoomListUI();
   updateUserInfoCard();
   initUserActionButtons();
+  initUserProfileModal();
 }
 
 // Hide left sidebar when showing room form (no longer needed, but keep for compatibility)
@@ -4843,7 +5299,6 @@ window.navigateToRoom = navigateToRoom;
 window.incrementUnreadCount = incrementUnreadCount;
 window.clearUnreadCount = clearUnreadCount;
 window.updateRoomListUI = updateRoomListUI;
-window.updateUserInfoCard = updateUserInfoCard;
 window.initializeLeftSidebar = initializeLeftSidebar;
 window.hideLeftSidebar = hideLeftSidebar;
 
@@ -4919,7 +5374,9 @@ function showMobileChatPage() {
     if (isDM) {
       const dmUsername = currentChannel.substring(3);
       chatTitle.textContent =
-        dmUsername === username ? `${username} (you)` : dmUsername;
+        dmUsername === userState.value.username
+          ? `${userState.value.username} (you)`
+          : dmUsername;
     } else {
       chatTitle.textContent = '#' + currentChannel;
     }
@@ -5007,7 +5464,7 @@ function updateMobileChannelList() {
   }
 
   // Render DMs (self DM)
-  if (username) {
+  if (userState.value.username) {
     const selfDM = document.createElement('div');
     selfDM.className = 'mobile-channel-item';
 
@@ -5016,7 +5473,7 @@ function updateMobileChannelList() {
         <i class="ri-user-3-line"></i>
       </div>
       <div class="mobile-channel-item-content">
-        <div class="mobile-channel-item-name">${username} (you)</div>
+        <div class="mobile-channel-item-name">${userState.value.username} (you)</div>
         <div class="mobile-channel-item-count">Personal space</div>
       </div>
       <div class="mobile-channel-item-arrow">
@@ -5025,7 +5482,7 @@ function updateMobileChannelList() {
     `;
 
     selfDM.onclick = () => {
-      const selfChannelName = `dm-${username}`;
+      const selfChannelName = `dm-${userState.value.username}`;
       switchToChannel(selfChannelName);
       showMobileChatPage();
     };
