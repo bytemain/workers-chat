@@ -3348,9 +3348,11 @@ async function startChat() {
     addSystemMessage('❌: Failed to setup encryption: ' + error.message);
   }
 
-  // Initialize TinyBase store
-  window.store = await createTinybaseStorage(roomname);
-  console.log('✅ TinyBase store initialized');
+  // Initialize TinyBase store and indexes
+  const { store, indexes } = await createTinybaseStorage(roomname);
+  window.store = store;
+  window.indexes = indexes; // Expose indexes for debugging
+  console.log('✅ TinyBase store and indexes initialized');
 
   // Initialize pin listener after TinyBase is ready
   initPinListener();
@@ -3370,6 +3372,7 @@ async function startChat() {
   try {
     messageListComponent = initMessageList(
       window.store,
+      window.indexes, // Pass indexes for efficient querying
       '#chatlog',
       () => currentChannel,
       createMessageElement, // 传入 createMessageElement 函数

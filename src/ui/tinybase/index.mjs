@@ -1,6 +1,7 @@
 import { createStore } from 'tinybase';
 import { createMergeableStore } from 'tinybase';
-import { createLocalPersister } from 'tinybase/persisters/persister-browser';
+import { createIndexes } from 'tinybase';
+import { createIndexedDbPersister } from 'tinybase/persisters/persister-indexed-db';
 import { createWsSynchronizer } from 'tinybase/synchronizers/synchronizer-ws-client';
 import { api } from '../api.mjs';
 import { run } from 'ruply';
@@ -10,8 +11,23 @@ export async function createTinybaseStorage(roomName) {
   const storeName = 'messages';
   const store = createMergeableStore();
   const syncUrl = api.getTinybaseSyncUrl(`${storeName}/${roomName}`);
+
+  // Create indexes for efficient querying
+  const indexes = createIndexes(store);
+
+  // Index 1: Messages by channel (for filtering)
+  // Index 2: Sort by timestamp within each channel (for chronological order)
+  indexes.setIndexDefinition(
+    'messagesByChannel', // indexId
+    'messages', // tableId to index
+    'channel', // cellId to slice by (group by channel)
+    'timestamp', // cellId to sort by (chronological order)
+  );
+
+  console.log('📇 Created TinyBase indexes: messagesByChannel');
+
   await run(
-    createLocalPersister(store, `local://tinybase/${storeName}/${roomName}`),
+    createIndexedDbPersister(store, `tinybase-${storeName}-${roomName}`),
     async (persister) => {
       await persister.startAutoLoad();
       await persister.startAutoSave();
@@ -28,5 +44,6 @@ export async function createTinybaseStorage(roomName) {
       });
     },
   );
-  return store;
+
+  return { store, indexes };
 }
