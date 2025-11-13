@@ -4,8 +4,8 @@
  */
 
 import { store, component } from 'reefjs';
-import { api } from '../api.mjs';
 import { syncUrlState } from '../utils/url-state-sync.mjs';
+import { loadPinnedMessages } from '../pinned-messages.mjs';
 
 const SignalName = 'channelInfoState';
 
@@ -614,15 +614,13 @@ function loadMembersData() {
 async function loadPinsData(roomName, channelName) {
   channelInfoState.setLoading(true);
   try {
-    const result = await api.getPinnedMessages(roomName, channelName);
-    channelInfoState.setPins(result.pins || []);
+    const pins = await loadPinnedMessages(roomName, channelName);
+    channelInfoState.setPins(pins);
   } catch (error) {
     console.error('Failed to load pins:', error);
     channelInfoState.setError('Failed to load pins');
   }
-}
-
-// Load threads data (placeholder)
+} // Load threads data (placeholder)
 async function loadThreadsData(roomName, channelName) {
   channelInfoState.setLoading(true);
   // TODO: Implement threads API

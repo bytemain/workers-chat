@@ -20,7 +20,7 @@ import {
   togglePinnedPanel,
   pinMessage,
   getPinnedCount,
-  handlePinUpdate,
+  initPinListener,
 } from './pinned-messages.mjs';
 import { tryDecryptMessage } from './utils/message-crypto.mjs';
 import { chatState, initChatState } from './utils/chat-state.mjs';
@@ -2309,12 +2309,21 @@ function createMessageElement(
     pinBtn.title = 'Pin this message';
     pinBtn.onclick = async (e) => {
       e.stopPropagation();
-      // Use the global username variable (current logged-in user)
-      pinMessage(roomname, currentChannel, data, username);
-      pinBtn.innerHTML = '<i class="ri-pushpin-fill"></i> Pinned';
-      setTimeout(() => {
-        pinBtn.innerHTML = '<i class="ri-pushpin-line"></i> Pin';
-      }, 2000);
+      try {
+        // Pin only needs messageId, data is looked up from messages table
+        await pinMessage(data.messageId);
+
+        pinBtn.innerHTML = '<i class="ri-pushpin-fill"></i> Pinned';
+        setTimeout(() => {
+          pinBtn.innerHTML = '<i class="ri-pushpin-line"></i> Pin';
+        }, 2000);
+      } catch (error) {
+        console.error('Failed to pin message:', error);
+        pinBtn.innerHTML = '<i class="ri-close-line"></i> Failed';
+        setTimeout(() => {
+          pinBtn.innerHTML = '<i class="ri-pushpin-line"></i> Pin';
+        }, 1000);
+      }
     };
     buttonsContainer.appendChild(pinBtn);
   }
@@ -3154,6 +3163,10 @@ async function startChat() {
   // Initialize TinyBase store
   window.store = await createTinybaseStorage(roomname);
   console.log('✅ TinyBase store initialized');
+
+  // Initialize pin listener after TinyBase is ready
+  initPinListener();
+  console.log('✅ Pin listener initialized');
 
   // Initialize read status store (local only)
   window.readStatusStore = await createReadStatusStore();
@@ -4027,9 +4040,6 @@ function join() {
     } else if (data.destructionUpdate) {
       // Handle room destruction updates
       handleDestructionUpdate(data.destructionUpdate);
-    } else if (data.pinUpdate) {
-      // Handle pin/unpin updates
-      handlePinUpdate(data.pinUpdate);
     } else if (data.joined) {
       // Check if user is already in the roster (prevent duplicates)
       let alreadyInRoster = false;

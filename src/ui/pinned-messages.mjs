@@ -4,7 +4,6 @@
  */
 
 import { store, component } from 'reefjs';
-import { api } from './api.mjs';
 import { decryptMessageText } from './utils/message-crypto.mjs';
 
 const SignalName = 'pinnedState';
@@ -329,8 +328,14 @@ export function openPinnedPanel(roomName, channelName) {
   // Update button icon to filled
   updatePinButtonIcon(true);
 
-  // Load pinned messages from server (silent reload if we have cache)
-  loadPinnedMessages(roomName, channelName);
+  // Load pinned messages from TinyBase (silent reload if we have cache)
+  loadPinnedMessages(roomName, channelName)
+    .then((pins) => {
+      pinnedState.setMessages(pins);
+    })
+    .catch((error) => {
+      pinnedState.setError('加载置顶消息失败');
+    });
 }
 
 // Close the pinned messages panel
@@ -367,58 +372,108 @@ export function togglePinnedPanel(roomName, channelName) {
   }
 }
 
-// Load pinned messages from server
-async function loadPinnedMessages(roomName, channelName) {
+// Load pinned messages from TinyBase
+// Returns decrypted pins array for use by other components
+export async function loadPinnedMessages(roomName, channelName) {
   try {
-    const result = await api.getPinnedMessages(roomName, channelName);
-
-    // Use action to set messages
-    pinnedState.setMessages(result.pins || []);
-  } catch (error) {
-    console.error('Failed to load pinned messages:', error);
-    // Use action to set error
-    pinnedState.setError('Failed to load pinned messages');
-  }
-}
-
-// Pin a message
-export async function pinMessage(roomName, channelName, messageData, username) {
-  try {
-    // Check if already pinned
-    const exists = pinnedState.value.messages.some(
-      (msg) => msg.messageId === messageData.messageId,
-    );
-    if (exists) {
-      console.log('Message already pinned');
-      return;
+    if (!window.store) {
+      console.error('[PinnedMessages] TinyBase store not initialized');
+      return [];
     }
 
-    // Call server API to pin
-    await api.pinMessage(
-      roomName,
-      messageData.messageId,
-      channelName,
-      username,
+    const pinsTable = window.store.getTable('pins');
+
+    // Filter pins for current channel
+    const pins = [];
+    Object.entries(pinsTable).forEach(([messageId, pinData]) => {
+      if (pinData.channelName === channelName) {
+        // Get message data from messages table using getCell
+        const message = window.store.getCell('messages', messageId, 'text');
+        const username = window.store.getCell(
+          'messages',
+          messageId,
+          'username',
+        );
+        const timestamp = window.store.getCell(
+          'messages',
+          messageId,
+          'timestamp',
+        );
+
+        if (message) {
+          pins.push({
+            messageId,
+            message, // Encrypted message
+            username,
+            timestamp,
+            pinnedAt: pinData.pinnedAt,
+          });
+        }
+      }
+    });
+
+    // Sort by pin timestamp (most recent first)
+    pins.sort((a, b) => b.pinnedAt - a.pinnedAt);
+
+    // Decrypt messages
+    const roomKey = window.encryptionState?.roomKey;
+    const decryptedPins = await Promise.all(
+      pins.map(async (pin) => {
+        const decryptedMessage = await decryptMessageText(pin.message, roomKey);
+        return {
+          ...pin,
+          message: decryptedMessage, // Replace with decrypted message for display
+          name: pin.username, // Map username to name for display
+        };
+      }),
     );
 
-    // Server will broadcast the update, which will be handled in index.mjs
-    console.log('✅ Message pin request sent');
+    return decryptedPins;
   } catch (error) {
-    console.error('Failed to pin message:', error);
+    console.error('Failed to load pinned messages:', error);
+    throw error;
+  }
+} // Pin a message
+/**
+ * Pin a message
+ */
+export async function pinMessage(messageId, messageData) {
+  try {
+    const channelName = window.currentChannel;
+
+    if (!window.store) {
+      throw new Error('TinyBase store not initialized');
+    }
+
+    // Add to TinyBase pins table - only store messageId and metadata
+    window.store.setRow('pins', messageId, {
+      channelName,
+      pinnedAt: Date.now(),
+    });
+
+    console.log('[PinnedMessages] Message pinned:', messageId);
+  } catch (error) {
+    console.error('[PinnedMessages] Failed to pin:', error);
     throw error;
   }
 }
 
 // Unpin a message
-export async function unpinMessage(roomName, channelName, messageId) {
+/**
+ * Unpin a message
+ */
+export async function unpinMessage(messageId) {
   try {
-    // Call server API to unpin
-    await api.unpinMessage(roomName, messageId, channelName);
+    if (!window.store) {
+      throw new Error('TinyBase store not initialized');
+    }
 
-    // Server will broadcast the update, which will be handled in index.mjs
-    console.log('✅ Message unpin request sent');
+    // Remove from TinyBase pins table
+    window.store.delRow('pins', messageId);
+
+    console.log('[PinnedMessages] Message unpinned:', messageId);
   } catch (error) {
-    console.error('Failed to unpin message:', error);
+    console.error('[PinnedMessages] Failed to unpin:', error);
     throw error;
   }
 }
@@ -454,32 +509,33 @@ export function getPinnedCount() {
   return pinnedState.value.messages.length;
 }
 
-// Handle pin update from server broadcast
-export async function handlePinUpdate(update) {
-  if (update.action === 'pin') {
-    // Decrypt message if encrypted
-    const roomKey = window.encryptionState?.roomKey;
-    const displayMessage = await decryptMessageText(
-      update.messageData.message,
-      roomKey,
-    );
-
-    // Add to state if panel is open and message is for current channel
-    if (pinnedState.value.isOpen) {
-      pinnedState.addMessage({
-        messageId: update.messageId,
-        name: update.messageData.name,
-        message: displayMessage,
-        timestamp: update.messageData.timestamp,
-        channel: update.channel,
-        pinnedBy: update.pinnedBy,
-        pinnedAt: update.pinnedAt,
-      });
-    }
-  } else if (update.action === 'unpin') {
-    // Remove from state
-    pinnedState.removeMessage(update.messageId);
+/**
+ * Initialize listener for TinyBase pin changes
+ * This should be called after TinyBase store is initialized
+ */
+export async function initPinListener() {
+  if (!window.store) {
+    console.error('[PinnedMessages] Cannot init listener: store not ready');
+    return;
   }
+
+  // Listen to pins table changes
+  window.store.addTableListener('pins', () => {
+    // Only reload if panel is open
+    if (pinnedState.value.isOpen) {
+      const roomName = window.currentRoomName;
+      const channelName = window.currentChannel || 'general';
+      loadPinnedMessages(roomName, channelName)
+        .then((pins) => {
+          pinnedState.setMessages(pins);
+        })
+        .catch((error) => {
+          console.error('[PinnedMessages] Failed to reload pins:', error);
+        });
+    }
+  });
+
+  console.log('[PinnedMessages] TinyBase listener initialized');
 }
 
 // Inject CSS styles
