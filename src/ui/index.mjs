@@ -3436,7 +3436,6 @@ async function startChat() {
   // Test: Print TinyBase store tables every 5 seconds
   setInterval(() => {
     if (window.store) {
-      console.log('--- TinyBase Store Debug Info ---');
       console.log('🔄 TinyBase store values:', window.store.getValues());
       console.log('🔄 TinyBase store tables:', window.store.getTables());
     }
@@ -4856,6 +4855,9 @@ window.hideLeftSidebar = hideLeftSidebar;
 // Show mobile channel list page
 function showMobileChannelList() {
   if (!isMobile()) return;
+
+  // Switch to channel list page
+  MobileUI.showMobileChannelList();
 
   // Clear channel via chatState - URL sync happens automatically
   if (chatState) {

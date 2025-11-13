@@ -10,6 +10,22 @@ import { initChannelInfo, openChannelInfo } from './mobile/channel-info.mjs';
 let currentMobilePage = null;
 
 /**
+ * Show mobile channel list page
+ */
+export function showMobileChannelList() {
+  const channelListPage = document.getElementById('mobile-channel-list-page');
+  const chatPage = document.getElementById('mobile-chat-page');
+
+  if (channelListPage) {
+    channelListPage.classList.add('active');
+    currentMobilePage = 'channel-list';
+  }
+  if (chatPage) {
+    chatPage.classList.remove('active');
+  }
+}
+
+/**
  * Show mobile chat page
  */
 export function showMobileChatPage() {

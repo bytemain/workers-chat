@@ -562,8 +562,8 @@ export function closeChannelInfo() {
   channelInfoState.close();
 
   // Notify mobile UI to return to chat
-  if (window.MobileUI && window.MobileUI.showChatPage) {
-    window.MobileUI.showChatPage();
+  if (window.showMobileChatPage) {
+    window.showMobileChatPage();
   }
 }
 
