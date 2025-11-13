@@ -50,25 +50,10 @@ export function initChannelList(
    */
   function syncTinybaseToSignal() {
     try {
-      const channelsTable = tinybaseStore.getTable('channels');
-
-      // 转换为数组格式，按 lastUsed 排序（最近使用的在前）
-      const channelsList = Object.entries(channelsTable || {})
-        .map(([channelName, data]) => ({
-          channel: channelName,
-          count: data.count || 0,
-          lastUsed: data.lastUsed || Date.now(),
-        }))
-        .sort((a, b) => b.lastUsed - a.lastUsed);
-
-      // 确保 general 频道存在
-      if (!channelsList.some((ch) => ch.channel === 'general')) {
-        channelsList.push({
-          channel: 'general',
-          count: 0,
-          lastUsed: Date.now(),
-        });
-      }
+      // Get channels from TinyBase using shared utility
+      const channelsList = window.getChannelsFromStore
+        ? window.getChannelsFromStore(tinybaseStore)
+        : [];
 
       channelsSignal.items = channelsList;
       channelsSignal.error = null;

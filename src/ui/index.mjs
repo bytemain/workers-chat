@@ -1304,7 +1304,6 @@ let username;
 let roomname;
 let currentChannel = 'general'; // Current channel for sending messages (DEPRECATED: use chatState)
 let currentThreadId = null; // Current thread ID (DEPRECATED: use chatState)
-let allChannels = []; // Cache of all channels
 let temporaryChannels = new Set(); // Track frontend-only temporary channels
 
 // Backward compatibility: Sync global variables with chatState
@@ -2812,9 +2811,10 @@ function createNewChannel() {
     return;
   }
 
-  // Check if channel already exists
-  const exists = allChannels.some((ch) => ch.channel.toLowerCase() === trimmed);
-  if (exists) {
+  // Check if channel already exists in TinyBase
+  const channelExists =
+    window.store && window.store.getRow('channels', trimmed);
+  if (channelExists) {
     alert(`Channel #${trimmed} already exists`);
     // Switch to it anyway
     switchToChannel(trimmed);
@@ -3310,7 +3310,6 @@ async function startChat() {
   encryptionState.isEncrypted = false;
 
   // Reset channel state
-  allChannels = [];
   temporaryChannels.clear();
   currentChannel = 'general';
 
@@ -4849,6 +4848,42 @@ window.initializeLeftSidebar = initializeLeftSidebar;
 window.hideLeftSidebar = hideLeftSidebar;
 
 // ============================================
+// Channel Utilities
+// ============================================
+
+/**
+ * Get channels list from TinyBase store
+ * @param {Object} store - TinyBase store instance
+ * @returns {Array} Array of channel objects {channel, count, lastUsed}
+ */
+function getChannelsFromStore(store) {
+  if (!store) return [];
+
+  const channelsTable = store.getTable('channels');
+  const channelsList = Object.entries(channelsTable || {})
+    .map(([channelName, data]) => ({
+      channel: channelName,
+      count: data.count || 0,
+      lastUsed: data.lastUsed || Date.now(),
+    }))
+    .sort((a, b) => b.lastUsed - a.lastUsed);
+
+  // Ensure general channel exists
+  if (!channelsList.some((ch) => ch.channel === 'general')) {
+    channelsList.push({
+      channel: 'general',
+      count: 0,
+      lastUsed: Date.now(),
+    });
+  }
+
+  return channelsList;
+}
+
+// Export for use in other modules
+window.getChannelsFromStore = getChannelsFromStore;
+
+// ============================================
 // Mobile Navigation System (Uses mobile.mjs module)
 // ============================================
 
@@ -4909,8 +4944,11 @@ function updateMobileChannelList() {
   channelsContainer.innerHTML = '';
   dmsContainer.innerHTML = '';
 
+  // Get channels from TinyBase
+  const channelsList = getChannelsFromStore(window.store);
+
   // Render channels (filter out hidden and DM channels)
-  const visibleChannels = allChannels.filter(
+  const visibleChannels = channelsList.filter(
     (item) =>
       !hiddenChannels.includes(item.channel) &&
       !item.channel.toLowerCase().startsWith('dm-'),
