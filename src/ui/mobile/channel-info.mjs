@@ -426,8 +426,6 @@ export function initChannelInfo(containerSelector = 'body') {
       isOpen: (value) => value === 'open',
       activeTab: (value) => value || 'members',
     },
-    // Only sync when panel is open
-    shouldSync: (state) => state.isOpen,
     // Use replaceState for tab changes (no history spam)
     pushState: false,
     // Custom popstate handler to load data
