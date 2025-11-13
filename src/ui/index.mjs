@@ -30,13 +30,16 @@ import { initChannelList } from './components/channel-list.mjs';
 import { listenReefEvent } from './utils/reef-helpers.mjs';
 import { createReadStatusStore } from './tinybase/read-status.mjs';
 
-// Check Crypto API compatibility early
-const cryptoSupported = initCryptoCompatCheck();
-if (!cryptoSupported) {
-  console.warn(
-    '⚠️ Crypto API not supported, encryption features will be disabled',
-  );
-}
+// Check Crypto API compatibility early (async - may load polyfill)
+let cryptoSupported = false;
+(async () => {
+  cryptoSupported = await initCryptoCompatCheck();
+  if (!cryptoSupported) {
+    console.warn(
+      '⚠️ Crypto API not supported, encryption features will be disabled',
+    );
+  }
+})();
 
 const cryptoPool = getCryptoPool();
 

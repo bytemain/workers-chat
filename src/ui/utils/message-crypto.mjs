@@ -11,8 +11,11 @@ import { LRUCache } from './lru-cache.mjs';
 // Get crypto pool instance
 const cryptoPool = getCryptoPool();
 
-// Check crypto support
-const cryptoSupported = initCryptoCompatCheck();
+// Check crypto support (async - may load polyfill)
+let cryptoSupported = false;
+(async () => {
+  cryptoSupported = await initCryptoCompatCheck();
+})();
 
 // LRU cache for decrypted messages (max 100 entries)
 const decryptionCache = new LRUCache(100);
