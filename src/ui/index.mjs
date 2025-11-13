@@ -2025,28 +2025,50 @@ function countTotalReplies(messageId) {
 
 async function loadThreadReplies(messageId) {
   try {
-    // All messages are already in messagesCache (synced from TinyBase)
-    // Just need to find all replies to this message (including nested)
-    const allReplies = [];
-    const visited = new Set();
+    // ✅ Use index for efficient thread reply lookup - O(log n)
+    // getSliceRowIds returns all messages where replyToId = messageId
+    const replyIds = window.indexes
+      ? window.indexes.getSliceRowIds('repliesByParent', messageId)
+      : [];
 
-    // Recursive function to collect all replies
-    function collectReplies(parentId) {
-      if (visited.has(parentId)) return; // Prevent infinite loops
+    console.log(
+      `📇 Index query: found ${replyIds.length} direct replies to ${messageId}`,
+    );
+
+    // Get all reply messages (already sorted by timestamp via index)
+    const allReplies = replyIds
+      .map((replyId) => messagesCache.get(replyId))
+      .filter((msg) => msg); // Filter out undefined entries
+
+    // Collect nested replies recursively (for multi-level threads)
+    const visited = new Set([messageId]);
+    function collectNestedReplies(parentId) {
+      if (visited.has(parentId)) return []; // Prevent infinite loops
       visited.add(parentId);
 
-      // Find direct replies to this parent
-      for (const [msgId, msg] of messagesCache.entries()) {
-        if (msg.replyTo && msg.replyTo.messageId === parentId) {
-          allReplies.push(msg);
-          // Recursively collect replies to this reply
-          collectReplies(msgId);
+      const nestedIds = window.indexes
+        ? window.indexes.getSliceRowIds('repliesByParent', parentId)
+        : [];
+
+      const nested = [];
+      nestedIds.forEach((nestedId) => {
+        const msg = messagesCache.get(nestedId);
+        if (msg && !visited.has(nestedId)) {
+          nested.push(msg);
+          nested.push(...collectNestedReplies(nestedId)); // Recursively collect deeper replies
         }
-      }
+      });
+      return nested;
     }
 
-    // Start collecting from the root message
-    collectReplies(messageId);
+    // Add nested replies
+    allReplies.forEach((reply) => {
+      const nestedReplies = collectNestedReplies(reply.messageId);
+      allReplies.push(...nestedReplies);
+    });
+
+    // Sort by timestamp (in case of nested replies)
+    allReplies.sort((a, b) => a.timestamp - b.timestamp);
 
     // Update root message with total reply count
     const rootMessage = messagesCache.get(messageId);
@@ -3349,10 +3371,12 @@ async function startChat() {
   }
 
   // Initialize TinyBase store and indexes
-  const { store, indexes } = await createTinybaseStorage(roomname);
+  const { store, relationships, indexes } =
+    await createTinybaseStorage(roomname);
   window.store = store;
+  window.relationships = relationships;
   window.indexes = indexes; // Expose indexes for debugging
-  console.log('✅ TinyBase store and indexes initialized');
+  console.log('✅ TinyBase store, relationships, and indexes initialized');
 
   // Initialize pin listener after TinyBase is ready
   initPinListener();

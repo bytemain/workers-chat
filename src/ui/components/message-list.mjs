@@ -19,7 +19,7 @@ const SignalName = 'messagesSignal';
 /**
  * Initialize message list component
  * @param {Object} tinybaseStore - TinyBase store instance
- * @param {Object} tinybaseIndexes - TinyBase indexes instance
+ * @param {Object} tinybaseIndexes - TinyBase indexes instance for O(log n) filtering
  * @param {string} containerSelector - CSS selector for container element
  * @param {Function} getCurrentChannel - Function to get current channel
  * @param {Function} createMessageElement - Function to create message DOM element
@@ -62,15 +62,15 @@ export function initMessageList(
     try {
       const currentChannel = getCurrentChannel();
 
-      // ✅ Use index for efficient querying - O(log n) instead of O(n)
-      // Get sorted message IDs for current channel from index
+      // ✅ Use index for O(log n) query - much faster than O(n) filter!
+      // Get message IDs for current channel from pre-built index
       const messageIds = tinybaseIndexes.getSliceRowIds(
         'messagesByChannel',
         currentChannel,
       );
 
       console.log(
-        `📊 Index query: found ${messageIds.length} messages in #${currentChannel}`,
+        `📇 Index query: found ${messageIds.length} messages in #${currentChannel}`,
       );
 
       // Convert to message objects (原始加密数据)

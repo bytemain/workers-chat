@@ -12,19 +12,38 @@ export async function createTinybaseStorage(roomName) {
   const store = createMergeableStore();
   const syncUrl = api.getTinybaseSyncUrl(`${storeName}/${roomName}`);
 
-  // Create indexes for efficient querying
+  // Create indexes for efficient querying with O(log n) performance
   const indexes = createIndexes(store);
 
-  // Index 1: Messages by channel (for filtering)
-  // Index 2: Sort by timestamp within each channel (for chronological order)
+  // Index 1: Messages by channel (for fast channel switching)
+  // Groups messages by channel and sorts by timestamp
   indexes.setIndexDefinition(
     'messagesByChannel', // indexId
-    'messages', // tableId to index
-    'channel', // cellId to slice by (group by channel)
-    'timestamp', // cellId to sort by (chronological order)
+    'messages', // tableId
+    'channel', // sliceId (group by channel)
+    'timestamp', // sort by timestamp (chronological order)
   );
 
-  console.log('📇 Created TinyBase indexes: messagesByChannel');
+  // Index 2: Thread replies by parent message ID
+  // Groups all replies to the same parent message, sorted by timestamp
+  indexes.setIndexDefinition(
+    'repliesByParent', // indexId
+    'messages', // tableId
+    'replyToId', // sliceId (group by parent message ID)
+    'timestamp', // sort by timestamp (chronological order in thread)
+  );
+
+  // Index 3: Messages by user (for user-specific views)
+  indexes.setIndexDefinition(
+    'messagesByUser', // indexId
+    'messages', // tableId
+    'username', // sliceId (group by user)
+    'timestamp', // sort by timestamp
+  );
+
+  console.log(
+    '📇 Created TinyBase indexes: messagesByChannel, repliesByParent, messagesByUser',
+  );
 
   await run(
     createIndexedDbPersister(store, `tinybase-${storeName}-${roomName}`),
