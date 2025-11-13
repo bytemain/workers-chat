@@ -14,7 +14,8 @@
     "@opensumi/reconnecting-websocket": "^4.4.0",
     "hono": "^4.10.5",
     "ruply": "^1.0.1",
-    "tinybase": "^6.7.2"
+    "tinybase": "^6.7.2",
+    "webcrypto-liner": "^1.4.3"
   },
   "devDependencies": {
     "@chialab/rna": "^0.19.0",
