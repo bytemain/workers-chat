@@ -667,7 +667,7 @@ class FileMessage extends HTMLElement {
 
     // Create download link
     const link = document.createElement('a');
-    link.textContent = '📎 ' + fileName;
+    link.innerHTML = '<i class="ri-attachment-2"></i> ' + fileName;
     link.style.cursor = 'pointer';
     link.style.color = '#0066cc';
     link.style.textDecoration = 'underline';
@@ -914,7 +914,7 @@ class ChatMessage extends HTMLElement {
     if (parseInt(threadCount) > 0) {
       const threadIndicator = document.createElement('div');
       threadIndicator.className = 'thread-indicator';
-      threadIndicator.innerHTML = `💬 ${threadCount} ${parseInt(threadCount) === 1 ? 'reply' : 'replies'}`;
+      threadIndicator.innerHTML = `<i class="ri-chat-1-line"></i> ${threadCount} ${parseInt(threadCount) === 1 ? 'reply' : 'replies'}`;
       threadIndicator.onclick = (e) => {
         e.stopPropagation();
         if (messageId) {
@@ -2237,7 +2237,7 @@ function createMessageElement(
     // In thread panel - show Locate button
     const locateBtn = document.createElement('button');
     locateBtn.className = 'message-action-btn';
-    locateBtn.innerHTML = '📍 Locate';
+    locateBtn.innerHTML = '<i class="ri-map-pin-2-line"></i> Locate';
     locateBtn.title = 'Locate in main chat';
     locateBtn.onclick = (e) => {
       e.stopPropagation();
@@ -2248,7 +2248,7 @@ function createMessageElement(
     // In main chat - show Reply button
     const replyBtn = document.createElement('button');
     replyBtn.className = 'message-action-btn';
-    replyBtn.innerHTML = '💬 Reply';
+    replyBtn.innerHTML = '<i class="ri-chat-1-line"></i> Reply';
     replyBtn.onclick = (e) => {
       e.stopPropagation();
       // Set reply target instead of opening thread
@@ -2264,7 +2264,7 @@ function createMessageElement(
     if (!data.message.startsWith('FILE:')) {
       const editBtn = document.createElement('button');
       editBtn.className = 'message-action-btn';
-      editBtn.innerHTML = '✏️ Edit';
+      editBtn.innerHTML = '<i class="ri-edit-line"></i> Edit';
       editBtn.title = 'Edit this message';
       editBtn.onclick = async (e) => {
         e.stopPropagation();
@@ -2275,7 +2275,7 @@ function createMessageElement(
 
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'message-action-btn';
-    deleteBtn.innerHTML = '🗑️ Delete';
+    deleteBtn.innerHTML = '<i class="ri-delete-bin-line"></i> Delete';
     deleteBtn.style.color = '#dc3545';
     deleteBtn.title = 'Delete this message';
     deleteBtn.onclick = async (e) => {
@@ -2338,7 +2338,198 @@ function createMessageElement(
   // Insert at the beginning of wrapper
   wrapper.insertBefore(actionsSticky, wrapper.firstChild);
 
+  // Mobile: Long-press to show context menu
+  if (isMobile()) {
+    let longPressTimer = null;
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    wrapper.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+
+      longPressTimer = setTimeout(() => {
+        // Show context menu on long press
+        showMobileContextMenu(wrapper, data, isInThread, isThreadOriginal);
+        // Haptic feedback if available
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+      }, 500); // 500ms long press
+    });
+
+    wrapper.addEventListener('touchmove', (e) => {
+      // Cancel if finger moves too much
+      const touch = e.touches[0];
+      const deltaX = Math.abs(touch.clientX - touchStartX);
+      const deltaY = Math.abs(touch.clientY - touchStartY);
+
+      if (deltaX > 10 || deltaY > 10) {
+        clearTimeout(longPressTimer);
+      }
+    });
+
+    wrapper.addEventListener('touchend', () => {
+      clearTimeout(longPressTimer);
+    });
+
+    wrapper.addEventListener('touchcancel', () => {
+      clearTimeout(longPressTimer);
+    });
+
+    // Prevent native context menu
+    wrapper.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
+  }
+
   return wrapper;
+}
+
+// Show mobile context menu for message actions
+function showMobileContextMenu(
+  messageWrapper,
+  data,
+  isInThread,
+  isThreadOriginal,
+) {
+  // Remove existing context menu if any
+  const existingMenu = document.querySelector('.mobile-context-menu');
+  if (existingMenu) {
+    existingMenu.remove();
+  }
+
+  // Create context menu container
+  const menu = document.createElement('div');
+  menu.className = 'mobile-context-menu';
+
+  // Create backdrop
+  const backdrop = document.createElement('div');
+  backdrop.className = 'mobile-context-menu-backdrop';
+
+  // Create menu content
+  const menuContent = document.createElement('div');
+  menuContent.className = 'mobile-context-menu-content';
+
+  // Add menu items based on message type
+  const menuItems = [];
+
+  // Copy button (always available)
+  if (!data.message.startsWith('FILE:')) {
+    menuItems.push({
+      icon: 'ri-file-copy-line',
+      text: 'Copy',
+      action: async () => {
+        await navigator.clipboard.writeText(data.message);
+        closeContextMenu();
+      },
+    });
+  }
+
+  // Reply button (in main chat)
+  if (!isInThread) {
+    menuItems.push({
+      icon: 'ri-reply-line',
+      text: 'Reply',
+      action: () => {
+        const preview = data.message.substring(0, 50);
+        setReplyTo(data.messageId, data.name, preview, data.messageId);
+        closeContextMenu();
+      },
+    });
+  }
+
+  // Pin button (only in main chat, not in thread)
+  if (!isInThread && !isThreadOriginal) {
+    menuItems.push({
+      icon: 'ri-pushpin-line',
+      text: 'Pin',
+      action: async () => {
+        try {
+          await pinMessage(data.messageId);
+          closeContextMenu();
+        } catch (error) {
+          console.error('Failed to pin message:', error);
+        }
+      },
+    });
+  }
+
+  // Edit button (if user owns the message)
+  if (data.name === username && !data.message.startsWith('FILE:')) {
+    menuItems.push({
+      icon: 'ri-edit-line',
+      text: 'Edit',
+      action: () => {
+        showEditDialog(data);
+        closeContextMenu();
+      },
+    });
+  }
+
+  // Delete button (if user owns the message)
+  if (data.name === username) {
+    menuItems.push({
+      icon: 'ri-delete-bin-line',
+      text: 'Delete',
+      color: '#dc3545',
+      action: async () => {
+        if (confirm('Delete this message? This action cannot be undone.')) {
+          try {
+            if (window.messageList) {
+              window.messageList.deleteMessage(data.messageId);
+              showReEditBanner(data.message);
+              closeContextMenu();
+            }
+          } catch (err) {
+            console.error('Error deleting message:', err);
+            alert(err.message || 'Failed to delete message');
+          }
+        }
+      },
+    });
+  }
+
+  // Render menu items
+  menuItems.forEach((item) => {
+    const menuItem = document.createElement('button');
+    menuItem.className = 'mobile-context-menu-item';
+    menuItem.innerHTML = `
+      <i class="${item.icon}"></i>
+      <span>${item.text}</span>
+    `;
+    if (item.color) {
+      menuItem.style.color = item.color;
+    }
+    menuItem.onclick = item.action;
+    menuContent.appendChild(menuItem);
+  });
+
+  // Add cancel button
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'mobile-context-menu-cancel';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = closeContextMenu;
+  menuContent.appendChild(cancelBtn);
+
+  menu.appendChild(backdrop);
+  menu.appendChild(menuContent);
+  document.body.appendChild(menu);
+
+  // Close on backdrop click
+  backdrop.onclick = closeContextMenu;
+
+  // Animate in
+  requestAnimationFrame(() => {
+    menu.classList.add('show');
+  });
+
+  function closeContextMenu() {
+    menu.classList.remove('show');
+    setTimeout(() => {
+      menu.remove();
+    }, 200);
+  }
 }
 
 // Locate and highlight a message in the main chat area
@@ -2948,7 +3139,8 @@ function startRoomChooser() {
       } catch (err) {
         alert('Something went wrong creating the private room');
         selectorPrivateBtn.disabled = false;
-        selectorPrivateBtn.innerHTML = '🔒 Create a Private Room';
+        selectorPrivateBtn.innerHTML =
+          '<i class="ri-lock-2-line"></i> Create a Private Room';
       }
     });
   }

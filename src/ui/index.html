@@ -1494,6 +1494,106 @@
         display: flex;
       }
 
+      /* Mobile: Don't show actions on hover/tap, use long-press instead */
+      @media (max-width: 600px) {
+        .message-wrapper:hover .message-actions {
+          display: none;
+        }
+      }
+
+      /* Mobile Context Menu */
+      .mobile-context-menu {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        pointer-events: none;
+      }
+
+      .mobile-context-menu.show {
+        pointer-events: auto;
+      }
+
+      .mobile-context-menu-backdrop {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0);
+        transition: background 0.2s ease;
+      }
+
+      .mobile-context-menu.show .mobile-context-menu-backdrop {
+        background: rgba(0, 0, 0, 0.5);
+      }
+
+      .mobile-context-menu-content {
+        position: relative;
+        background: var(--background);
+        border-radius: 12px 12px 0 0;
+        padding: 8px;
+        transform: translateY(100%);
+        transition: transform 0.2s ease;
+        max-height: 70vh;
+        overflow-y: auto;
+        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .mobile-context-menu.show .mobile-context-menu-content {
+        transform: translateY(0);
+      }
+
+      .mobile-context-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        width: 100%;
+        padding: 16px;
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        color: var(--text-main);
+        cursor: pointer;
+        transition: background 0.15s ease;
+        text-align: left;
+      }
+
+      .mobile-context-menu-item:active {
+        background: var(--background-alt);
+      }
+
+      .mobile-context-menu-item i {
+        font-size: 20px;
+        width: 24px;
+        text-align: center;
+      }
+
+      .mobile-context-menu-cancel {
+        display: block;
+        width: 100%;
+        padding: 16px;
+        margin-top: 8px;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-main);
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+
+      .mobile-context-menu-cancel:active {
+        background: var(--background-alt);
+      }
+
       /* Time next to username - always visible for first message */
       .msg-time-outside-actions {
         color: #888;
