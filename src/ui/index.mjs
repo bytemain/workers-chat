@@ -24,6 +24,7 @@ import {
 } from './pinned-messages.mjs';
 import { tryDecryptMessage } from './utils/message-crypto.mjs';
 import { chatState, initChatState } from './utils/chat-state.mjs';
+import { userState, initUserState } from './utils/user-state.mjs';
 import { createTinybaseStorage } from './tinybase/index.mjs';
 import { initMessageList } from './components/message-list.mjs';
 import { initChannelList } from './components/channel-list.mjs';
@@ -3021,18 +3022,10 @@ export async function main() {
     );
   }
 
-  // Check if username is saved in localStorage
-  let savedUsername = localStorage.getItem('chatUsername');
-
-  // If no saved username, generate a random one (but don't save yet)
-  if (!savedUsername) {
-    savedUsername = generateRandomUsername();
-    // Don't save here - wait until user enters a room
-  }
-
-  // Set username
-  username = savedUsername;
-  window.currentUsername = savedUsername; // Update global for pinned-messages
+  // Initialize user state (replaces direct localStorage access)
+  initUserState();
+  // Set global username for backward compatibility
+  username = userState.value.username;
 
   // Update user info card in left sidebar
   updateUserInfoCard();
@@ -3046,7 +3039,7 @@ function startRoomChooser() {
   if (roomFromURL) {
     roomname = roomFromURL;
     // Save username to localStorage when directly entering via URL
-    localStorage.setItem('chatUsername', username);
+    userState.setUsername(username);
     startChat();
     return;
   }
@@ -3082,7 +3075,9 @@ function startRoomChooser() {
       if (event.currentTarget.value.length > 32) {
         event.currentTarget.value = event.currentTarget.value.slice(0, 32);
       }
-      username = event.currentTarget.value.trim();
+      const newUsername = event.currentTarget.value.trim();
+      userState.setUsername(newUsername);
+      username = newUsername; // Update global for backward compatibility
       updateUserInfoCard();
     });
   }
@@ -3105,13 +3100,14 @@ function startRoomChooser() {
 
   if (selectorJoinBtn) {
     selectorJoinBtn.addEventListener('click', () => {
-      username = selectorNameInput?.value.trim() || username;
-      if (username.length === 0) {
+      const newUsername = selectorNameInput?.value.trim() || username;
+      if (newUsername.length === 0) {
         selectorNameInput?.focus();
         alert('Please enter your name');
         return;
       }
-      localStorage.setItem('chatUsername', username);
+      userState.setUsername(newUsername);
+      username = newUsername; // Update global for backward compatibility
 
       roomname = selectorRoomInput?.value.trim() || '';
       if (roomname.length > 0) {
@@ -3122,13 +3118,14 @@ function startRoomChooser() {
 
   if (selectorPrivateBtn) {
     selectorPrivateBtn.addEventListener('click', async () => {
-      username = selectorNameInput?.value.trim() || username;
-      if (username.length === 0) {
+      const newUsername = selectorNameInput?.value.trim() || username;
+      if (newUsername.length === 0) {
         selectorNameInput?.focus();
         alert('Please enter your name');
         return;
       }
-      localStorage.setItem('chatUsername', username);
+      userState.setUsername(newUsername);
+      username = newUsername; // Update global for backward compatibility
 
       selectorPrivateBtn.disabled = true;
       selectorPrivateBtn.textContent = 'Creating...';
@@ -4262,8 +4259,9 @@ function join() {
           logoutBtn.title = 'Logout and change username';
           logoutBtn.onclick = (e) => {
             e.stopPropagation();
-            // Clear saved username
-            localStorage.removeItem('chatUsername');
+            // Clear saved username using userState
+            userState.clearUsername();
+            username = null; // Update global for backward compatibility
             // Close WebSocket
             if (currentWebSocket) {
               currentWebSocket.close();
@@ -4314,8 +4312,9 @@ function join() {
       // Don't reconnect since the new connection is already active
       addSystemMessage('* Connection replaced by a new session');
     } else if (event.code === 1009) {
-      // Name too long or invalid - clear saved username
-      localStorage.removeItem('chatUsername');
+      // Name too long or invalid - clear saved username using userState
+      userState.clearUsername();
+      username = null; // Update global for backward compatibility
       addSystemMessage('* Connection closed: ' + event.reason);
     } else if (event.code !== 1000) {
       // Unexpected closure, try to reconnect
@@ -4877,9 +4876,8 @@ function initUserProfileModal() {
     saveBtn.addEventListener('click', () => {
       const newUsername = usernameInput.value.trim();
       if (newUsername && newUsername.length > 0 && newUsername.length <= 32) {
-        username = newUsername;
-        window.currentUsername = newUsername;
-        localStorage.setItem('chatUsername', newUsername);
+        userState.setUsername(newUsername);
+        username = newUsername; // Update global for backward compatibility
         updateUserInfoCard();
         modal.classList.remove('visible');
       } else {
