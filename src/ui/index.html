@@ -2129,6 +2129,21 @@
         background: rgba(220, 53, 69, 0.1);
       }
 
+      /* Random username button hover effect */
+      #random-username-btn:hover {
+        background: var(--background-alt) !important;
+        color: var(--text-main) !important;
+      }
+
+      #random-username-btn:active {
+        background: var(--background-body) !important;
+      }
+
+      #random-username-btn i {
+        transition: transform 0.3s ease;
+        display: block;
+      }
+
       /* Mobile adjustments */
       @media (max-width: 600px) {
         #channel-panel {
@@ -2236,7 +2251,7 @@
             <div class="user-name" id="user-name-display">User</div>
             <div class="user-status">Online</div>
           </div>
-          <div class="user-actions" style="display: none;">
+          <div class="user-actions" style="display: none">
             <button
               class="user-action-btn"
               title="Settings"
@@ -2546,31 +2561,80 @@
     <div id="user-profile-modal" class="modal-overlay">
       <div class="modal-content">
         <div class="modal-header">
-          <h3>👤 User Profile</h3>
+          <h3><i class="ri-user-smile-fill"></i> User Profile</h3>
           <button class="modal-close" id="close-user-profile">×</button>
         </div>
         <div class="modal-body">
           <div class="modal-section">
-            <div style="display: flex; flex-direction: column; align-items: center; gap: var(--spacing);">
-              <div style="width: 120px; height: 120px;">
-                <playful-avatar id="preview-avatar" name="User" style="width: 120px; height: 120px;"></playful-avatar>
+            <div
+              style="
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: var(--spacing);
+              "
+            >
+              <div style="width: 120px; height: 120px">
+                <playful-avatar
+                  id="preview-avatar"
+                  name="User"
+                  style="width: 120px; height: 120px"
+                ></playful-avatar>
               </div>
-              <div style="width: 100%;">
-                <label for="username-input" style="display: block; font-size: 0.9em; margin-bottom: var(--spacing-xs); color: var(--text-muted);">Username</label>
-                <input
-                  id="username-input"
-                  type="text"
-                  placeholder="Enter your username"
-                  maxlength="32"
+              <div style="width: 100%">
+                <label
+                  for="username-input"
                   style="
-                    width: 100%;
-                    padding: var(--spacing-sm);
-                    border: 1px solid var(--border);
-                    border-radius: var(--border-radius);
-                    font-size: 1em;
-                    font-family: inherit;
+                    display: block;
+                    font-size: 0.9em;
+                    margin-bottom: var(--spacing-xs);
+                    color: var(--text-muted);
                   "
-                />
+                  >Username</label
+                >
+                <div style="position: relative; width: 100%">
+                  <input
+                    id="username-input"
+                    type="text"
+                    placeholder="Enter your username"
+                    maxlength="32"
+                    style="
+                      width: 100%;
+                      padding: var(--spacing-sm);
+                      padding-right: 40px;
+                      border: 1px solid var(--border);
+                      border-radius: var(--border-radius);
+                      font-size: 1em;
+                      font-family: inherit;
+                    "
+                  />
+                  <button
+                    id="random-username-btn"
+                    type="button"
+                    title="Generate random username"
+                    style="
+                      position: absolute;
+                      right: 8px;
+                      top: 50%;
+                      transform: translateY(-50%);
+                      width: 28px;
+                      height: 28px;
+                      padding: 0;
+                      border: none;
+                      background: transparent;
+                      cursor: pointer;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      transition: var(--transition);
+                      color: var(--text-muted);
+                      font-size: 1.1em;
+                      border-radius: var(--border-radius);
+                    "
+                  >
+                    <i class="ri-shuffle-line"></i>
+                  </button>
+                </div>
               </div>
               <button
                 id="save-username-btn"

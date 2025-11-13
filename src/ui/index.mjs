@@ -4871,6 +4871,24 @@ function initUserProfileModal() {
     });
   }
 
+  // Random username button
+  const randomUsernameBtn = document.querySelector('#random-username-btn');
+  if (randomUsernameBtn && usernameInput && previewAvatar) {
+    randomUsernameBtn.addEventListener('click', () => {
+      const randomName = generateRandomUsername();
+      usernameInput.value = randomName;
+      previewAvatar.setAttribute('name', randomName);
+      // Add a small animation effect to the icon, not the button
+      const icon = randomUsernameBtn.querySelector('i');
+      if (icon) {
+        icon.style.transform = 'rotate(180deg)';
+        setTimeout(() => {
+          icon.style.transform = 'rotate(0deg)';
+        }, 300);
+      }
+    });
+  }
+
   // Save username
   if (saveBtn && usernameInput && modal) {
     saveBtn.addEventListener('click', () => {
