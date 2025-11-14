@@ -228,6 +228,13 @@ export function initMessageList(
     });
   });
 
+  // 监听 TinyBase reaction_instances 表的变化，也触发重新渲染
+  tinybaseStore.addTableListener('reaction_instances', () => {
+    console.log('🔄 TinyBase reactions changed, re-rendering messages...');
+    // Reactions 改变时，只需要增加版本号，触发重新渲染
+    messagesSignal.version++;
+  });
+
   // 初始同步
   syncTinybaseToSignal().catch((err) => {
     console.error('Error in initial sync:', err);

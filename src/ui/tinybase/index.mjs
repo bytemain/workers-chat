@@ -1,6 +1,7 @@
 import { createStore } from 'tinybase';
 import { createMergeableStore } from 'tinybase';
 import { createIndexes } from 'tinybase';
+import { createRelationships } from 'tinybase';
 import { createIndexedDbPersister } from 'tinybase/persisters/persister-indexed-db';
 import { createWsSynchronizer } from 'tinybase/synchronizers/synchronizer-ws-client';
 import { api } from '../api.mjs';
@@ -41,9 +42,42 @@ export async function createTinybaseStorage(roomName) {
     'timestamp', // sort by timestamp
   );
 
-  console.log(
-    '📇 Created TinyBase indexes: messagesByChannel, repliesByParent, messagesByUser',
+  // Index 4: Reactions by message (for displaying reactions on messages)
+  indexes.setIndexDefinition(
+    'reactionsByMessage', // indexId
+    'reaction_instances', // tableId
+    'messageId', // sliceId (group by message)
+    'timestamp', // sort by timestamp
   );
+
+  // Index 5: Reactions by message + type + user (for checking if user reacted)
+  indexes.setIndexDefinition(
+    'reactionsByMessageAndType', // indexId
+    'reaction_instances', // tableId
+    (getCell) => {
+      const messageId = getCell('messageId');
+      const reactionId = getCell('reactionId');
+      const username = getCell('username');
+      return `${messageId}:${reactionId}:${username}`;
+    },
+  );
+
+  console.log(
+    '📇 Created TinyBase indexes: messagesByChannel, repliesByParent, messagesByUser, reactionsByMessage, reactionsByMessageAndType',
+  );
+
+  // Create relationships for foreign key constraints
+  const relationships = createRelationships(store);
+
+  // Relationship: reaction_instances.messageId -> messages
+  relationships.setRelationshipDefinition(
+    'messageReactions', // relationshipId
+    'reaction_instances', // localTableId (child table - reactions)
+    'messages', // remoteTableId (parent table - messages)
+    'messageId', // localCellId (foreign key column)
+  );
+
+  console.log('🔗 Created TinyBase relationship: messageReactions');
 
   await run(
     createIndexedDbPersister(store, `tinybase-${storeName}-${roomName}`),
@@ -64,5 +98,5 @@ export async function createTinybaseStorage(roomName) {
     },
   );
 
-  return { store, indexes };
+  return { store, indexes, relationships };
 }

@@ -31,6 +31,13 @@ import { initChannelList } from './components/channel-list.mjs';
 import { listenReefEvent } from './utils/reef-helpers.mjs';
 import { createReadStatusStore } from './tinybase/read-status.mjs';
 import { createQueries } from 'tinybase';
+import { ReactionManager } from './reactions/manager.mjs';
+import {
+  initReactionEvents,
+  renderReactions,
+  showReactionPicker,
+} from './reactions/ui.mjs';
+import { REACTION_TYPES } from './reactions/config.mjs';
 
 // Check Crypto API compatibility early (async - may load polyfill)
 let cryptoSupported = false;
@@ -1064,7 +1071,9 @@ class ChatMessage extends HTMLElement {
 
       // Get the code content
       const codeElement = preElement.querySelector('code');
-      const codeText = codeElement ? codeElement.textContent : preElement.textContent;
+      const codeText = codeElement
+        ? codeElement.textContent
+        : preElement.textContent;
 
       // Create wrapper
       const wrapper = document.createElement('div');
@@ -1084,7 +1093,7 @@ class ChatMessage extends HTMLElement {
 
         try {
           await navigator.clipboard.writeText(codeText);
-          
+
           // Visual feedback
           copyBtn.innerHTML = '<i class="ri-check-line"></i>';
           copyBtn.classList.add('copied');
@@ -1098,7 +1107,7 @@ class ChatMessage extends HTMLElement {
           }, 2000);
         } catch (err) {
           console.error('Failed to copy code:', err);
-          
+
           // Fallback for older browsers
           const textArea = document.createElement('textarea');
           textArea.value = codeText;
@@ -1106,7 +1115,7 @@ class ChatMessage extends HTMLElement {
           textArea.style.left = '-999999px';
           document.body.appendChild(textArea);
           textArea.select();
-          
+
           try {
             document.execCommand('copy');
             copyBtn.innerHTML = '<i class="ri-check-line"></i>';
@@ -1118,7 +1127,7 @@ class ChatMessage extends HTMLElement {
           } catch (err2) {
             console.error('Fallback copy failed:', err2);
           }
-          
+
           document.body.removeChild(textArea);
         }
       });
@@ -2293,143 +2302,128 @@ function createMessageElement(
   const mm = String(date.getMinutes()).padStart(2, '0');
   wrapper.setAttribute('data-hover-time', `${hh}:${mm}`);
 
-  // Add message actions
+  // Add message actions (Discord-style hover bar)
   const actions = document.createElement('div');
   actions.className = 'message-actions';
 
-  // Create button container (removed timeSpan)
-  const buttonsContainer = document.createElement('div');
-  buttonsContainer.className = 'message-actions-buttons';
+  // Section 1: Quick reaction buttons
+  const reactionsSection = document.createElement('div');
+  reactionsSection.className = 'message-actions-section';
 
-  // Add Copy button for all messages (first button)
-  const copyBtn = document.createElement('button');
-  copyBtn.className = 'message-action-btn';
-  copyBtn.innerHTML = '<i class="ri-file-copy-line"></i> Copy';
-  copyBtn.title = 'Copy message text';
-  copyBtn.onclick = async (e) => {
-    e.stopPropagation();
-    try {
-      // Don't copy FILE: messages, just show a notice
-      if (data.message.startsWith('FILE:')) {
-        copyBtn.innerHTML = '<i class="ri-check-line"></i> File';
-        setTimeout(() => {
-          copyBtn.innerHTML = '<i class="ri-file-copy-line"></i> Copy';
-        }, 1000);
-        return;
-      }
+  // Add quick reaction buttons for most common reactions
+  const quickReactions = ['like', 'love', 'laugh']; // First 3 reactions
 
-      await navigator.clipboard.writeText(data.message);
-      // Show feedback
-      copyBtn.innerHTML = '<i class="ri-check-line"></i> Copied';
-      setTimeout(() => {
-        copyBtn.innerHTML = '<i class="ri-file-copy-line"></i> Copy';
-      }, 1000);
-    } catch (err) {
-      console.error('Failed to copy message:', err);
-      copyBtn.innerHTML = '<i class="ri-close-line"></i> Failed';
-      setTimeout(() => {
-        copyBtn.innerHTML = '<i class="ri-file-copy-line"></i> Copy';
-      }, 1000);
+  quickReactions.forEach((reactionId) => {
+    const config = REACTION_TYPES[reactionId];
+    if (!config) return;
+
+    const btn = document.createElement('button');
+    btn.className = 'quick-reaction-btn';
+    btn.title = config.label;
+    btn.style.setProperty('--reaction-color', config.color);
+    btn.innerHTML = `<i class="${config.icon}"></i>`;
+    btn.dataset.reactionId = reactionId;
+    btn.dataset.messageId = data.messageId;
+
+    // Check if user already reacted
+    if (
+      window.reactionManager &&
+      window.reactionManager.hasUserReacted(data.messageId, reactionId)
+    ) {
+      btn.classList.add('reacted');
+      btn.innerHTML = `<i class="${config.iconFilled}"></i>`;
     }
+
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      console.log('🖱️ Quick reaction button clicked:', {
+        messageId: data.messageId,
+        reactionId,
+        reactionManager: !!window.reactionManager,
+      });
+
+      if (window.reactionManager) {
+        const result = window.reactionManager.toggleReaction(
+          data.messageId,
+          reactionId,
+        );
+        console.log('🎯 Toggle reaction result:', result);
+      } else {
+        console.error('❌ Reaction manager not available');
+      }
+    };
+
+    reactionsSection.appendChild(btn);
+  });
+
+  // Add "More reactions" button
+  const moreReactionsBtn = document.createElement('button');
+  moreReactionsBtn.className = 'quick-reaction-btn';
+  moreReactionsBtn.title = 'More reactions';
+  moreReactionsBtn.innerHTML = '<i class="ri-add-circle-line"></i>';
+  moreReactionsBtn.onclick = async (e) => {
+    e.stopPropagation();
+    showReactionPicker(
+      moreReactionsBtn,
+      data.messageId,
+      window.reactionManager,
+    );
   };
-  buttonsContainer.appendChild(copyBtn);
+  reactionsSection.appendChild(moreReactionsBtn);
+
+  actions.appendChild(reactionsSection);
+
+  // Divider
+  const divider1 = document.createElement('div');
+  divider1.className = 'message-actions-divider';
+  actions.appendChild(divider1);
+
+  // Section 2: Reply button
+  const replySection = document.createElement('div');
+  replySection.className = 'message-actions-section';
 
   if (isInThread || isThreadOriginal) {
     // In thread panel - show Locate button
     const locateBtn = document.createElement('button');
     locateBtn.className = 'message-action-btn';
-    locateBtn.innerHTML = '<i class="ri-map-pin-2-line"></i> Locate';
+    locateBtn.innerHTML = '<i class="ri-map-pin-2-line"></i>';
     locateBtn.title = 'Locate in main chat';
     locateBtn.onclick = (e) => {
       e.stopPropagation();
       locateMessageInMainChat(data.messageId);
     };
-    buttonsContainer.appendChild(locateBtn);
+    replySection.appendChild(locateBtn);
   } else {
     // In main chat - show Reply button
     const replyBtn = document.createElement('button');
     replyBtn.className = 'message-action-btn';
-    replyBtn.innerHTML = '<i class="ri-chat-1-line"></i> Reply';
+    replyBtn.innerHTML = '<i class="ri-chat-1-line"></i>';
+    replyBtn.title = 'Reply';
     replyBtn.onclick = (e) => {
       e.stopPropagation();
-      // Set reply target instead of opening thread
       const preview = data.message.substring(0, 50);
       setReplyTo(data.messageId, data.name, preview, data.messageId);
     };
-    buttonsContainer.appendChild(replyBtn);
+    replySection.appendChild(replyBtn);
   }
 
-  // Add Delete button if user owns this message
-  if (data.name === userState.value.username) {
-    // Add Edit button (only for non-file messages)
-    if (!data.message.startsWith('FILE:')) {
-      const editBtn = document.createElement('button');
-      editBtn.className = 'message-action-btn';
-      editBtn.innerHTML = '<i class="ri-edit-line"></i> Edit';
-      editBtn.title = 'Edit this message';
-      editBtn.onclick = async (e) => {
-        e.stopPropagation();
-        showEditDialog(data);
-      };
-      buttonsContainer.appendChild(editBtn);
-    }
+  actions.appendChild(replySection);
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'message-action-btn';
-    deleteBtn.innerHTML = '<i class="ri-delete-bin-line"></i> Delete';
-    deleteBtn.style.color = '#dc3545';
-    deleteBtn.title = 'Delete this message';
-    deleteBtn.onclick = async (e) => {
-      e.stopPropagation();
-      if (confirm('Delete this message? This action cannot be undone.')) {
-        try {
-          // Delete from TinyBase (will auto-sync to other clients)
-          if (window.messageList) {
-            window.messageList.deleteMessage(data.messageId);
-            console.log('✅ Message deleted via TinyBase');
+  // More actions (dropdown menu style)
+  const moreSection = document.createElement('div');
+  moreSection.className = 'message-actions-section';
 
-            // Show re-edit banner with the deleted message content
-            showReEditBanner(data.message);
-          } else {
-            throw new Error('Message list not initialized');
-          }
-        } catch (err) {
-          console.error('Error deleting message:', err);
-          alert(err.message || 'Failed to delete message');
-        }
-      }
-    };
-    buttonsContainer.appendChild(deleteBtn);
-  }
+  const moreBtn = document.createElement('button');
+  moreBtn.className = 'message-action-btn';
+  moreBtn.innerHTML = '<i class="ri-more-2-line"></i>';
+  moreBtn.title = 'More actions';
+  moreBtn.onclick = (e) => {
+    e.stopPropagation();
+    showMessageActionsMenu(moreBtn, data, isInThread, isThreadOriginal);
+  };
+  moreSection.appendChild(moreBtn);
 
-  // Add Pin button (only in main chat, not in thread)
-  if (!isInThread && !isThreadOriginal) {
-    const pinBtn = document.createElement('button');
-    pinBtn.className = 'message-action-btn';
-    pinBtn.innerHTML = '<i class="ri-pushpin-line"></i> Pin';
-    pinBtn.title = 'Pin this message';
-    pinBtn.onclick = async (e) => {
-      e.stopPropagation();
-      try {
-        // Pin only needs messageId, data is looked up from messages table
-        await pinMessage(data.messageId);
-
-        pinBtn.innerHTML = '<i class="ri-pushpin-fill"></i> Pinned';
-        setTimeout(() => {
-          pinBtn.innerHTML = '<i class="ri-pushpin-line"></i> Pin';
-        }, 2000);
-      } catch (error) {
-        console.error('Failed to pin message:', error);
-        pinBtn.innerHTML = '<i class="ri-close-line"></i> Failed';
-        setTimeout(() => {
-          pinBtn.innerHTML = '<i class="ri-pushpin-line"></i> Pin';
-        }, 1000);
-      }
-    };
-    buttonsContainer.appendChild(pinBtn);
-  }
-
-  actions.appendChild(buttonsContainer);
+  actions.appendChild(moreSection);
 
   // Wrap actions in a sticky container
   const actionsSticky = document.createElement('div');
@@ -2438,6 +2432,12 @@ function createMessageElement(
 
   // Insert at the beginning of wrapper
   wrapper.insertBefore(actionsSticky, wrapper.firstChild);
+
+  // Add reactions container (after message content)
+  const reactionsHTML = renderReactions(data.messageId, window.reactionManager);
+  const reactionsDiv = document.createElement('div');
+  reactionsDiv.innerHTML = reactionsHTML;
+  wrapper.appendChild(reactionsDiv);
 
   // Mobile: Long-press to show context menu
   if (isMobile()) {
@@ -2485,6 +2485,151 @@ function createMessageElement(
   }
 
   return wrapper;
+}
+
+// Show message actions menu (More button dropdown)
+function showMessageActionsMenu(
+  triggerBtn,
+  data,
+  isInThread,
+  isThreadOriginal,
+) {
+  // Remove existing menu
+  document
+    .querySelectorAll('.message-actions-menu')
+    .forEach((el) => el.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'message-actions-menu';
+  menu.style.position = 'absolute';
+  menu.style.zIndex = '1000';
+  menu.style.background = 'var(--background)';
+  menu.style.border = '1px solid var(--border)';
+  menu.style.borderRadius = '6px';
+  menu.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+  menu.style.minWidth = '160px';
+  menu.style.padding = '4px 0';
+
+  const actions = [];
+
+  // Copy action
+  actions.push({
+    icon: 'ri-file-copy-line',
+    label: 'Copy',
+    disabled: data.message.startsWith('FILE:'),
+    onClick: async () => {
+      if (!data.message.startsWith('FILE:')) {
+        await navigator.clipboard.writeText(data.message);
+      }
+    },
+  });
+
+  // Pin action (only in main chat)
+  if (!isInThread && !isThreadOriginal) {
+    actions.push({
+      icon: 'ri-pushpin-line',
+      label: 'Pin',
+      onClick: async () => {
+        await pinMessage(data.messageId);
+      },
+    });
+  }
+
+  // Edit action (only for own messages, non-file)
+  if (
+    data.name === userState.value.username &&
+    !data.message.startsWith('FILE:')
+  ) {
+    actions.push({
+      icon: 'ri-edit-line',
+      label: 'Edit',
+      onClick: () => {
+        showEditDialog(data);
+      },
+    });
+  }
+
+  // Delete action (only for own messages)
+  if (data.name === userState.value.username) {
+    actions.push({
+      icon: 'ri-delete-bin-line',
+      label: 'Delete',
+      danger: true,
+      onClick: async () => {
+        if (confirm('Delete this message? This action cannot be undone.')) {
+          if (window.messageList) {
+            window.messageList.deleteMessage(data.messageId);
+            showReEditBanner(data.message);
+          }
+        }
+      },
+    });
+  }
+
+  // Render menu items
+  actions.forEach((action) => {
+    const item = document.createElement('button');
+    item.style.display = 'flex';
+    item.style.alignItems = 'center';
+    item.style.gap = '8px';
+    item.style.width = '100%';
+    item.style.padding = '8px 12px';
+    item.style.background = 'transparent';
+    item.style.border = 'none';
+    item.style.cursor = action.disabled ? 'not-allowed' : 'pointer';
+    item.style.textAlign = 'left';
+    item.style.fontSize = '14px';
+    item.style.color = action.danger
+      ? '#dc3545'
+      : action.disabled
+        ? 'var(--text-muted)'
+        : 'var(--text-main)';
+    item.style.opacity = action.disabled ? '0.5' : '1';
+
+    item.innerHTML = `<i class="${action.icon}"></i> ${action.label}`;
+
+    if (!action.disabled) {
+      item.onmouseenter = () => {
+        item.style.background = 'var(--background-alt)';
+      };
+      item.onmouseleave = () => {
+        item.style.background = 'transparent';
+      };
+      item.onclick = (e) => {
+        e.stopPropagation();
+        action.onClick();
+        menu.remove();
+      };
+    }
+
+    menu.appendChild(item);
+  });
+
+  // Position menu
+  document.body.appendChild(menu);
+  const rect = triggerBtn.getBoundingClientRect();
+  menu.style.left = `${rect.right + 4}px`;
+  menu.style.top = `${rect.top}px`;
+
+  // Adjust if off-screen
+  const menuRect = menu.getBoundingClientRect();
+  if (menuRect.right > window.innerWidth) {
+    menu.style.left = `${rect.left - menuRect.width - 4}px`;
+  }
+  if (menuRect.bottom > window.innerHeight) {
+    menu.style.top = `${window.innerHeight - menuRect.height - 8}px`;
+  }
+
+  // Close on click outside
+  setTimeout(() => {
+    function closeMenu(e) {
+      if (!menu.contains(e.target) && e.target !== triggerBtn) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    }
+    document.addEventListener('click', closeMenu);
+  }, 0);
 }
 
 // Show mobile context menu for message actions
@@ -3806,11 +3951,26 @@ async function startChat() {
   }
 
   // Initialize TinyBase store and indexes
-  const { store, indexes, queries } = await createTinybaseStorage(roomname);
+  const { store, indexes, relationships } =
+    await createTinybaseStorage(roomname);
   window.store = store;
   window.indexes = indexes;
-  window.queries = queries;
-  console.log('✅ TinyBase store, indexes, and queries initialized');
+  window.relationships = relationships;
+  console.log('✅ TinyBase store, indexes, and relationships initialized');
+
+  // Initialize reaction manager
+  window.reactionManager = new ReactionManager(
+    store,
+    relationships,
+    indexes,
+    () => userState.value.username, // getCurrentUsername
+  );
+  console.log('✅ Reaction manager initialized');
+
+  // Initialize reaction events
+  initReactionEvents('#chatlog', window.reactionManager);
+
+  console.log('✅ Reaction events initialized');
 
   // Initialize pin listener after TinyBase is ready
   initPinListener();

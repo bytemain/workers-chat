@@ -1446,15 +1446,92 @@
         right: 0;
         top: 0;
         display: none;
-        gap: var(--spacing-xs);
+        gap: 2px;
         align-items: center;
         background: var(--background);
         border: 1px solid var(--border);
-        border-radius: var(--border-radius);
-        padding: 2px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        border-radius: 6px;
+        padding: 4px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
         pointer-events: auto;
         min-height: fit-content;
+      }
+
+      .message-actions-section {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+
+      .message-actions-divider {
+        width: 1px;
+        height: 20px;
+        background: var(--border);
+        margin: 0 4px;
+      }
+
+      /* Quick reaction buttons in action bar */
+      .quick-reaction-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        margin: 0;
+        background: transparent;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        font-size: 18px;
+      }
+
+      .quick-reaction-btn i {
+        color: var(--text-muted);
+        transition: color 0.15s ease;
+      }
+
+      .quick-reaction-btn:hover {
+        background: var(--background-alt);
+      }
+
+      .quick-reaction-btn:hover i {
+        color: var(--reaction-color, var(--text-main));
+      }
+
+      .quick-reaction-btn.reacted i {
+        color: var(--reaction-color);
+      }
+
+      /* Standard action buttons (Reply, More, etc.) */
+      .message-action-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        margin: 0;
+        background: transparent;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        font-size: 18px;
+      }
+
+      .message-action-btn i {
+        color: var(--text-muted);
+        transition: color 0.15s ease;
+      }
+
+      .message-action-btn:hover {
+        background: var(--background-alt);
+      }
+
+      .message-action-btn:hover i {
+        color: var(--text-main);
       }
 
       /* Hover time - shown at the beginning of message on hover */
@@ -1770,6 +1847,145 @@
       .code-copy-btn.copied {
         color: #22c55e;
         border-color: #22c55e;
+      }
+
+      /* Reaction System Styles */
+      .message-reactions {
+        display: flex;
+        gap: 4px;
+        margin-top: 4px;
+        margin-left: 46px; /* Align with message content */
+        flex-wrap: wrap;
+        align-items: center;
+        min-height: 0; /* Always visible even when empty */
+      }
+
+      .reaction-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        background: var(--background-alt);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 14px;
+        color: var(--text-muted);
+        min-height: 28px;
+      }
+
+      .reaction-btn i {
+        font-size: 16px;
+        color: var(--reaction-color, var(--text-muted));
+        transition: color 0.2s ease;
+      }
+
+      .reaction-btn:hover {
+        background: var(--background);
+        border-color: var(--reaction-color);
+        transform: scale(1.05);
+      }
+
+      .reaction-btn.reacted {
+        background: color-mix(in srgb, var(--reaction-color) 15%, transparent);
+        border-color: var(--reaction-color);
+        color: var(--reaction-color);
+      }
+
+      .reaction-btn.reacted i {
+        color: var(--reaction-color);
+      }
+
+      .reaction-count {
+        font-size: 12px;
+        font-weight: 600;
+        min-width: 12px;
+        text-align: center;
+        line-height: 1;
+      }
+
+      .reaction-add-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        margin: 0;
+        background: transparent;
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+        cursor: pointer;
+        opacity: 0;
+        transition: all 0.2s ease;
+        color: var(--text-muted);
+        font-size: 14px;
+      }
+
+      .message-reactions:hover .reaction-add-btn,
+      .reaction-add-btn:focus {
+        opacity: 1;
+      }
+
+      .reaction-add-btn:hover {
+        background: var(--background-alt);
+        border-style: solid;
+        border-color: var(--links);
+        color: var(--text-main);
+        transform: scale(1.05);
+      }
+
+      /* Reaction Picker (Popup) */
+      .reaction-picker {
+        display: flex;
+        gap: 4px;
+        padding: 8px;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        position: absolute;
+        z-index: 2000;
+        animation: reactionPickerFadeIn 0.15s ease;
+      }
+
+      @keyframes reactionPickerFadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-4px) scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .reaction-picker-item {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        margin: 0;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 20px;
+      }
+
+      .reaction-picker-item:hover {
+        background: var(--background-alt);
+        border-color: var(--reaction-color);
+        transform: scale(1.15);
+      }
+
+      .reaction-picker-item i {
+        color: var(--reaction-color);
+        font-size: 20px;
       }
 
       .message-markdown blockquote {
