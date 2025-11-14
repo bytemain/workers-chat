@@ -1040,6 +1040,9 @@ class ChatMessage extends HTMLElement {
         link.style.color = '#0066cc';
       });
 
+      // Post-process: add copy buttons to code blocks
+      this.addCopyButtonsToCodeBlocks(markdownDiv);
+
       // Post-process: handle channel links (e.g., #channel-name)
       this.processChannelLinks(markdownDiv);
 
@@ -1049,6 +1052,82 @@ class ChatMessage extends HTMLElement {
       // Fallback to plain text on error
       this.renderPlainTextMessage(text, container);
     }
+  }
+
+  // Add copy buttons to code blocks
+  addCopyButtonsToCodeBlocks(container) {
+    container.querySelectorAll('pre').forEach((preElement) => {
+      // Skip if already wrapped
+      if (preElement.parentElement.classList.contains('code-block-wrapper')) {
+        return;
+      }
+
+      // Get the code content
+      const codeElement = preElement.querySelector('code');
+      const codeText = codeElement ? codeElement.textContent : preElement.textContent;
+
+      // Create wrapper
+      const wrapper = document.createElement('div');
+      wrapper.className = 'code-block-wrapper';
+
+      // Create copy button
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'code-copy-btn';
+      copyBtn.innerHTML = '<i class="ri-clipboard-line"></i>';
+      copyBtn.title = 'Copy code';
+      copyBtn.setAttribute('aria-label', 'Copy code to clipboard');
+
+      // Copy functionality
+      copyBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        try {
+          await navigator.clipboard.writeText(codeText);
+          
+          // Visual feedback
+          copyBtn.innerHTML = '<i class="ri-check-line"></i>';
+          copyBtn.classList.add('copied');
+          copyBtn.title = 'Copied!';
+
+          // Reset after 2 seconds
+          setTimeout(() => {
+            copyBtn.innerHTML = '<i class="ri-clipboard-line"></i>';
+            copyBtn.classList.remove('copied');
+            copyBtn.title = 'Copy code';
+          }, 2000);
+        } catch (err) {
+          console.error('Failed to copy code:', err);
+          
+          // Fallback for older browsers
+          const textArea = document.createElement('textarea');
+          textArea.value = codeText;
+          textArea.style.position = 'fixed';
+          textArea.style.left = '-999999px';
+          document.body.appendChild(textArea);
+          textArea.select();
+          
+          try {
+            document.execCommand('copy');
+            copyBtn.innerHTML = '<i class="ri-check-line"></i>';
+            copyBtn.classList.add('copied');
+            setTimeout(() => {
+              copyBtn.innerHTML = '<i class="ri-clipboard-line"></i>';
+              copyBtn.classList.remove('copied');
+            }, 2000);
+          } catch (err2) {
+            console.error('Fallback copy failed:', err2);
+          }
+          
+          document.body.removeChild(textArea);
+        }
+      });
+
+      // Wrap the pre element
+      preElement.parentNode.insertBefore(wrapper, preElement);
+      wrapper.appendChild(preElement);
+      wrapper.appendChild(copyBtn);
+    });
   }
 
   // Process channel links in markdown content

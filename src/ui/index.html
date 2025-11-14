@@ -1721,6 +1721,57 @@
         font-size: 0.85em;
       }
 
+      /* Code block wrapper with copy button */
+      .code-block-wrapper {
+        position: relative;
+        margin: 8px 0;
+      }
+
+      .code-block-wrapper pre {
+        margin: 0;
+      }
+
+      .code-copy-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        cursor: pointer;
+        opacity: 0;
+        transition:
+          opacity 0.2s,
+          background-color 0.2s;
+        font-size: 16px;
+        color: var(--text-muted);
+      }
+
+      .code-block-wrapper:hover .code-copy-btn {
+        opacity: 1;
+      }
+
+      .code-copy-btn:hover {
+        background: var(--background-alt);
+        color: var(--text-main);
+      }
+
+      .code-copy-btn:active {
+        transform: scale(0.95);
+      }
+
+      .code-copy-btn.copied {
+        color: #22c55e;
+        border-color: #22c55e;
+      }
+
       .message-markdown blockquote {
         border-left: 3px solid var(--links);
         padding-left: 12px;
