@@ -85,6 +85,8 @@ export function initMessageList(
           replyToId: row.replyToId || null,
           editedAt: row.editedAt || null,
           encrypted: CryptoUtils.isEncrypted(row.text || ''),
+          uploadProgress: row.uploadProgress,
+          uploadStatus: row.uploadStatus,
         };
       });
       // Note: Already sorted by timestamp via index definition!

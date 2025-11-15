@@ -766,8 +766,12 @@ class FileMessage extends HTMLElement {
     } else if (uploadStatus === 'error') {
       statusElement.textContent = 'Upload failed';
       statusElement.style.color = '#dc3545';
-    } else if (fileSize) {
+    } else if (fileSize !== null && fileSize !== undefined && fileSize !== '') {
+      // Show file size for normal files (uploaded successfully or existing files)
       statusElement.textContent = this.formatFileSize(parseInt(fileSize));
+    } else {
+      // Fallback if no size info available
+      statusElement.textContent = '';
     }
 
     infoSection.appendChild(nameElement);
@@ -1173,11 +1177,46 @@ class ChatMessage extends HTMLElement {
   }
 
   renderFileMessage(message, container) {
-    const parts = message.substring(5).split('|');
-    const fileUrl = parts[0];
-    const fileName = parts[1] || 'file';
-    const fileType = parts[2] || '';
-    const isEncrypted = parts[3] === 'encrypted';
+    // Parse file message: support both JSON (new) and pipe-separated (legacy) formats
+    let fileData;
+    const content = message.substring(5); // Remove "FILE:" prefix
+
+    if (content.startsWith('{')) {
+      // New JSON format: FILE:{"url":"...","name":"...","type":"...","size":123,"encrypted":true}
+      try {
+        fileData = JSON.parse(content);
+      } catch (e) {
+        console.error('Failed to parse file message JSON:', e);
+        fileData = {
+          url: '',
+          name: 'file',
+          type: '',
+          size: 0,
+          encrypted: false,
+        };
+      }
+    } else {
+      // Legacy pipe-separated format: FILE:url|name|type|size|encrypted
+      const parts = content.split('|');
+      fileData = {
+        url: parts[0],
+        name: parts[1] || 'file',
+        type: parts[2] || '',
+        encrypted: parts[3] === 'encrypted',
+      };
+    }
+
+    const {
+      url: fileUrl,
+      name: fileName,
+      type: fileType,
+      size: fileSize,
+      encrypted: isEncrypted,
+    } = fileData;
+
+    // Get upload progress/status from attributes if this is an uploading message
+    const uploadProgress = this.getAttribute('upload-progress');
+    const uploadStatus = this.getAttribute('upload-status');
 
     // If it's an image, use lazy-img component
     if (fileType.startsWith('image/')) {
@@ -1199,8 +1238,20 @@ class ChatMessage extends HTMLElement {
       fileMessage.setAttribute('file-url', fileUrl);
       fileMessage.setAttribute('file-name', fileName);
 
+      // Always set file-size if it's a valid number (including 0 for empty files)
+      if (fileSize !== undefined && fileSize !== null && !isNaN(fileSize)) {
+        fileMessage.setAttribute('file-size', String(fileSize));
+      }
+
       if (isEncrypted) {
         fileMessage.setAttribute('encrypted', 'true');
+      }
+
+      if (uploadProgress !== null && uploadProgress !== undefined) {
+        fileMessage.setAttribute('upload-progress', uploadProgress);
+      }
+      if (uploadStatus) {
+        fileMessage.setAttribute('upload-status', uploadStatus);
       }
 
       container.appendChild(fileMessage);
@@ -2544,6 +2595,13 @@ function createMessageElement(
   chatMessage.setAttribute('message-id', data.messageId);
   chatMessage.setAttribute('is-in-thread', isInThread ? 'true' : 'false');
   chatMessage.setAttribute('channel', data.channel || 'general'); // Add channel attribute
+
+  if (data.uploadProgress !== undefined) {
+    chatMessage.setAttribute('upload-progress', String(data.uploadProgress));
+  }
+  if (data.uploadStatus) {
+    chatMessage.setAttribute('upload-status', data.uploadStatus);
+  }
 
   if (data.replyTo) {
     chatMessage.setAttribute('reply-to', JSON.stringify(data.replyTo));
@@ -5060,10 +5118,16 @@ async function startChat() {
       // Create temporary message to show upload progress
       tempMessageId = 'temp_' + Date.now() + '_' + Math.random();
       const tempMessage = {
-        message: `FILE:uploading|${uploadFileName}|${file.type}|${file.size}`,
-        name: userState.value.username,
+        text: `FILE:${JSON.stringify({
+          url: 'uploading',
+          name: uploadFileName,
+          type: file.type,
+          size: file.size,
+          encrypted: isRoomEncrypted && currentRoomKey && cryptoSupported,
+        })}`,
+        username: userState.value.username,
         timestamp: Date.now(),
-        messageId: tempMessageId,
+        channel: currentChannel || 'general',
         uploadProgress: 0,
         uploadStatus: 'uploading',
       };
@@ -5179,15 +5243,14 @@ async function startChat() {
         window.store.delRow('messages', tempMessageId);
       }
 
-      // Send file message using userApi
-      // Include marker if file was encrypted
-      let fileMessage;
-      if (isRoomEncrypted) {
-        // Mark as encrypted file with original name and size
-        fileMessage = `FILE:${result.fileUrl}|${uploadFileName}|${file.type}|${file.size}|encrypted`;
-      } else {
-        fileMessage = `FILE:${result.fileUrl}|${result.fileName}|${result.fileType}|${file.size}`;
-      }
+      // Send file message using userApi (new JSON format)
+      const fileMessage = `FILE:${JSON.stringify({
+        url: result.fileUrl,
+        name: uploadFileName,
+        type: file.type,
+        size: file.size,
+        encrypted: isRoomEncrypted && currentRoomKey && cryptoSupported,
+      })}`;
 
       await userApi.sendMessage(fileMessage, replyTo);
 
