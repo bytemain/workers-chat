@@ -8,7 +8,7 @@ export default {
       output: './dist/ui',
       clean: true,
       bundle: true,
-      external: ['tinybase', 'reefjs'],
+      external: ['tinybase', 'reefjs', 'marked'],
     },
     { input: 'src/ui/crypto.worker.js', output: './dist/ui' },
   ],

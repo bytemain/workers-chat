@@ -1,5 +1,6 @@
 import './avatar/index.mjs';
 
+import { marked } from 'marked';
 import CryptoUtils from '../common/crypto-utils.js';
 import { keyManager } from '../common/key-manager.js';
 import FileCrypto from '../common/file-crypto.js';
