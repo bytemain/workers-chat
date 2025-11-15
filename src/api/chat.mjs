@@ -157,6 +157,45 @@ const app = ignite((app) => {
   app.route('/api', apiRoutes());
   app.route('/tinybase', tinybaseRoutes());
 
+  /**
+   * Fix Content-Type charset to UTF-8 for text-based content
+   * @param {Response} response - Original response
+   * @returns {Response} Response with fixed charset
+   */
+  function fixContentEncoding(response) {
+    const contentType = response.headers.get('Content-Type');
+    if (!contentType) {
+      return response;
+    }
+
+    let newContentType = contentType;
+
+    // Replace existing charset with UTF-8
+    if (contentType.includes('charset=')) {
+      newContentType = contentType.replace(
+        /charset=[^;,\s]*/i,
+        'charset=UTF-8',
+      );
+    }
+    // Add UTF-8 charset for text-based content types
+    else if (
+      contentType.includes('text/') ||
+      contentType.includes('application/json') ||
+      contentType.includes('application/javascript')
+    ) {
+      newContentType += '; charset=UTF-8';
+    }
+
+    // Only clone if we need to modify
+    if (newContentType !== contentType) {
+      const newResponse = new Response(response.body, response);
+      newResponse.headers.set('Content-Type', newContentType);
+      return newResponse;
+    }
+
+    return response;
+  }
+
   app.get('/files/*', async (c) => {
     const { env, req } = c;
     const url = new URL(req.url);
@@ -182,31 +221,61 @@ const app = ignite((app) => {
   });
 
   app.notFound(async (c) => {
+    const url = new URL(c.req.raw.url);
+    const pathname = url.pathname;
+
+    // Don't fallback to index.html for asset paths (images, fonts, etc.)
+    const assetPaths = ['/assets/', '/css/', '/js/', '/fonts/', '/images/'];
+    const isAssetPath = assetPaths.some((path) => pathname.startsWith(path));
+
+    // Also check for common asset file extensions
+    const assetExtensions = [
+      '.png',
+      '.jpg',
+      '.jpeg',
+      '.gif',
+      '.svg',
+      '.ico',
+      '.woff',
+      '.woff2',
+      '.ttf',
+      '.eot',
+    ];
+
+    const hasAssetExtension = assetExtensions.some((ext) =>
+      pathname.endsWith(ext),
+    );
+
     const response = await c.env.ASSETS.fetch(c.req.raw);
+    const contentType = response.headers.get('Content-Type') || '';
 
-    console.log('Serving asset:', c.req.raw.url);
-    // Clone the response so we can modify headers
-    const newResponse = new Response(response.body, response);
-    const contentType = newResponse.headers.get('Content-Type');
+    console.log(
+      'Fetched asset with status:',
+      response.status,
+      'Content-Type:',
+      contentType,
+      'Body:',
+      await response
+        .clone()
+        .text()
+        .then((t) => t.substring(0, 200)),
+      c.req.raw.url,
+    );
 
-    if (contentType) {
-      let newContentType = contentType;
-      if (contentType.includes('charset=')) {
-        newContentType = contentType.replace(
-          /charset=[^;,\s]*/i,
-          'charset=UTF-8',
-        );
-      } else if (
-        contentType.includes('text/') ||
-        contentType.includes('application/json') ||
-        contentType.includes('application/javascript')
-      ) {
-        newContentType += '; charset=UTF-8';
-      }
-      newResponse.headers.set('Content-Type', newContentType);
+    // If requesting asset path/extension but got HTML, it's a 404 fallback
+    if (
+      (isAssetPath || hasAssetExtension) &&
+      contentType.includes('text/html')
+    ) {
+      console.log('Asset not found (got HTML fallback):', pathname);
+      return new Response('Not Found', {
+        status: 404,
+        headers: { 'Content-Type': 'text/plain; charset=UTF-8' },
+      });
     }
 
-    return newResponse;
+    // Fix charset encoding for text-based content
+    return fixContentEncoding(response);
   });
 });
 

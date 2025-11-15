@@ -87,7 +87,7 @@ export async function createTinybaseStorage(roomName) {
   await persister.startAutoSave();
 
   // Create synchronizer and keep reference for cleanup
-  const synchronizer = createWsSynchronizer(
+  const synchronizer = await createWsSynchronizer(
     store,
     new ReconnectingWebSocket(syncUrl),
     1,

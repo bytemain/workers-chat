@@ -1,0 +1,11 @@
+{
+  "name": "Workers Chat",
+  "short_name": "Chat",
+  "description": "Real-time encrypted chat powered by Cloudflare Workers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0366d6",
+  "orientation": "portrait-primary",
+  "categories": ["social", "productivity"]
+}

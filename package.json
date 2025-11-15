@@ -8,6 +8,8 @@
     "dev": "wrangler dev",
     "ui": "rna build -C rna.config.mjs",
     "ui:prod": "npm run ui -- --minify",
+    "sw": "workbox generateSW workbox-config.js",
+    "postui": "npm run sw",
     "format": "prettier --write ./src"
   },
   "dependencies": {
@@ -15,11 +17,15 @@
     "hono": "^4.10.5",
     "ruply": "^1.0.1",
     "tinybase": "^6.7.2",
-    "webcrypto-liner": "^1.4.3"
+    "webcrypto-liner": "^1.4.3",
+    "workbox-core": "^7.3.0",
+    "workbox-routing": "^7.3.0",
+    "workbox-strategies": "^7.3.0"
   },
   "devDependencies": {
     "@chialab/rna": "^0.19.0",
     "esbuild-plugin-manifest": "^1.0.5",
-    "prettier": "^3.6.2"
+    "prettier": "^3.6.2",
+    "workbox-cli": "^7.3.0"
   }
 }
