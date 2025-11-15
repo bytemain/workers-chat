@@ -52,15 +52,15 @@ export async function loadCryptoPolyfill() {
   try {
     // Dynamically import webcrypto-liner
     const { Crypto } = await import('webcrypto-liner');
-    
+
     // Create polyfill instance
     const crypto = new Crypto();
-    
+
     // Replace window.crypto with polyfilled version
     // The polyfill will use native implementations when available
     // and fall back to JavaScript implementations when not
     window.crypto = crypto;
-    
+
     console.log('✅ WebCrypto polyfill loaded successfully');
     return true;
   } catch (error) {

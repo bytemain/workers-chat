@@ -31,7 +31,12 @@ export async function createReadStatusStore() {
  * @param {string} channel - Channel name
  * @param {string} messageId - Message ID
  */
-export function markMessageAsRead(readStatusStore, roomName, channel, messageId) {
+export function markMessageAsRead(
+  readStatusStore,
+  roomName,
+  channel,
+  messageId,
+) {
   const rowId = `${roomName}:${messageId}`;
   readStatusStore.setRow('readMessages', rowId, {
     channel,
@@ -46,7 +51,12 @@ export function markMessageAsRead(readStatusStore, roomName, channel, messageId)
  * @param {string} channel - Channel name
  * @param {Array<{messageId: string}>} messages - Array of messages
  */
-export function markChannelAsRead(readStatusStore, roomName, channel, messages) {
+export function markChannelAsRead(
+  readStatusStore,
+  roomName,
+  channel,
+  messages,
+) {
   messages.forEach((msg) => {
     markMessageAsRead(readStatusStore, roomName, channel, msg.messageId);
   });
@@ -72,7 +82,12 @@ export function isMessageRead(readStatusStore, roomName, messageId) {
  * @param {Array<{messageId: string, channel: string}>} allMessages - All messages from TinyBase
  * @returns {number}
  */
-export function getUnreadCount(readStatusStore, roomName, channel, allMessages) {
+export function getUnreadCount(
+  readStatusStore,
+  roomName,
+  channel,
+  allMessages,
+) {
   const channelMessages = allMessages.filter(
     (msg) => msg.channel.toLowerCase() === channel.toLowerCase(),
   );
