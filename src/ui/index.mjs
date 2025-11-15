@@ -1723,8 +1723,6 @@ let isAtBottom = true;
 
 let roomname;
 let currentChannel = 'general'; // Current channel for sending messages (DEPRECATED: use chatState)
-let currentThreadId = null; // Current thread ID (DEPRECATED: use chatState)
-let temporaryChannels = new Set(); // Track frontend-only temporary channels
 
 // Backward compatibility: Sync global variables with chatState
 // These will be removed after full migration
@@ -1743,10 +1741,9 @@ Object.defineProperty(window, 'currentChannel', {
 
 Object.defineProperty(window, 'currentThreadId', {
   get() {
-    return chatState?.value?.threadId || currentThreadId;
+    return chatState?.value?.threadId;
   },
   set(v) {
-    currentThreadId = v;
     if (chatState) {
       v ? chatState.openThread(v) : chatState.closeThread();
     }
@@ -2320,8 +2317,6 @@ window.openThread = async function (messageId) {
     currentMsg = parentMsg;
   }
 
-  currentThreadId = rootMessageId;
-
   // Update state - URL sync happens automatically via chatState
   if (chatState) {
     chatState.openThread(rootMessageId);
@@ -2362,8 +2357,6 @@ window.openThread = async function (messageId) {
 };
 
 window.closeThread = function () {
-  currentThreadId = null;
-
   // Update state - URL sync happens automatically via chatState
   if (chatState) {
     chatState.closeThread();
@@ -2549,7 +2542,7 @@ function updateThreadInfo(messageData) {
   }
 
   // If this reply belongs to the currently open thread, add it to thread panel
-  if (currentThreadId === rootId) {
+  if (chatState?.value?.threadId === rootId) {
     // Check if this reply is already in the thread panel
     const existingReply = threadReplies.querySelector(
       `[data-message-id="${messageData.messageId}"]`,
@@ -3242,9 +3235,6 @@ async function switchToChannel(channel) {
     if (window.channelList) {
       window.channelList.upsertChannel(normalizedChannel, 0);
     }
-
-    // Fallback: Add to temporary channels set
-    temporaryChannels.add(normalizedChannel);
   }
 
   // Update visual state for both channels and DMs
@@ -4231,8 +4221,6 @@ async function startChat() {
   encryptionState.roomKey = null;
   encryptionState.isEncrypted = false;
 
-  // Reset channel state
-  temporaryChannels.clear();
   currentChannel = 'general';
 
   // Normalize the room name a bit.
@@ -4979,6 +4967,7 @@ async function startChat() {
 
     // Handle file uploads from the thread input component
     threadInputComponent.onFileUpload = async (file) => {
+      const currentThreadId = chatState.value.threadId;
       if (!currentThreadId) return;
 
       addSystemMessage('* Uploading file...');
@@ -5004,6 +4993,7 @@ async function startChat() {
 
     // Handle paste for file upload in thread input
     threadInputComponent.onPaste(async (event) => {
+      const currentThreadId = chatState.value.threadId;
       if (!currentThreadId) return;
 
       const items = event.clipboardData?.items;
@@ -5060,6 +5050,7 @@ async function startChat() {
   }
 
   async function sendThreadReply() {
+    const currentThreadId = chatState.value.threadId;
     if (!threadInputComponent || !currentThreadId) return;
 
     const message = threadInputComponent.getValue().trim();

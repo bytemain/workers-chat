@@ -101,14 +101,6 @@ export function initChatState() {
 
       const state = store.value;
 
-      // Check if room changed (by pathname)
-      const newRoomName = getRoomNameFromURL();
-      if (state.roomName && newRoomName !== state.roomName) {
-        // Room changed, reload the page
-        window.location.reload();
-        return;
-      }
-
       // Handle thread navigation - call actual window functions
       if (urlThread !== state.threadId) {
         if (urlThread && window.openThread) {
@@ -144,13 +136,6 @@ export function initChatState() {
   return urlSync;
 }
 
-// Helper: Get room name from URL path
-function getRoomNameFromURL() {
-  const path = window.location.pathname;
-  const match = path.match(/^\/room\/([^\/]+)/);
-  return match ? match[1] : null;
-}
-
 // Cleanup function
 export function cleanupChatState() {
   if (urlSync) {
@@ -161,10 +146,6 @@ export function cleanupChatState() {
 // Export state for external access (backward compatibility)
 export function getCurrentChannel() {
   return chatState.value.channel;
-}
-
-export function getCurrentThreadId() {
-  return chatState.value.threadId;
 }
 
 export function isThreadOpen() {
