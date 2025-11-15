@@ -4532,6 +4532,100 @@ async function startChat() {
     chatInputComponent.focus();
   }
 
+  // Setup drag and drop for file upload
+  const chatroomContainer = document.getElementById('chatroom');
+  if (chatroomContainer) {
+    let dragCounter = 0;
+    const dropOverlay = document.createElement('div');
+    dropOverlay.className = 'drop-overlay';
+    dropOverlay.innerHTML = `
+      <div class="drop-overlay-content">
+        <i class="ri-upload-cloud-2-line" style="font-size: 64px; margin-bottom: 16px;"></i>
+        <div style="font-size: 24px; font-weight: 500; margin-bottom: 8px;">Drop file to upload</div>
+        <div style="font-size: 14px; opacity: 0.8;">Max ${MAX_FILE_SIZE_MB}MB</div>
+      </div>
+    `;
+    dropOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 123, 255, 0.9);
+      color: white;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      pointer-events: none;
+    `;
+    document.body.appendChild(dropOverlay);
+
+    // Prevent default drag behavior on the whole document
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((eventName) => {
+      document.body.addEventListener(
+        eventName,
+        (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        },
+        false,
+      );
+    });
+
+    // Show overlay on drag enter
+    document.body.addEventListener('dragenter', (e) => {
+      dragCounter++;
+      if (e.dataTransfer.types.includes('Files')) {
+        dropOverlay.style.display = 'flex';
+      }
+    });
+
+    // Hide overlay on drag leave
+    document.body.addEventListener('dragleave', (e) => {
+      dragCounter--;
+      if (dragCounter === 0) {
+        dropOverlay.style.display = 'none';
+      }
+    });
+
+    // Handle drop
+    document.body.addEventListener('drop', async (e) => {
+      dragCounter = 0;
+      dropOverlay.style.display = 'none';
+
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        // Only handle the first file
+        const file = files[0];
+
+        addSystemMessage('* Uploading dropped file...');
+
+        // Prepare replyTo info if replying to a message
+        let replyToInfo = null;
+        if (currentReplyTo) {
+          replyToInfo = {
+            messageId: currentReplyTo.messageId,
+            username: currentReplyTo.username,
+            preview: currentReplyTo.preview,
+          };
+        }
+
+        const success = await uploadFile(file, null, replyToInfo);
+        if (success && currentReplyTo) {
+          // Clear reply state after successful upload
+          clearReplyTo();
+        }
+
+        if (files.length > 1) {
+          addSystemMessage(
+            `* Note: Only the first file was uploaded (${files.length} files dropped)`,
+          );
+        }
+      }
+    });
+  }
+
   chatlog.addEventListener('scroll', (event) => {
     // Allow 1px tolerance for floating point calculation errors
     isAtBottom =
