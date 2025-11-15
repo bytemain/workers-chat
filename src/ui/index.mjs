@@ -1055,6 +1055,9 @@ class ChatMessage extends HTMLElement {
       // Post-process: handle channel links (e.g., #channel-name)
       this.processChannelLinks(markdownDiv);
 
+      // Post-process: add color preview to inline code blocks with hex colors
+      this.processInlineCodeColors(markdownDiv);
+
       container.appendChild(markdownDiv);
     } catch (error) {
       console.error('Error rendering markdown:', error);
@@ -1221,6 +1224,37 @@ class ChatMessage extends HTMLElement {
       }
 
       textNode.replaceWith(fragment);
+    });
+  }
+
+  // Process inline code blocks to add color preview for hex colors
+  processInlineCodeColors(container) {
+    // Find all inline code elements (not inside pre blocks)
+    const codeElements = Array.from(container.querySelectorAll('code')).filter(
+      (code) => code.parentElement.tagName !== 'PRE',
+    );
+
+    codeElements.forEach((codeElement) => {
+      const text = codeElement.textContent.trim();
+
+      // Match hex color patterns: #RGB, #RRGGBB, or #RRGGBBAA
+      // Must be the entire content of the code block (or at least start with #)
+      const hexColorRegex = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
+      const match = text.match(hexColorRegex);
+
+      if (match) {
+        // Valid hex color found
+        const colorValue = text;
+
+        // Create color preview circle
+        const colorCircle = document.createElement('span');
+        colorCircle.className = 'inline-code-color-preview';
+        colorCircle.style.backgroundColor = colorValue;
+        colorCircle.title = `Color: ${colorValue}`;
+
+        // Append the circle to the code element
+        codeElement.appendChild(colorCircle);
+      }
     });
   }
 
