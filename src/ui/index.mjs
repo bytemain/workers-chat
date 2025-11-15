@@ -665,6 +665,12 @@ customElements.define('lazy-img', LazyImg);
 
 // File message custom element (for non-image files)
 class FileMessage extends HTMLElement {
+  constructor() {
+    super();
+    this.isDownloading = false;
+    this.downloadAbortController = null;
+  }
+
   connectedCallback() {
     this.render();
   }
@@ -672,70 +678,299 @@ class FileMessage extends HTMLElement {
   render() {
     const fileUrl = this.getAttribute('file-url');
     const fileName = this.getAttribute('file-name') || 'file';
+    const fileSize = this.getAttribute('file-size');
     const isEncrypted = this.getAttribute('encrypted') === 'true';
+    const uploadProgress = this.getAttribute('upload-progress');
+    const uploadStatus = this.getAttribute('upload-status'); // 'uploading', 'success', 'error'
 
     // Clear existing content
     this.innerHTML = '';
 
-    // Create download link
-    const link = document.createElement('a');
-    link.innerHTML = '<i class="ri-attachment-2"></i> ' + fileName;
-    link.style.cursor = 'pointer';
-    link.style.color = '#0066cc';
-    link.style.textDecoration = 'underline';
+    // Create file container
+    const container = document.createElement('div');
+    container.className = 'file-message-container';
+    container.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      max-width: 400px;
+      margin: 4px 0;
+    `;
 
-    if (isEncrypted && isRoomEncrypted && currentRoomKey) {
-      // Encrypted file - decrypt on click
-      link.onclick = async (e) => {
-        e.preventDefault();
-        const originalText = link.textContent;
-        try {
-          link.textContent = '⏳ Decrypting...';
-          console.log('🔓 Decrypting file...');
+    // File icon
+    const icon = document.createElement('div');
+    icon.className = 'file-icon';
+    icon.style.cssText = `
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #e9ecef;
+      border-radius: 6px;
+      font-size: 24px;
+    `;
 
-          const result = await FileCrypto.downloadAndDecrypt(
-            fileUrl,
-            currentRoomKey,
-            (progress, stage) => {
-              link.textContent = `⏳ ${stage}: ${Math.round(progress)}%`;
-            },
-          );
+    // Determine icon based on status
+    if (uploadStatus === 'uploading') {
+      icon.innerHTML = '<i class="ri-upload-2-line"></i>';
+      icon.style.color = '#0d6efd';
+    } else if (uploadStatus === 'error') {
+      icon.innerHTML = '<i class="ri-error-warning-line"></i>';
+      icon.style.color = '#dc3545';
+    } else {
+      icon.innerHTML = '<i class="ri-file-line"></i>';
+      icon.style.color = '#6c757d';
+    }
 
-          // Create download
-          const objectUrl = URL.createObjectURL(result.blob);
-          const a = document.createElement('a');
-          a.href = objectUrl;
-          a.download = result.metadata.fileName || fileName;
-          a.click();
-          URL.revokeObjectURL(objectUrl);
+    // File info section
+    const infoSection = document.createElement('div');
+    infoSection.style.cssText = `
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    `;
 
-          link.textContent = originalText;
-          console.log('✅ File decrypted and downloaded');
-        } catch (error) {
-          console.error('❌ Failed to decrypt file:', error);
-          link.textContent = originalText + ' (decryption failed)';
-        }
+    // File name
+    const nameElement = document.createElement('div');
+    nameElement.style.cssText = `
+      font-weight: 500;
+      color: #212529;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    `;
+    nameElement.textContent = fileName;
+    if (isEncrypted && uploadStatus !== 'uploading') {
+      nameElement.innerHTML =
+        '<i class="ri-lock-line" style="font-size: 14px; margin-right: 4px;"></i>' +
+        fileName;
+    }
+
+    // Status/size info
+    const statusElement = document.createElement('div');
+    statusElement.style.cssText = `
+      font-size: 12px;
+      color: #6c757d;
+    `;
+
+    if (uploadStatus === 'uploading') {
+      statusElement.textContent = `Uploading... ${uploadProgress || 0}%`;
+    } else if (uploadStatus === 'error') {
+      statusElement.textContent = 'Upload failed';
+      statusElement.style.color = '#dc3545';
+    } else if (fileSize) {
+      statusElement.textContent = this.formatFileSize(parseInt(fileSize));
+    }
+
+    infoSection.appendChild(nameElement);
+    infoSection.appendChild(statusElement);
+
+    // Progress bar (if uploading)
+    if (uploadStatus === 'uploading' && uploadProgress) {
+      const progressBar = document.createElement('div');
+      progressBar.style.cssText = `
+        width: 100%;
+        height: 4px;
+        background: #e9ecef;
+        border-radius: 2px;
+        overflow: hidden;
+      `;
+      const progressFill = document.createElement('div');
+      progressFill.style.cssText = `
+        height: 100%;
+        background: #0d6efd;
+        width: ${uploadProgress}%;
+        transition: width 0.3s ease;
+      `;
+      progressBar.appendChild(progressFill);
+      infoSection.appendChild(progressBar);
+    }
+
+    // Download progress bar
+    this.progressBarContainer = document.createElement('div');
+    this.progressBarContainer.style.cssText = `
+      width: 100%;
+      height: 4px;
+      background: #e9ecef;
+      border-radius: 2px;
+      overflow: hidden;
+      display: none;
+    `;
+    this.progressBarFill = document.createElement('div');
+    this.progressBarFill.style.cssText = `
+      height: 100%;
+      background: #198754;
+      width: 0%;
+      transition: width 0.3s ease;
+    `;
+    this.progressBarContainer.appendChild(this.progressBarFill);
+    infoSection.appendChild(this.progressBarContainer);
+
+    // Action buttons
+    const actionsContainer = document.createElement('div');
+    actionsContainer.style.cssText = `
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    `;
+
+    if (uploadStatus === 'error') {
+      // Retry button
+      const retryBtn = document.createElement('button');
+      retryBtn.innerHTML = '<i class="ri-refresh-line"></i>';
+      retryBtn.title = 'Retry upload';
+      retryBtn.style.cssText = `
+        padding: 6px 10px;
+        background: #0d6efd;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+      `;
+      retryBtn.onclick = () => {
+        this.dispatchEvent(new CustomEvent('retry'));
       };
-    } else if (isEncrypted && !isRoomEncrypted) {
-      // Encrypted file but no key - show locked indicator
-      link.style.cursor = 'default';
-      link.style.color = '#999';
-      link.textContent = '🔒 ' + fileName + ' (encrypted)';
-      link.title = 'No decryption key available';
-      link.onclick = (e) => {
-        e.preventDefault();
+      actionsContainer.appendChild(retryBtn);
+    } else if (uploadStatus !== 'uploading') {
+      // Download button
+      const downloadBtn = document.createElement('button');
+      downloadBtn.innerHTML = '<i class="ri-download-2-line"></i>';
+      downloadBtn.title = 'Download file';
+      downloadBtn.style.cssText = `
+        padding: 6px 10px;
+        background: #198754;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+      `;
+      downloadBtn.onclick = () =>
+        this.handleDownload(fileUrl, fileName, isEncrypted, statusElement);
+      actionsContainer.appendChild(downloadBtn);
+    }
+
+    container.appendChild(icon);
+    container.appendChild(infoSection);
+    container.appendChild(actionsContainer);
+    this.appendChild(container);
+  }
+
+  async handleDownload(fileUrl, fileName, isEncrypted, statusElement) {
+    if (this.isDownloading) return;
+
+    this.isDownloading = true;
+    this.downloadAbortController = new AbortController();
+    const originalStatus = statusElement.textContent;
+
+    try {
+      if (isEncrypted && isRoomEncrypted && currentRoomKey) {
+        // Encrypted file - decrypt with progress
+        statusElement.textContent = 'Decrypting...';
+        this.progressBarContainer.style.display = 'block';
+
+        const result = await FileCrypto.downloadAndDecrypt(
+          fileUrl,
+          currentRoomKey,
+          (progress, stage) => {
+            this.progressBarFill.style.width = `${progress}%`;
+            statusElement.textContent = `${stage}: ${Math.round(progress)}%`;
+          },
+        );
+
+        // Create download
+        const objectUrl = URL.createObjectURL(result.blob);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = result.metadata.fileName || fileName;
+        a.click();
+        URL.revokeObjectURL(objectUrl);
+
+        statusElement.textContent = originalStatus;
+        this.progressBarContainer.style.display = 'none';
+        this.progressBarFill.style.width = '0%';
+      } else if (isEncrypted && !isRoomEncrypted) {
+        // Encrypted file but no key
         alert(
           'This file is encrypted. You need the correct encryption key to download it.',
         );
-      };
-    } else {
-      // Non-encrypted file - normal download
-      link.href = fileUrl;
-      link.download = fileName;
-      link.target = '_blank';
-    }
+      } else {
+        // Non-encrypted file - download with progress
+        statusElement.textContent = 'Downloading...';
+        this.progressBarContainer.style.display = 'block';
 
-    this.appendChild(link);
+        const response = await fetch(fileUrl, {
+          signal: this.downloadAbortController.signal,
+        });
+
+        if (!response.ok) throw new Error('Download failed');
+
+        const contentLength = response.headers.get('content-length');
+        const total = parseInt(contentLength, 10);
+        let loaded = 0;
+
+        const reader = response.body.getReader();
+        const chunks = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          chunks.push(value);
+          loaded += value.length;
+
+          if (total) {
+            const progress = (loaded / total) * 100;
+            this.progressBarFill.style.width = `${progress}%`;
+            statusElement.textContent = `Downloading: ${Math.round(progress)}%`;
+          }
+        }
+
+        const blob = new Blob(chunks);
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(objectUrl);
+
+        statusElement.textContent = originalStatus;
+        this.progressBarContainer.style.display = 'none';
+        this.progressBarFill.style.width = '0%';
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        statusElement.textContent = 'Download cancelled';
+      } else {
+        console.error('❌ Download failed:', error);
+        statusElement.textContent = 'Download failed';
+        statusElement.style.color = '#dc3545';
+      }
+      this.progressBarContainer.style.display = 'none';
+      this.progressBarFill.style.width = '0%';
+    } finally {
+      this.isDownloading = false;
+      this.downloadAbortController = null;
+    }
+  }
+
+  formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024)
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
   }
 }
 customElements.define('file-message', FileMessage);
@@ -4801,8 +5036,10 @@ async function startChat() {
     }
   }
 
-  // Upload file function
+  // Upload file function with progress tracking
   async function uploadFile(file, fileName = null, replyTo = null) {
+    let tempMessageId = null;
+
     try {
       // Validate file size before anything else
       if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -4818,17 +5055,41 @@ async function startChat() {
       let fileToUpload = file;
       let uploadFileName = fileName || file.name;
 
+      // Create temporary message to show upload progress
+      tempMessageId = 'temp_' + Date.now() + '_' + Math.random();
+      const tempMessage = {
+        message: `FILE:uploading|${uploadFileName}|${file.type}|${file.size}`,
+        name: userState.value.username,
+        timestamp: Date.now(),
+        messageId: tempMessageId,
+        uploadProgress: 0,
+        uploadStatus: 'uploading',
+      };
+
+      // Add to TinyBase store for immediate UI feedback
+      if (window.store) {
+        window.store.setRow('messages', tempMessageId, tempMessage);
+      }
+
       // Encrypt file if room is encrypted AND crypto is supported
       if (isRoomEncrypted && currentRoomKey && cryptoSupported) {
         try {
           console.log('🔒 Encrypting file...');
-          addSystemMessage(`* Encrypting file: ${uploadFileName}...`);
 
           const encryptedBlob = await FileCrypto.encryptFileV2(
             file,
             currentRoomKey,
             (progress, stage) => {
               console.log(`File encryption ${stage}: ${progress}%`);
+              // Update progress (encryption is 0-50%)
+              if (
+                window.store &&
+                window.store.hasRow('messages', tempMessageId)
+              ) {
+                window.store.setPartialRow('messages', tempMessageId, {
+                  uploadProgress: Math.round(progress / 2),
+                });
+              }
             },
           );
 
@@ -4836,13 +5097,25 @@ async function startChat() {
           fileToUpload = new File([encryptedBlob], uploadFileName + '.enc', {
             type: 'application/x-encrypted-v2',
           });
-          addSystemMessage(`* File encrypted, uploading...`);
         } catch (error) {
           console.error('❌ Failed to encrypt file:', error);
+
+          // Update temp message to show error
+          if (window.store && window.store.hasRow('messages', tempMessageId)) {
+            window.store.setPartialRow('messages', tempMessageId, {
+              uploadStatus: 'error',
+            });
+          }
+
           addSystemMessage('* Failed to encrypt file: ' + error.message);
           return false;
         }
       } else if (isRoomEncrypted && currentRoomKey && !cryptoSupported) {
+        // Remove temp message
+        if (window.store && window.store.hasRow('messages', tempMessageId)) {
+          window.store.delRow('messages', tempMessageId);
+        }
+
         // Room is encrypted but crypto not supported
         addSystemMessage(
           '* Cannot upload encrypted file: Your browser does not support encryption. Please use a modern browser.',
@@ -4854,23 +5127,103 @@ async function startChat() {
       const formData = new FormData();
       formData.append('file', fileToUpload, fileToUpload.name);
 
-      // Upload file
-      const result = await api.uploadFile(roomname, formData);
+      // Create XMLHttpRequest for upload progress tracking
+      const result = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            // Upload is 50-100% of total progress
+            const uploadProgress = 50 + Math.round((e.loaded / e.total) * 50);
+
+            if (
+              window.store &&
+              window.store.hasRow('messages', tempMessageId)
+            ) {
+              window.store.setPartialRow('messages', tempMessageId, {
+                uploadProgress: uploadProgress,
+              });
+            }
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response);
+            } catch (error) {
+              reject(new Error('Invalid server response'));
+            }
+          } else {
+            reject(new Error(`Upload failed with status ${xhr.status}`));
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          reject(new Error('Network error during upload'));
+        });
+
+        xhr.addEventListener('abort', () => {
+          reject(new Error('Upload cancelled'));
+        });
+
+        xhr.open('POST', `/api/room/${roomname}/upload`);
+        xhr.send(formData);
+      });
+
+      // Remove temporary message
+      if (window.store && window.store.hasRow('messages', tempMessageId)) {
+        window.store.delRow('messages', tempMessageId);
+      }
 
       // Send file message using userApi
       // Include marker if file was encrypted
       let fileMessage;
       if (isRoomEncrypted) {
-        // Mark as encrypted file with original name
-        fileMessage = `FILE:${result.fileUrl}|${uploadFileName}|${file.type}|encrypted`;
+        // Mark as encrypted file with original name and size
+        fileMessage = `FILE:${result.fileUrl}|${uploadFileName}|${file.type}|${file.size}|encrypted`;
       } else {
-        fileMessage = `FILE:${result.fileUrl}|${result.fileName}|${result.fileType}`;
+        fileMessage = `FILE:${result.fileUrl}|${result.fileName}|${result.fileType}|${file.size}`;
       }
 
       await userApi.sendMessage(fileMessage, replyTo);
 
       return true;
     } catch (err) {
+      console.error('❌ Upload failed:', err);
+
+      // Update temp message to show error state
+      if (
+        window.store &&
+        tempMessageId &&
+        window.store.hasRow('messages', tempMessageId)
+      ) {
+        window.store.setPartialRow('messages', tempMessageId, {
+          uploadStatus: 'error',
+          uploadProgress: 0,
+        });
+
+        // Add retry handler
+        setTimeout(() => {
+          const fileMessageElement = document.querySelector(
+            `[data-message-id="${tempMessageId}"] file-message`,
+          );
+          if (fileMessageElement) {
+            fileMessageElement.addEventListener(
+              'retry',
+              async () => {
+                // Remove error message
+                window.store.delRow('messages', tempMessageId);
+                // Retry upload
+                await uploadFile(file, fileName, replyTo);
+              },
+              { once: true },
+            );
+          }
+        }, 100);
+      }
+
       addSystemMessage('* Upload failed: ' + err.message);
       return false;
     }
