@@ -4,6 +4,7 @@ import { marked } from 'marked';
 import CryptoUtils from '../common/crypto-utils.js';
 import { keyManager } from '../common/key-manager.js';
 import FileCrypto from '../common/file-crypto.js';
+import { formatFileSize } from '../common/format-utils.js';
 import { getCryptoPool } from './crypto-worker-pool.js';
 import { createReactiveState } from './react/state.mjs';
 import { api } from './api.mjs';
@@ -681,10 +682,15 @@ class FileMessage extends HTMLElement {
     const fileSize = this.getAttribute('file-size');
     const isEncrypted = this.getAttribute('encrypted') === 'true';
     const uploadProgress = this.getAttribute('upload-progress');
-    const uploadStatus = this.getAttribute('upload-status'); // 'uploading', 'success', 'error'
+    const uploadStatus = this.getAttribute('upload-status'); // 'uploading', 'success', 'error', or null/undefined
 
     // Clear existing content
     this.innerHTML = '';
+
+    // Determine if this is an active upload (has explicit uploadStatus)
+    const isUploading = uploadStatus === 'uploading';
+    const isUploadError = uploadStatus === 'error';
+    const isNormalFile = !uploadStatus || uploadStatus === 'success'; // Normal file or completed upload
 
     // Create file container
     const container = document.createElement('div');
@@ -717,10 +723,10 @@ class FileMessage extends HTMLElement {
     `;
 
     // Determine icon based on status
-    if (uploadStatus === 'uploading') {
+    if (isUploading) {
       icon.innerHTML = '<i class="ri-upload-2-line"></i>';
       icon.style.color = '#0d6efd';
-    } else if (uploadStatus === 'error') {
+    } else if (isUploadError) {
       icon.innerHTML = '<i class="ri-error-warning-line"></i>';
       icon.style.color = '#dc3545';
     } else {
@@ -748,7 +754,7 @@ class FileMessage extends HTMLElement {
       white-space: nowrap;
     `;
     nameElement.textContent = fileName;
-    if (isEncrypted && uploadStatus !== 'uploading') {
+    if (isEncrypted && isNormalFile) {
       nameElement.innerHTML =
         '<i class="ri-lock-line" style="font-size: 14px; margin-right: 4px;"></i>' +
         fileName;
@@ -761,14 +767,14 @@ class FileMessage extends HTMLElement {
       color: #6c757d;
     `;
 
-    if (uploadStatus === 'uploading') {
+    if (isUploading) {
       statusElement.textContent = `Uploading... ${uploadProgress || 0}%`;
-    } else if (uploadStatus === 'error') {
+    } else if (isUploadError) {
       statusElement.textContent = 'Upload failed';
       statusElement.style.color = '#dc3545';
     } else if (fileSize !== null && fileSize !== undefined && fileSize !== '') {
       // Show file size for normal files (uploaded successfully or existing files)
-      statusElement.textContent = this.formatFileSize(parseInt(fileSize));
+      statusElement.textContent = formatFileSize(parseInt(fileSize));
     } else {
       // Fallback if no size info available
       statusElement.textContent = '';
@@ -778,7 +784,7 @@ class FileMessage extends HTMLElement {
     infoSection.appendChild(statusElement);
 
     // Progress bar (if uploading)
-    if (uploadStatus === 'uploading' && uploadProgress) {
+    if (isUploading && uploadProgress) {
       const progressBar = document.createElement('div');
       progressBar.style.cssText = `
         width: 100%;
@@ -826,7 +832,7 @@ class FileMessage extends HTMLElement {
       flex-shrink: 0;
     `;
 
-    if (uploadStatus === 'error') {
+    if (isUploadError) {
       // Retry button
       const retryBtn = document.createElement('button');
       retryBtn.innerHTML = '<i class="ri-refresh-line"></i>';
@@ -845,7 +851,7 @@ class FileMessage extends HTMLElement {
         this.dispatchEvent(new CustomEvent('retry'));
       };
       actionsContainer.appendChild(retryBtn);
-    } else if (uploadStatus !== 'uploading') {
+    } else if (isNormalFile) {
       // Download button
       const downloadBtn = document.createElement('button');
       downloadBtn.innerHTML = '<i class="ri-download-2-line"></i>';
@@ -934,11 +940,20 @@ class FileMessage extends HTMLElement {
           chunks.push(value);
           loaded += value.length;
 
-          if (total) {
-            const progress = (loaded / total) * 100;
-            this.progressBarFill.style.width = `${progress}%`;
-            statusElement.textContent = `Downloading: ${Math.round(progress)}%`;
+          if (total && total > 0) {
+            const progress = Math.min((loaded / total) * 100, 100);
+            // Use requestAnimationFrame to ensure UI updates
+            requestAnimationFrame(() => {
+              this.progressBarFill.style.width = `${progress}%`;
+              statusElement.textContent = `Downloading: ${Math.round(progress)}%`;
+            });
           }
+        }
+
+        // Ensure 100% is shown before creating blob
+        if (total && total > 0) {
+          this.progressBarFill.style.width = '100%';
+          statusElement.textContent = 'Downloading: 100%';
         }
 
         const blob = new Blob(chunks);
@@ -967,14 +982,6 @@ class FileMessage extends HTMLElement {
       this.isDownloading = false;
       this.downloadAbortController = null;
     }
-  }
-
-  formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    if (bytes < 1024 * 1024 * 1024)
-      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
   }
 }
 customElements.define('file-message', FileMessage);
@@ -1247,6 +1254,7 @@ class ChatMessage extends HTMLElement {
         fileMessage.setAttribute('encrypted', 'true');
       }
 
+      // Only pass upload attributes if they exist (for temporary uploading messages)
       if (uploadProgress !== null && uploadProgress !== undefined) {
         fileMessage.setAttribute('upload-progress', uploadProgress);
       }
@@ -1868,21 +1876,6 @@ let currentReplyTo = null; // {messageId, username, preview, rootMessageId}
 // Generate message ID from timestamp and username for legacy messages
 function generateLegacyMessageId(timestamp, username) {
   return `${timestamp}-${username}`;
-}
-
-/**
- * Format file size in bytes to human-readable format
- * @param {number} bytes - File size in bytes
- * @returns {string} Formatted file size
- */
-function formatFileSize(bytes) {
-  if (bytes === 0) return '0 Bytes';
-
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
 
 // ===== E2EE Helper Functions =====

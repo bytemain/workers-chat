@@ -217,6 +217,12 @@ const app = ignite((app) => {
     headers.set('etag', object.httpEtag);
     headers.set('Cache-Control', 'public, max-age=31536000');
 
+    // CRITICAL: Expose Content-Length for download progress tracking
+    headers.set(
+      'Access-Control-Expose-Headers',
+      'Content-Length, Content-Type, ETag',
+    );
+
     return new Response(object.body, { headers });
   });
 
