@@ -3988,11 +3988,12 @@ async function startChat() {
   }
 
   // Initialize TinyBase store and indexes
-  const { store, indexes, relationships } =
+  const { store, indexes, relationships, destroy } =
     await createTinybaseStorage(roomname);
   window.store = store;
   window.indexes = indexes;
   window.relationships = relationships;
+  window.tinybaseDestroy = destroy; // Save cleanup function
   console.log('✅ TinyBase store, indexes, and relationships initialized');
 
   // Initialize reaction manager
@@ -5854,3 +5855,10 @@ window.showMobileChannelList = showMobileChannelList;
 window.showMobileChatPage = showMobileChatPage;
 window.updateMobileChannelList = updateMobileChannelList;
 window.initMobileNavigation = initMobileNavigation;
+
+// Cleanup TinyBase resources on page unload
+window.addEventListener('beforeunload', async () => {
+  if (window.tinybaseDestroy) {
+    await window.tinybaseDestroy();
+  }
+});

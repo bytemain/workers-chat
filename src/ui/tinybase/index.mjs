@@ -5,7 +5,6 @@ import { createRelationships } from 'tinybase';
 import { createIndexedDbPersister } from 'tinybase/persisters/persister-indexed-db';
 import { createWsSynchronizer } from 'tinybase/synchronizers/synchronizer-ws-client';
 import { api } from '../api.mjs';
-import { run } from 'ruply';
 import ReconnectingWebSocket from '@opensumi/reconnecting-websocket';
 
 export async function createTinybaseStorage(roomName) {
@@ -79,24 +78,34 @@ export async function createTinybaseStorage(roomName) {
 
   console.log('🔗 Created TinyBase relationship: messageReactions');
 
-  await run(
-    createIndexedDbPersister(store, `tinybase-${storeName}-${roomName}`),
-    async (persister) => {
-      await persister.startAutoLoad();
-      await persister.startAutoSave();
-    },
+  // Create persister and keep reference for cleanup
+  const persister = createIndexedDbPersister(
+    store,
+    `tinybase-${storeName}-${roomName}`,
   );
-  await run(
-    createWsSynchronizer(store, new ReconnectingWebSocket(syncUrl), 1),
-    async (synchronizer) => {
-      await synchronizer.startSync();
+  await persister.startAutoLoad();
+  await persister.startAutoSave();
 
-      // If the websocket reconnects in the future, do another explicit sync.
-      synchronizer.getWebSocket().addEventListener('open', () => {
-        synchronizer.load().then(() => synchronizer.save());
-      });
-    },
+  // Create synchronizer and keep reference for cleanup
+  const synchronizer = createWsSynchronizer(
+    store,
+    new ReconnectingWebSocket(syncUrl),
+    1,
   );
+  await synchronizer.startSync();
 
-  return { store, indexes, relationships };
+  // If the websocket reconnects in the future, do another explicit sync.
+  synchronizer.getWebSocket().addEventListener('open', () => {
+    synchronizer.load().then(() => synchronizer.save());
+  });
+
+  // Return cleanup function along with store
+  const destroy = async () => {
+    console.log('🧹 Cleaning up TinyBase resources...');
+    await synchronizer.destroy();
+    await persister.destroy();
+    console.log('✅ TinyBase resources cleaned up');
+  };
+
+  return { store, indexes, relationships, destroy };
 }
