@@ -4781,24 +4781,26 @@ async function startChat() {
       </div>
     `;
     dropOverlay.style.cssText = `
-      position: fixed;
+      position: absolute;
       top: 0;
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 123, 255, 0.9);
+      background: rgba(0, 0, 0, 0.25);
       color: white;
       display: none;
       align-items: center;
       justify-content: center;
-      z-index: 10000;
+      z-index: 100;
       pointer-events: none;
+      border-radius: 8px;
     `;
-    document.body.appendChild(dropOverlay);
+    chatroomContainer.style.position = 'relative';
+    chatroomContainer.appendChild(dropOverlay);
 
-    // Prevent default drag behavior on the whole document
+    // Prevent default drag behavior on chatroom container only
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((eventName) => {
-      document.body.addEventListener(
+      chatroomContainer.addEventListener(
         eventName,
         (e) => {
           e.preventDefault();
@@ -4809,7 +4811,7 @@ async function startChat() {
     });
 
     // Show overlay on drag enter
-    document.body.addEventListener('dragenter', (e) => {
+    chatroomContainer.addEventListener('dragenter', (e) => {
       dragCounter++;
       if (e.dataTransfer.types.includes('Files')) {
         dropOverlay.style.display = 'flex';
@@ -4817,7 +4819,7 @@ async function startChat() {
     });
 
     // Hide overlay on drag leave
-    document.body.addEventListener('dragleave', (e) => {
+    chatroomContainer.addEventListener('dragleave', (e) => {
       dragCounter--;
       if (dragCounter === 0) {
         dropOverlay.style.display = 'none';
@@ -4825,7 +4827,7 @@ async function startChat() {
     });
 
     // Handle drop
-    document.body.addEventListener('drop', async (e) => {
+    chatroomContainer.addEventListener('drop', async (e) => {
       dragCounter = 0;
       dropOverlay.style.display = 'none';
 
