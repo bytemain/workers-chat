@@ -13,13 +13,12 @@ import { REACTION_TYPES, REACTION_ORDER } from './config.mjs';
  */
 export function renderReactions(messageId, reactionManager) {
   const reactions = reactionManager.getReactions(messageId);
-  console.log(`🎨 renderReactions for ${messageId}:`, reactions);
 
   if (reactions.length === 0) {
-    console.log(`📭 No reactions for ${messageId}`);
     return `<div class="message-reactions" data-message-id="${messageId}"></div>`;
   }
 
+  console.log(`🎨 renderReactions for ${messageId}:`, reactions);
   return `
     <div class="message-reactions" data-message-id="${messageId}">
       ${reactions

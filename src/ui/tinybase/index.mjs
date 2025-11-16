@@ -7,18 +7,58 @@ import { createWsSynchronizer } from 'tinybase/synchronizers/synchronizer-ws-cli
 import { api } from '../api.mjs';
 import ReconnectingWebSocket from '@opensumi/reconnecting-websocket';
 
+/**
+ * @typedef {import('tinybase').MergeableStore} MergeableStore
+ * @typedef {import('tinybase').Indexes} Indexes
+ * @typedef {import('tinybase').Relationships} Relationships
+ */
+
+/**
+ * @returns {MergeableStore} TinyBase store instance
+ */
+export function getStore() {
+  return window.store;
+}
+
+/**
+ * @returns {Indexes} TinyBase indexes instance
+ */
+export function getIndexes() {
+  return window.indexes;
+}
+
+/**
+ * @returns {Relationships} TinyBase relationships instance
+ */
+export function getRelationships() {
+  return window.relationships;
+}
+
+export const IndexesIds = {
+  MessagesByChannel: 'messagesByChannel',
+  RepliesByParent: 'repliesByParent',
+  MessagesByUser: 'messagesByUser',
+};
+
+export const TableIds = {
+  Messages: 'messages',
+};
+
 export async function createTinybaseStorage(roomName) {
-  const storeName = 'messages';
+  const storeName = TableIds.Messages;
   const store = createMergeableStore();
+  window.store = store;
+
   const syncUrl = api.getTinybaseSyncUrl(`${storeName}/${roomName}`);
 
   // Create indexes for efficient querying with O(log n) performance
   const indexes = createIndexes(store);
 
+  window.indexes = indexes;
   // Index 1: Messages by channel (for fast channel switching)
   // Groups messages by channel and sorts by timestamp
   indexes.setIndexDefinition(
-    'messagesByChannel', // indexId
+    IndexesIds.MessagesByChannel, // indexId
     'messages', // tableId
     'channel', // sliceId (group by channel)
     'timestamp', // sort by timestamp (chronological order)
@@ -60,13 +100,14 @@ export async function createTinybaseStorage(roomName) {
       return `${messageId}:${reactionId}:${username}`;
     },
   );
-
   console.log(
     '📇 Created TinyBase indexes: messagesByChannel, repliesByParent, messagesByUser, reactionsByMessage, reactionsByMessageAndType',
   );
+  console.log(indexes.getIndexIds());
 
   // Create relationships for foreign key constraints
   const relationships = createRelationships(store);
+  window.relationships = relationships;
 
   // Relationship: reaction_instances.messageId -> messages
   relationships.setRelationshipDefinition(
@@ -107,5 +148,23 @@ export async function createTinybaseStorage(roomName) {
     console.log('✅ TinyBase resources cleaned up');
   };
 
+  window.tinybaseDestroy = destroy; // Save cleanup function
+
+  window.storeUtils = {
+    show: () => {
+      if (window.store) {
+        console.log('🔄 TinyBase store values:', window.store.getValues());
+        console.log('🔄 TinyBase store tables:', window.store.getTables());
+      } else {
+        console.warn('⚠️ TinyBase store is not initialized yet.');
+      }
+    },
+    debug: () => {
+      // Test: Print TinyBase store tables every 5 seconds
+      setInterval(() => {
+        window.storeUtils.show();
+      }, 5000);
+    },
+  };
   return { store, indexes, relationships, destroy };
 }

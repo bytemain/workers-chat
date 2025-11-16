@@ -1,4 +1,4 @@
-import './avatar/index.mjs';
+import './web-components/index.mjs';
 
 import { marked } from 'marked';
 import CryptoUtils from '../common/crypto-utils.js';
@@ -1001,31 +1001,13 @@ class ChatMessage extends HTMLElement {
     const threadCount = this.getAttribute('thread-count') || '0';
     const isInThread = this.getAttribute('is-in-thread') === 'true';
     const editedAt = this.getAttribute('edited-at');
+    const showUsername = this.getAttribute('show-username') === 'true';
 
     // Clear existing content
     this.innerHTML = '';
 
     // Check if previous message is from the same user
     const wrapper = this.closest('.message-wrapper');
-    let showUsername = true;
-    if (wrapper) {
-      const prevWrapper = wrapper.previousElementSibling;
-      if (prevWrapper && prevWrapper.classList.contains('message-wrapper')) {
-        const prevMessage = prevWrapper.querySelector('chat-message');
-        if (prevMessage) {
-          const prevUsername = prevMessage.getAttribute('username');
-          const prevTimestamp = prevMessage.getAttribute('timestamp');
-          // Hide username if same user and within 5 minutes
-          if (prevUsername === username && timestamp && prevTimestamp) {
-            const timeDiff = Number(timestamp) - Number(prevTimestamp);
-            if (timeDiff < 5 * 60 * 1000) {
-              // 5 minutes
-              showUsername = false;
-            }
-          }
-        }
-      }
-    }
 
     // Create main container with avatar and content side by side
     const messageContainer = document.createElement('div');
@@ -1070,7 +1052,6 @@ class ChatMessage extends HTMLElement {
         timeSpan.style.color = '#888';
         timeSpan.style.fontSize = '0.85em';
         timeSpan.style.whiteSpace = 'nowrap';
-        timeSpan.setAttribute('data-first-message', 'true');
         userHeader.appendChild(timeSpan);
       }
 
@@ -4264,10 +4245,7 @@ async function startChat() {
   // Initialize TinyBase store and indexes
   const { store, indexes, relationships, destroy } =
     await createTinybaseStorage(roomname);
-  window.store = store;
-  window.indexes = indexes;
-  window.relationships = relationships;
-  window.tinybaseDestroy = destroy; // Save cleanup function
+
   console.log('✅ TinyBase store, indexes, and relationships initialized');
 
   // Initialize reaction manager
@@ -4361,14 +4339,6 @@ async function startChat() {
   } catch (error) {
     console.error('❌ Failed to initialize channel list:', error);
   }
-
-  // Test: Print TinyBase store tables every 5 seconds
-  setInterval(() => {
-    if (window.store) {
-      console.log('🔄 TinyBase store values:', window.store.getValues());
-      console.log('🔄 TinyBase store tables:', window.store.getTables());
-    }
-  }, 5000);
 
   // Save to room history
   addToRoomHistory(roomname);
@@ -4908,19 +4878,6 @@ async function startChat() {
       chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight - 1;
   });
 
-  document.body.addEventListener('click', (event) => {
-    // If the user clicked somewhere in the window without selecting any text, focus the chat
-    // input. But don't steal focus from textareas or input fields.
-    const isTextInput =
-      event.target.tagName === 'TEXTAREA' || event.target.tagName === 'INPUT';
-    const isSelect = event.target.tagName === 'SELECT';
-    if (window.getSelection().toString() == '' && !isTextInput && !isSelect) {
-      if (chatInputComponent) {
-        chatInputComponent.focus();
-      }
-    }
-  });
-
   // Thread panel close
   threadClose.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -5453,6 +5410,10 @@ function join() {
         isReconnecting = false;
 
         console.log('🔄 Reconnected - TinyBase will auto-sync messages');
+      }
+
+      if (chatInputComponent) {
+        chatInputComponent.focus();
       }
     }
   });

@@ -4,25 +4,43 @@
  * Architecture:
  * TinyBase (数据源) → Signal (响应式) → Reef Component (自动渲染)
  *
- * NOTE: 这个组件复用 index.mjs 中的 createMessageElement 函数来渲染消息
- * 不自己写 HTML，而是调用现有的消息渲染逻辑
+ * NOTE: 使用 message-element Web Component 通过 setData() 方法传递数据
+ * 避免了属性编码/解码和双数据源同步的复杂性
  */
 
 import { signal, component } from 'reefjs';
-import { listenReefRender } from '../utils/reef-helpers.mjs';
+import { throttle } from '../../common/utils.mjs';
+import { listenReefEvent } from '../utils/reef-helpers.mjs';
 import { tryDecryptMessage } from '../utils/message-crypto.mjs';
 import CryptoUtils from '../../common/crypto-utils.js';
 import { markChannelAsRead, getUnreadCount } from '../tinybase/read-status.mjs';
+import { forEach } from '../react/flow.mjs';
+import { IndexesIds } from '../tinybase/index.mjs';
+
+/**
+ * @typedef {Object} RawMessage
+ * @property {string} messageId - Unique message identifier
+ * @property {string} name - Username of the message author
+ * @property {string} message - Message text content (may be encrypted)
+ * @property {number} timestamp - Unix timestamp in milliseconds
+ * @property {string} channel - Channel name where the message was sent
+ * @property {string|null} replyToId - ID of the message being replied to, if any
+ * @property {number|null} editedAt - Unix timestamp of last edit, if edited
+ * @property {boolean} encrypted - Whether the message content is encrypted
+ * @property {number} [uploadProgress] - File upload progress (0-100), if uploading
+ * @property {string} [uploadStatus] - Upload status: 'uploading', 'success', 'error'
+ */
 
 const SignalName = 'messagesSignal';
+const tableId = 'messages';
 
 /**
  * Initialize message list component
- * @param {Object} tinybaseStore - TinyBase store instance
- * @param {Object} tinybaseIndexes - TinyBase indexes instance for O(log n) filtering
+ * @param {import('tinybase').Store} tinybaseStore - TinyBase store instance
+ * @param {import('tinybase').Indexes} tinybaseIndexes - TinyBase indexes instance for O(log n) filtering
  * @param {string} containerSelector - CSS selector for container element
  * @param {Function} getCurrentChannel - Function to get current channel
- * @param {Function} createMessageElement - Function to create message DOM element
+ * @param {() => HTMLElement} createMessageElement - Function to create message DOM element
  * @param {Object} encryptionContext - Encryption context { currentRoomKey, isRoomEncrypted }
  * @param {Map} messagesCache - Global messages cache for legacy features (threads, etc.)
  * @param {Function} updateThreadInfo - Function to update thread info for reply messages
@@ -43,14 +61,16 @@ export function initMessageList(
   roomName,
 ) {
   // Reef.js Signal - 响应式消息数据
+
   const messagesSignal = signal(
     {
+      /** @type {RawMessage[]} */
       items: [], // 消息列表
       loading: false, // 加载状态
       error: null, // 错误信息
       version: 0, // 版本号，用于强制重新渲染
     },
-    SignalName || 'messagesSignal',
+    SignalName,
   );
 
   /**
@@ -58,9 +78,13 @@ export function initMessageList(
    * 监听 TinyBase 的 messages 表变化，自动更新 Signal
    * 包含解密、replyTo 预览生成等完整逻辑
    */
-  async function syncTinybaseToSignal() {
+  async function syncTinybaseToSignalInternal() {
     try {
       const currentChannel = getCurrentChannel();
+      console.log(
+        `🚀 ~ syncTinybaseToSignalInternal ~ currentChannel:`,
+        currentChannel,
+      );
 
       // ✅ Use index for O(log n) query - much faster than O(n) filter!
       // Get message IDs for current channel from pre-built index
@@ -74,6 +98,7 @@ export function initMessageList(
       );
 
       // Convert to message objects (原始加密数据)
+      /** @type {RawMessage[]} */
       const rawMessagesList = messageIds.map((messageId) => {
         const row = tinybaseStore.getRow('messages', messageId);
         return {
@@ -105,12 +130,12 @@ export function initMessageList(
         if (msg.replyToId) {
           // 从 TinyBase 获取父消息
           const parentData = tinybaseStore.getCell(
-            'messages',
+            tableId,
             msg.replyToId,
             'text',
           );
           const parentUsername = tinybaseStore.getCell(
-            'messages',
+            tableId,
             msg.replyToId,
             'username',
           );
@@ -145,13 +170,9 @@ export function initMessageList(
 
         // 返回完整的、解密后的消息数据
         return {
-          messageId: msg.messageId,
-          name: msg.name,
-          message: decryptedMessage, // 已解密
-          timestamp: msg.timestamp,
-          channel: msg.channel,
-          replyTo: replyTo, // 已处理预览
-          editedAt: msg.editedAt,
+          ...msg, // 保留所有原始字段（包括 uploadProgress, uploadStatus 等）
+          message: decryptedMessage, // 覆盖：已解密的消息
+          replyTo: replyTo, // 覆盖：已处理预览的 replyTo
         };
       });
 
@@ -221,43 +242,88 @@ export function initMessageList(
     }
   }
 
-  // 监听 TinyBase messages 表的变化
-  tinybaseStore.addTableListener('messages', () => {
-    console.log('🔄 TinyBase messages table changed, syncing to Signal...');
-    // Note: async function, but we don't await here (fire and forget)
-    syncTinybaseToSignal().catch((err) => {
-      console.error('Error in syncTinybaseToSignal:', err);
+  const syncTinybaseToSignal = throttle(syncTinybaseToSignalInternal, 16);
+
+  tinybaseStore.addRowIdsListener(tableId, (store, id, getIdChanges) => {
+    const changedRows = getIdChanges();
+    Object.keys(changedRows).forEach((rowId) => {
+      const changeType = changedRows[rowId];
+      console.log(`🔄 Message row ${changeType}: ${rowId}`);
+      const cellData = tinybaseStore.getRow(tableId, rowId);
+      console.log(`📄 Message data:`, cellData);
     });
+    // 索引变化说明有消息新增或删除，触发全量同步
+    // syncTinybaseToSignal();
   });
+  const currentChannel = getCurrentChannel();
 
-  // 监听 TinyBase reaction_instances 表的变化，也触发重新渲染
-  tinybaseStore.addTableListener('reaction_instances', () => {
-    console.log('🔄 TinyBase reactions changed, re-rendering messages...');
-    // Reactions 改变时，只需要增加版本号，触发重新渲染
-    messagesSignal.version++;
-  });
+  tinybaseIndexes.addSliceRowIdsListener(
+    IndexesIds.MessagesByChannel,
+    currentChannel,
+    (indexes, indexId, sliceId) => {
+      console.log(`🔄 MessagesByChannel index changed for slice: ${sliceId}`);
+      syncTinybaseToSignal();
+    },
+  );
 
-  // 初始同步
-  syncTinybaseToSignal().catch((err) => {
-    console.error('Error in initial sync:', err);
-  });
+  // 监听单个 row 的变化（用于更新上传进度等局部属性）
+  tinybaseStore.addRowListener(
+    tableId,
+    null, // null = listen to all rows
+    async (store, tableId, rowId, getCellChange) => {
+      const cellChange = getCellChange();
+      console.log(
+        `🔄 TinyBase message row changed: ${rowId}, changes:`,
+        cellChange,
+      );
 
-  /**
-   * Template function - 消息列表渲染
-   *
-   * NOTE: 这里不返回 HTML 字符串，而是返回一个占位符
-   * 实际渲染通过 render() 钩子在 DOM 中操作
-   */
-  function messagesTemplate() {
+      // 只更新对应的消息元素，不触发全量重绘
+      const messageElement = document.querySelector(
+        `message-element[data-message-id="${rowId}"]`,
+      );
+
+      if (messageElement) {
+        // 从 TinyBase 读取最新数据
+        const row = store.getRow(tableId, rowId);
+
+        // 解密消息（如果需要）
+        const decryptedMessage = await tryDecryptMessage(
+          { message: row.text || '' },
+          encryptionContext.currentRoomKey,
+          encryptionContext.isRoomEncrypted,
+        );
+
+        // 直接用 setData 更新，触发 message-element 内部的 Reef.js 重新渲染
+        messageElement.setData({
+          messageId: rowId,
+          name: row.username || 'Anonymous',
+          message: decryptedMessage,
+          timestamp: row.timestamp || Date.now(),
+          channel: row.channel || 'general',
+          replyToId: row.replyToId || null,
+          editedAt: row.editedAt || null,
+          encrypted: CryptoUtils.isEncrypted(row.text || ''),
+          uploadProgress: row.uploadProgress,
+          uploadStatus: row.uploadStatus,
+        });
+
+        console.log(`✅ Updated message element for row: ${rowId}`);
+      }
+    },
+  );
+
+  syncTinybaseToSignal();
+
+  // 手动管理 message-element 的创建和更新（避免 outerHTML 导致失去响应性）
+  function renderMessages() {
     const currentChannel = getCurrentChannel();
+    const container = document.querySelector(containerSelector);
+    if (!container) return;
 
-    // 不再显示全屏 loading，改为在 channel info bar 显示
-    // if (messagesSignal.loading) {
-    //   return '<div class="message-loading">Loading messages...</div>';
-    // }
-
+    // 错误状态
     if (messagesSignal.error) {
-      return `<div class="message-error">Error: ${messagesSignal.error}</div>`;
+      container.innerHTML = `<div class="message-error">Error: ${messagesSignal.error}</div>`;
+      return;
     }
 
     // 过滤当前频道的消息
@@ -265,110 +331,124 @@ export function initMessageList(
       (msg) => msg.channel === currentChannel,
     );
 
+    // 空状态
     if (channelMessages.length === 0 && !messagesSignal.loading) {
-      return `
+      container.innerHTML = `
         <div class="message-empty">
           <p>No messages in #${currentChannel} yet.</p>
           <p>Start the conversation!</p>
         </div>
       `;
+      return;
     }
 
-    // 返回占位符，实际渲染在 render() 钩子中完成
-    return `<div class="messages-container" data-channel="${currentChannel}" data-version="${messagesSignal.version}"></div>`;
+    // 创建或更新 messages-container
+    let messagesContainer = container.querySelector('.messages-container');
+    if (!messagesContainer) {
+      messagesContainer = document.createElement('div');
+      messagesContainer.className = 'messages-container';
+      container.innerHTML = '';
+      container.appendChild(messagesContainer);
+    }
+    messagesContainer.setAttribute('data-channel', currentChannel);
+    messagesContainer.setAttribute('data-version', messagesSignal.version);
+
+    // 获取现有的 message-element 元素（用于复用）
+    const existingElements = new Map();
+    messagesContainer.querySelectorAll('message-element').forEach((el) => {
+      const messageId = el.getAttribute('data-message-id');
+      if (messageId) {
+        existingElements.set(messageId, el);
+      }
+    });
+
+    // 创建新的 DocumentFragment（提高性能）
+    const fragment = document.createDocumentFragment();
+
+    // 遍历消息，创建或复用 message-element
+    channelMessages.forEach((item, index) => {
+      let msgEl = existingElements.get(item.messageId);
+
+      // 检查是否是同一用户组的第一条消息（用于头像显示）
+      let isFirstInGroup = true;
+      if (index > 0) {
+        const prevItem = channelMessages[index - 1];
+        // 如果同一用户且时间间隔小于 5 分钟，则不是第一条
+        if (prevItem.name === item.name) {
+          const timeDiff = item.timestamp - prevItem.timestamp;
+          if (timeDiff < 5 * 60 * 1000) {
+            // 5 minutes
+            isFirstInGroup = false;
+          }
+        }
+      }
+
+      if (msgEl) {
+        // 复用现有元素，更新数据
+        msgEl.setData({
+          ...item,
+          isInThread: false,
+          isThreadOriginal: false,
+          isFirstInGroup, // 传递分组信息
+        });
+        existingElements.delete(item.messageId); // 标记为已使用
+      } else {
+        // 创建新元素
+        msgEl = document.createElement('message-element');
+        msgEl.setAttribute('data-message-id', item.messageId); // 设置 key
+        msgEl.setData({
+          ...item,
+          isInThread: false,
+          isThreadOriginal: false,
+          isFirstInGroup, // 传递分组信息
+        });
+      }
+
+      fragment.appendChild(msgEl);
+    });
+
+    // 删除不再需要的元素
+    existingElements.forEach((el) => {
+      el.remove();
+    });
+
+    // 替换容器内容
+    messagesContainer.innerHTML = '';
+    messagesContainer.appendChild(fragment);
+
+    console.log(
+      `✅ Rendered ${channelMessages.length} messages in #${currentChannel}`,
+    );
   }
 
-  // 创建 Reef.js 组件
+  listenReefEvent(SignalName, renderMessages);
+
+  // 初始渲染
   const container = document.querySelector(containerSelector);
   if (!container) {
     throw new Error(`Container not found: ${containerSelector}`);
   }
+  renderMessages();
 
-  const messagesComponent = component(container, messagesTemplate, {
-    signals: [SignalName || 'messagesSignal'],
-  });
-
-  // 监听 Reef.js 渲染完成事件，使用 createMessageElement 渲染消息
-  let lastRenderedDateStr = null; // Track last rendered date for dividers
-
-  listenReefRender((event) => {
-    if (event.target !== container) return;
-
-    const messagesContainer = container.querySelector('.messages-container');
-    if (!messagesContainer) return;
-
-    const currentChannel = getCurrentChannel();
-    const channelMessages = messagesSignal.items.filter(
-      (msg) => msg.channel === currentChannel,
-    );
-
-    // 清空容器（保留占位符属性）
-    messagesContainer.innerHTML = '';
-    lastRenderedDateStr = null; // Reset date tracker
-
-    // 使用 createMessageElement 渲染每条消息，插入日期分隔线
-    channelMessages.forEach((messageData) => {
-      // Generate date string for this message
-      const date = new Date(messageData.timestamp);
-      const dateStr =
-        date.getFullYear() +
-        '-' +
-        String(date.getMonth() + 1).padStart(2, '0') +
-        '-' +
-        String(date.getDate()).padStart(2, '0');
-
-      // Insert date divider if day changes
-      if (lastRenderedDateStr !== dateStr) {
-        lastRenderedDateStr = dateStr;
-        const divider = document.createElement('div');
-        divider.className = 'date-divider';
-        divider.textContent = dateStr;
-        divider.style.textAlign = 'center';
-        divider.style.color = '#aaa';
-        divider.style.fontSize = '0.9em';
-        divider.style.margin = '16px 0 8px 0';
-        messagesContainer.appendChild(divider);
-      }
-
-      // Render message element
-      const messageElement = createMessageElement(messageData, false, false);
-      messagesContainer.appendChild(messageElement);
-      updateTimeDisplayForMessage(messageElement);
-
-      // Update thread info for reply messages
-      if (messageData.replyTo && updateThreadInfo) {
-        updateThreadInfo(messageData);
-      }
-    });
-
-    console.log(
-      `✅ Rendered ${channelMessages.length} messages using createMessageElement`,
-    );
-  });
-
-  /**
-   * Helper: 发送消息（写入 TinyBase）
-   */
   function sendMessage(text, username, channel, options = {}) {
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    tinybaseStore.setCell('messages', messageId, 'text', text);
-    tinybaseStore.setCell('messages', messageId, 'username', username);
-    tinybaseStore.setCell('messages', messageId, 'channel', channel);
-    tinybaseStore.setCell('messages', messageId, 'timestamp', Date.now());
+    const messageData = {
+      text: text,
+      username: username,
+      channel: channel,
+      timestamp: Date.now(),
+    };
 
     if (options.encrypted) {
-      tinybaseStore.setCell('messages', messageId, 'encrypted', true);
+      messageData.encrypted = true;
     }
 
     if (options.replyToId) {
-      tinybaseStore.setCell(
-        'messages',
-        messageId,
-        'replyToId',
-        options.replyToId,
-      );
+      messageData.replyToId = options.replyToId;
     }
+
+    tinybaseStore.setRow('messages', messageId, messageData);
 
     console.log('📤 Message sent to TinyBase:', messageId);
     return messageId;
@@ -392,50 +472,11 @@ export function initMessageList(
   }
 
   return {
-    component: messagesComponent,
     signal: messagesSignal,
     sendMessage,
     deleteMessage,
     editMessage,
     syncNow: syncTinybaseToSignal,
+    render: renderMessages, // 暴露渲染函数供外部使用
   };
-}
-
-// Update time display based on whether this is the first message in a group
-function updateTimeDisplayForMessage(messageElement) {
-  const username = messageElement.getAttribute('data-username');
-  const timestamp = messageElement.getAttribute('data-timestamp');
-  const timeSpan = messageElement.querySelector('.msg-time-outside-actions');
-
-  if (!timeSpan || !username || !timestamp) return;
-
-  // Check if previous message is from the same user
-  // Skip over date dividers and system messages
-  let prevWrapper = messageElement.previousElementSibling;
-  while (prevWrapper && !prevWrapper.classList.contains('message-wrapper')) {
-    prevWrapper = prevWrapper.previousElementSibling;
-  }
-
-  let isFirstInGroup = true;
-
-  if (prevWrapper && prevWrapper.classList.contains('message-wrapper')) {
-    const prevUsername = prevWrapper.getAttribute('data-username');
-    const prevTimestamp = prevWrapper.getAttribute('data-timestamp');
-
-    // If same user and within 5 minutes, it's not the first in group
-    if (prevUsername === username && prevTimestamp) {
-      const timeDiff = Number(timestamp) - Number(prevTimestamp);
-      if (timeDiff < 5 * 60 * 1000) {
-        // 5 minutes
-        isFirstInGroup = false;
-      }
-    }
-  }
-
-  // Update time display
-  if (isFirstInGroup) {
-    timeSpan.setAttribute('data-first-message', 'true');
-  } else {
-    timeSpan.removeAttribute('data-first-message');
-  }
 }

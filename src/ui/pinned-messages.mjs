@@ -262,8 +262,6 @@ export function initPinnedMessages(pinButtonSelector = '#btn-show-pins') {
     signals: [SignalName],
   });
 
-  console.log('Reef component initialized');
-
   // Setup event delegation for buttons
   container.addEventListener('click', handlePinnedPanelClick);
 
