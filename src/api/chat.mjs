@@ -359,95 +359,16 @@ export class ChatRoom {
   }
 
   /**
-   * Transform message row to include replyTo structure
-   * @param {Object} msg - Raw message row from database
-   * @param {string} msg.messageId - Message ID
-   * @param {number} msg.timestamp - Message timestamp
-   * @param {string} msg.name - Username
-   * @param {string} msg.message - Message content
-   * @param {string} msg.channel - Channel name
-   * @param {number} [msg.editedAt] - Edit timestamp
-   * @param {string} [msg.replyToId] - Parent message ID
-   * @param {string} [msg.replyToUsername] - Parent message username
-   * @param {string} [msg.replyToMessage] - Parent message content (encrypted)
-   * @returns {Object} Transformed message with replyTo structure
-   */
-  transformMessageRow(msg) {
-    const transformed = {
-      messageId: msg.messageId,
-      timestamp: msg.timestamp,
-      name: msg.name,
-      message: msg.message,
-      channel: msg.channel,
-      editedAt: msg.editedAt,
-    };
-
-    // Include replyTo structure with parent message for client-side decryption
-    if (msg.replyToId) {
-      transformed.replyTo = {
-        messageId: msg.replyToId,
-        username: msg.replyToUsername || null,
-        message: msg.replyToMessage || null, // Client will decrypt and generate preview
-      };
-    }
-
-    return transformed;
-  }
-
-  /**
    * Initialize SQLite database schema
-   * Creates tables for messages, threads, edit history, room metadata, file references, and pinned messages
+   * Creates table for room metadata (name, note, destruction timer)
+   * Note: Messages are now stored in TinyBase, not in Durable Object SQL
    */
   initDatabase() {
     this.sql.exec(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        message_id TEXT UNIQUE NOT NULL,
-        timestamp INTEGER NOT NULL,
-        username TEXT NOT NULL,
-        message TEXT NOT NULL,
-        channel TEXT NOT NULL DEFAULT 'general',
-        reply_to_id TEXT,
-        edited_at INTEGER,
-        created_at INTEGER NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel, timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id);
-
-      CREATE TABLE IF NOT EXISTS threads (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        parent_message_id TEXT NOT NULL,
-        reply_message_id TEXT NOT NULL,
-        reply_timestamp INTEGER NOT NULL,
-        FOREIGN KEY (parent_message_id) REFERENCES messages(message_id),
-        FOREIGN KEY (reply_message_id) REFERENCES messages(message_id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_threads_parent ON threads(parent_message_id);
-
-      CREATE TABLE IF NOT EXISTS edit_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        message_id TEXT NOT NULL,
-        old_message TEXT NOT NULL,
-        edited_at INTEGER NOT NULL,
-        FOREIGN KEY (message_id) REFERENCES messages(message_id)
-      );
-
       CREATE TABLE IF NOT EXISTS room_metadata (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
-
-      CREATE TABLE IF NOT EXISTS file_references (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        message_id TEXT NOT NULL,
-        file_key TEXT NOT NULL,
-        FOREIGN KEY (message_id) REFERENCES messages(message_id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_file_refs_message ON file_references(message_id);
     `);
   }
 
@@ -762,207 +683,6 @@ export class ChatRoom {
         }
       });
 
-      app.get('/channels', async (c) => {
-        const cursor = this.sql.exec(`
-          SELECT 
-            channel,
-            COUNT(*) as count,
-            MAX(timestamp) as lastUsed
-          FROM messages
-          GROUP BY channel
-          ORDER BY lastUsed DESC
-          LIMIT 100
-        `);
-
-        const channels = cursor.toArray();
-        return c.json({ channels });
-      });
-
-      app.get('/channel/:channelName/messages', async (c) => {
-        const channelName = c.req.param('channelName');
-        const limit = parseInt(c.req.query('limit') || '100');
-
-        if (!channelName) {
-          return c.json({ error: "Missing 'channelName' parameter" }, 400);
-        }
-
-        console.log(
-          'Fetching messages for channel:',
-          channelName,
-          'limit:',
-          limit,
-        );
-        const cursor = this.sql.exec(
-          `
-          SELECT 
-            m.message_id as messageId,
-            m.timestamp,
-            m.username as name,
-            m.message,
-            m.channel,
-            m.reply_to_id as replyToId,
-            m.edited_at as editedAt,
-            parent.username as replyToUsername,
-            parent.message as replyToMessage
-          FROM messages m
-          LEFT JOIN messages parent ON m.reply_to_id = parent.message_id
-          WHERE m.channel = ?
-          ORDER BY m.timestamp DESC
-          LIMIT ?
-        `,
-          channelName,
-          limit,
-        );
-
-        const rawMessages = cursor.toArray().reverse(); // Reverse to get chronological order
-
-        // Transform messages - include parent data for client-side preview generation
-        const messages = rawMessages.map((msg) =>
-          this.transformMessageRow(msg),
-        );
-
-        return c.json({ channel: channelName, messages });
-      });
-
-      app.get('/channel/search', async (c) => {
-        const query = c.req.query('q') || '';
-
-        const cursor = this.sql.exec(
-          `
-          SELECT 
-            channel,
-            COUNT(*) as count,
-            MAX(timestamp) as lastUsed
-          FROM messages
-          WHERE channel LIKE ?
-          GROUP BY channel
-          ORDER BY lastUsed DESC
-          LIMIT 20
-        `,
-          query + '%',
-        );
-
-        const results = cursor.toArray();
-        return c.json({ query, results });
-      });
-
-      app.delete('/message/:messageId', async (c) => {
-        const messageId = c.req.param('messageId');
-        const { username } = await c.req.json();
-
-        if (!messageId) {
-          return c.json({ error: "Missing 'messageId' parameter" }, 400);
-        }
-
-        // Find and verify ownership
-        const msgCursor = this.sql.exec(
-          `SELECT username, message FROM messages WHERE message_id = ?`,
-          messageId,
-        );
-
-        const messageData = msgCursor.one();
-        if (!messageData) {
-          return c.json({ error: 'Message not found' }, 404);
-        }
-
-        if (messageData.username !== username) {
-          return c.json(
-            { error: 'You can only delete your own messages' },
-            { status: 403 },
-          );
-        }
-
-        // Delete message and related data
-        this.sql.exec(
-          `
-          DELETE FROM edit_history WHERE message_id = ?;
-          DELETE FROM threads WHERE parent_message_id = ? OR reply_message_id = ?;
-          DELETE FROM file_references WHERE message_id = ?;
-          DELETE FROM messages WHERE message_id = ?;
-        `,
-          messageId,
-          messageId,
-          messageId,
-          messageId,
-          messageId,
-        );
-
-        this.broadcast({ messageDeleted: messageId });
-        return c.json({ success: true, messageId });
-      });
-
-      app.put('/message/:messageId', async (c) => {
-        const messageId = c.req.param('messageId');
-        const { username, newMessage } = await c.req.json();
-
-        if (!messageId || !newMessage) {
-          return c.json(
-            { error: "Missing 'messageId' or 'newMessage' parameter" },
-            400,
-          );
-        }
-
-        if (newMessage.length > MAX_MESSAGE_LENGTH) {
-          return c.json({ error: 'Message too long' }, 400);
-        }
-
-        // Find and verify
-        const msgCursor = this.sql.exec(
-          `SELECT username, message FROM messages WHERE message_id = ?`,
-          messageId,
-        );
-
-        const messageData = msgCursor.one();
-        if (!messageData) {
-          return c.json({ error: 'Message not found' }, 404);
-        }
-
-        if (messageData.username !== username) {
-          return c.json({ error: 'You can only edit your own messages' }, 403);
-        }
-
-        if (messageData.message.startsWith('FILE:')) {
-          return c.json({ error: 'Cannot edit file messages' }, 400);
-        }
-
-        // Save to edit history
-        const editedAt = Date.now();
-
-        // Insert into edit history
-        this.sql.exec(
-          `INSERT INTO edit_history (message_id, old_message, edited_at)
-           VALUES (?, ?, ?)`,
-          messageId,
-          messageData.message,
-          editedAt,
-        );
-
-        // Update message
-        this.sql.exec(
-          `UPDATE messages
-           SET message = ?, edited_at = ?
-           WHERE message_id = ?`,
-          newMessage,
-          editedAt,
-          messageId,
-        );
-
-        this.broadcast({
-          messageEdited: {
-            messageId,
-            message: newMessage,
-            editedAt,
-          },
-        });
-
-        return c.json({
-          success: true,
-          messageId,
-          message: newMessage,
-          editedAt,
-        });
-      });
-
       app.get('/info', async (c) => {
         try {
           const nameCursor = this.sql.exec(
@@ -1021,91 +741,6 @@ export class ChatRoom {
         }
 
         return c.json({ success: true });
-      });
-
-      app.get('/thread/:messageId', async (c) => {
-        const messageId = c.req.param('messageId');
-        if (!messageId) {
-          return new Response('Method not allowed', { status: 405 });
-        }
-
-        try {
-          const nested = c.req.query('nested') === 'true';
-
-          if (nested) {
-            // Recursive query for nested replies
-            const cursor = this.sql.exec(
-              `
-              WITH RECURSIVE thread_tree AS (
-                SELECT message_id, reply_to_id, 0 as depth
-                FROM messages
-                WHERE message_id = ?
-                
-                UNION ALL
-                
-                SELECT m.message_id, m.reply_to_id, tt.depth + 1
-                FROM messages m
-                INNER JOIN thread_tree tt ON m.reply_to_id = tt.message_id
-                WHERE tt.depth < 10
-              )
-              SELECT 
-                m.message_id as messageId,
-                m.timestamp,
-                m.username as name,
-                m.message,
-                m.channel,
-                m.reply_to_id as replyToId,
-                m.edited_at as editedAt,
-                parent.username as replyToUsername,
-                parent.message as replyToMessage
-              FROM thread_tree tt
-              INNER JOIN messages m ON tt.message_id = m.message_id
-              LEFT JOIN messages parent ON m.reply_to_id = parent.message_id
-              WHERE tt.depth > 0
-              ORDER BY m.timestamp ASC
-            `,
-              messageId,
-            );
-
-            const rawReplies = cursor.toArray();
-            const allReplies = rawReplies.map((msg) =>
-              this.transformMessageRow(msg),
-            );
-
-            return c.json({ replies: allReplies });
-          } else {
-            // Direct replies only
-            const cursor = this.sql.exec(
-              `
-              SELECT 
-                m.message_id as messageId,
-                m.timestamp,
-                m.username as name,
-                m.message,
-                m.channel,
-                m.reply_to_id as replyToId,
-                m.edited_at as editedAt,
-                parent.username as replyToUsername,
-                parent.message as replyToMessage
-              FROM messages m
-              LEFT JOIN messages parent ON m.reply_to_id = parent.message_id
-              WHERE m.reply_to_id = ?
-              ORDER BY m.timestamp ASC
-            `,
-              messageId,
-            );
-
-            const rawReplies = cursor.toArray();
-            const replies = rawReplies.map((msg) =>
-              this.transformMessageRow(msg),
-            );
-
-            return c.json({ replies });
-          }
-        } catch (err) {
-          console.error('Thread query error:', err);
-          return c.json({ error: err.message }, 500);
-        }
       });
 
       app.post('/destruction/start', async (c) => {
@@ -1256,7 +891,8 @@ export class ChatRoom {
 
   /**
    * Handle incoming WebSocket message
-   * Processes user registration, rate limiting, message validation, and storage
+   * Processes user registration, rate limiting, and broadcasts messages
+   * Note: Messages are stored in TinyBase, not in Durable Object
    * @param {WebSocket} webSocket - WebSocket connection
    * @param {string} msg - Raw message string
    * @returns {Promise<void>}
@@ -1321,85 +957,16 @@ export class ChatRoom {
       }
 
       // Validate message length
-      if (data.message.startsWith('FILE:')) {
-        const parts = data.message.substring(5).split('|');
-        if (parts.length < 3) {
-          throw new Error('Invalid file message format');
-        }
-      } else if (data.message.length > MAX_MESSAGE_LENGTH) {
+      if (data.message.length > MAX_MESSAGE_LENGTH) {
         throw new Error('Message too long');
       }
 
       data.timestamp = Math.max(Date.now(), this.lastTimestamp + 1);
       this.lastTimestamp = data.timestamp;
 
-      // Broadcast
+      // Broadcast to all clients (TinyBase will handle persistence)
       let dataStr = JSON.stringify(data);
       this.broadcast(dataStr);
-
-      // Save to database
-      this.sql.exec(
-        `
-        INSERT INTO messages (
-          message_id, timestamp, username, message, channel,
-          reply_to_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-      `,
-        data.messageId,
-        data.timestamp,
-        data.name,
-        data.message,
-        data.channel,
-        data.replyTo?.messageId || null,
-        Date.now(),
-      );
-
-      // Update thread index if reply
-      if (data.replyTo && data.replyTo.messageId) {
-        this.sql.exec(
-          `
-          INSERT INTO threads (parent_message_id, reply_message_id, reply_timestamp)
-          VALUES (?, ?, ?)
-        `,
-          data.replyTo.messageId,
-          data.messageId,
-          data.timestamp,
-        );
-
-        // Broadcast thread update
-        const countCursor = this.sql.exec(
-          `
-          SELECT COUNT(*) as count FROM threads WHERE parent_message_id = ?
-        `,
-          data.replyTo.messageId,
-        );
-        const countResult = countCursor.one();
-
-        this.broadcast({
-          threadUpdate: {
-            messageId: data.replyTo.messageId,
-            threadInfo: {
-              replyCount: countResult.count,
-            },
-          },
-        });
-      }
-
-      // Track file reference
-      if (data.message.startsWith('FILE:')) {
-        const parts = data.message.substring(5).split('|');
-        const fileUrl = parts[0];
-        const fileKey = fileUrl.replace('/files/', '');
-
-        this.sql.exec(
-          `
-          INSERT INTO file_references (message_id, file_key)
-          VALUES (?, ?)
-        `,
-          data.messageId,
-          fileKey,
-        );
-      }
     } catch (err) {
       webSocket.send(JSON.stringify({ error: err.stack }));
     }
@@ -1475,7 +1042,8 @@ export class ChatRoom {
 
   /**
    * Execute room destruction
-   * Closes all WebSockets, deletes all R2 files, drops all database tables, and reinitializes schema
+   * Closes all WebSockets and clears room metadata
+   * Note: Messages and files are managed by TinyBase and R2, not by this DO
    * @returns {Promise<void>}
    */
   async executeDestruction() {
@@ -1496,32 +1064,9 @@ export class ChatRoom {
       }
       this.sessions.clear();
 
-      // Get all file references for R2 deletion
-      const cursor = this.sql.exec(`SELECT file_key FROM file_references`);
-      const filesToDelete = cursor.toArray().map((row) => row.file_key);
-
-      // Delete all R2 files
-      console.log(`Deleting ${filesToDelete.length} files from R2...`);
-      for (const fileKey of filesToDelete) {
-        try {
-          await this.env.CHAT_FILES.delete(fileKey);
-        } catch (e) {
-          console.error(`Failed to delete file ${fileKey}:`, e);
-        }
-      }
-
-      // Delete all database data
-      console.log('Deleting all database data...');
-      this.sql.exec(`
-        DROP TABLE IF EXISTS messages;
-        DROP TABLE IF EXISTS threads;
-        DROP TABLE IF EXISTS edit_history;
-        DROP TABLE IF EXISTS room_metadata;
-        DROP TABLE IF EXISTS file_references;
-      `);
-
-      // Reinitialize schema
-      this.initDatabase();
+      // Clear room metadata
+      console.log('Clearing room metadata...');
+      this.sql.exec(`DELETE FROM room_metadata`);
 
       // Clear timers
       if (this.destructionTimer) {
