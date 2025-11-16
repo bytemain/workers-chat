@@ -4900,34 +4900,6 @@ function showRoomContextMenu(event, targetRoomName) {
   }, 10);
 }
 
-// Initialize user action buttons
-function initUserActionButtons() {
-  const settingsBtn = document.querySelector('#user-settings-btn');
-  const muteBtn = document.querySelector('#user-mute-btn');
-
-  if (settingsBtn) {
-    settingsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      // Open room settings modal
-      const modal = document.querySelector('#room-settings-modal');
-      if (modal) {
-        modal.style.display = 'flex';
-      }
-    });
-  }
-
-  if (muteBtn) {
-    let isMuted = false;
-    muteBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      isMuted = !isMuted;
-      muteBtn.textContent = isMuted ? '🔊' : '🔇';
-      muteBtn.title = isMuted ? 'Unmute' : 'Mute';
-      // TODO: Implement actual mute functionality
-    });
-  }
-}
-
 // Initialize user profile modal
 function initUserProfileModal() {
   const userInfoCard = document.querySelector('#user-info-card');
@@ -5022,7 +4994,6 @@ function initializeLeftSidebar() {
   initRoomDropdown();
   updateRoomListUI();
   updateUserInfoCard();
-  initUserActionButtons();
   initUserProfileModal();
 }
 
