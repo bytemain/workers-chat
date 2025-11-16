@@ -42,7 +42,6 @@ const tableId = 'messages';
  * @param {Function} getCurrentChannel - Function to get current channel
  * @param {Object} encryptionContext - Encryption context { currentRoomKey, isRoomEncrypted }
  * @param {Map} messagesCache - Global messages cache for legacy features (threads, etc.)
- * @param {Function} updateThreadInfo - Function to update thread info for reply messages
  * @param {Object} readStatusStore - TinyBase store for read status tracking
  * @param {string} roomName - Current room name
  * @returns {Object} Component instance and helper functions
@@ -54,7 +53,6 @@ export function initMessageList(
   getCurrentChannel,
   encryptionContext,
   messagesCache,
-  updateThreadInfo,
   readStatusStore,
   roomName,
 ) {

@@ -131,7 +131,11 @@ export function initChatState() {
     },
   });
 
-  console.log('✅ Chat state initialized with URL sync');
+  console.log('✅ Chat state initialized with URL sync', chatState.value);
+  if (chatState.value.threadId !== null) {
+    console.log(`🔗 Initial URL has thread: ${chatState.value.threadId}`);
+    window._pendingThreadId = chatState.value.threadId;
+  }
 
   return urlSync;
 }

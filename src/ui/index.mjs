@@ -2317,11 +2317,17 @@ window.openThread = async function (messageId) {
   // Handle mobile thread panel
   MobileUI.handleMobileThreadPanel(true);
 
-  // Load and display root message
+  // Load and display root message using message-element
   const rootMessage = messagesCache.get(rootMessageId);
   if (rootMessage) {
     threadOriginalMessage.innerHTML = '';
-    const msgElement = createMessageElement(rootMessage, false, true);
+    const msgElement = document.createElement('message-element');
+    msgElement.setData({
+      ...rootMessage,
+      isInThread: false,
+      isThreadOriginal: true,
+      isFirstInGroup: true,
+    });
     threadOriginalMessage.appendChild(msgElement);
   } else {
     threadOriginalMessage.innerHTML =
@@ -2462,17 +2468,42 @@ async function loadThreadReplies(messageId) {
             : null,
       };
 
-      // Re-render the root message with updated count
+      // Re-render the root message with updated count using message-element
       threadOriginalMessage.innerHTML = '';
-      const msgElement = createMessageElement(rootMessage, false, true);
+      const msgElement = document.createElement('message-element');
+      msgElement.setData({
+        ...rootMessage,
+        isInThread: false,
+        isThreadOriginal: true,
+        isFirstInGroup: true,
+      });
       threadOriginalMessage.appendChild(msgElement);
     }
 
-    // Render all replies (sorted by timestamp)
+    // Render all replies using message-element (sorted by timestamp)
     threadReplies.innerHTML = '';
     allReplies.sort((a, b) => a.timestamp - b.timestamp);
-    allReplies.forEach((reply) => {
-      const replyElement = createMessageElement(reply, true);
+
+    // 计算每条消息是否是分组中的第一条
+    allReplies.forEach((reply, index) => {
+      let isFirstInGroup = true;
+      if (index > 0) {
+        const prevReply = allReplies[index - 1];
+        if (prevReply.name === reply.name) {
+          const timeDiff = reply.timestamp - prevReply.timestamp;
+          if (timeDiff < 5 * 60 * 1000) {
+            isFirstInGroup = false;
+          }
+        }
+      }
+
+      const replyElement = document.createElement('message-element');
+      replyElement.setData({
+        ...reply,
+        isInThread: true,
+        isThreadOriginal: false,
+        isFirstInGroup,
+      });
       threadReplies.appendChild(replyElement);
     });
 
@@ -2480,68 +2511,12 @@ async function loadThreadReplies(messageId) {
     threadReplies.scrollTop = threadReplies.scrollHeight;
 
     console.log(
-      `✅ Loaded ${allReplies.length} thread replies from messagesCache`,
+      `✅ Loaded ${allReplies.length} thread replies using message-element`,
     );
   } catch (err) {
     console.error('Failed to load thread replies:', err);
     threadReplies.innerHTML =
       '<p style="color:#999;padding:16px;text-align:center;">Failed to load replies</p>';
-  }
-}
-
-/**
- * Update thread info for a reply message
- * Called after rendering messages to update thread counts and thread panel
- * @param {Object} messageData - Message data with replyTo information
- */
-function updateThreadInfo(messageData) {
-  if (!messageData.replyTo) return;
-
-  // Find the root message of this reply
-  let rootId = messageData.replyTo.messageId;
-  let parentMsg = messagesCache.get(rootId);
-  while (parentMsg && parentMsg.replyTo) {
-    rootId = parentMsg.replyTo.messageId;
-    parentMsg = messagesCache.get(rootId);
-  }
-
-  // Update root message's reply count
-  const rootMessage = messagesCache.get(rootId);
-  if (rootMessage) {
-    const totalReplies = countTotalReplies(rootId);
-    rootMessage.threadInfo = rootMessage.threadInfo || {};
-    rootMessage.threadInfo.replyCount = totalReplies;
-    rootMessage.threadInfo.lastReplyTime = messageData.timestamp;
-
-    // Update the message in main chat list (thread count badge)
-    const mainChatMsg = document.querySelector(`[data-message-id="${rootId}"]`);
-    if (mainChatMsg) {
-      const chatMessage = mainChatMsg.querySelector('chat-message');
-      if (chatMessage) {
-        chatMessage.setAttribute('thread-count', String(totalReplies));
-        chatMessage.render();
-      }
-    }
-  }
-
-  // If this reply belongs to the currently open thread, add it to thread panel
-  if (chatState?.value?.threadId === rootId) {
-    // Check if this reply is already in the thread panel
-    const existingReply = threadReplies.querySelector(
-      `[data-message-id="${messageData.messageId}"]`,
-    );
-    if (!existingReply) {
-      const threadReplyElement = createMessageElement(messageData, true);
-      threadReplies.appendChild(threadReplyElement);
-      threadReplies.scrollTop = threadReplies.scrollHeight;
-
-      // Update thread count on the top message in thread panel
-      if (rootMessage) {
-        threadOriginalMessage.innerHTML = '';
-        const msgElement = createMessageElement(rootMessage, false, true);
-        threadOriginalMessage.appendChild(msgElement);
-      }
-    }
   }
 }
 
@@ -4297,7 +4272,6 @@ async function startChat() {
         },
       },
       messagesCache, // 传入全局消息缓存
-      updateThreadInfo, // 传入线程信息更新函数
       window.readStatusStore, // 传入已读状态 store
       roomname, // 传入房间名
     );
@@ -4305,6 +4279,23 @@ async function startChat() {
 
     // Expose to window for testing
     window.messageList = messageListComponent;
+
+    // Handle pending thread from initial URL (after messages are loaded)
+    console.log(
+      `🚀 ~ startChat ~ window._pendingThreadId:`,
+      window._pendingThreadId,
+    );
+    if (window._pendingThreadId) {
+      const threadId = window._pendingThreadId;
+      delete window._pendingThreadId;
+      console.log(`🔗 Opening thread from initial URL: ${threadId}`);
+      // Wait a bit for messages to be loaded from WebSocket
+      setTimeout(() => {
+        if (window.openThread) {
+          window.openThread(threadId);
+        }
+      }, 500);
+    }
 
     // 监听 loading 状态变化，更新 channel info bar 的 loading 指示器
     const channelLoadingIndicator = document.getElementById(
