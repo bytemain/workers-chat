@@ -1,6 +1,8 @@
 import { signal, component } from 'reefjs';
-import { getIndexes } from '../../tinybase/index.mjs';
-import { attr, html, raw } from '../../utils/html.mjs';
+import { getIndexes, IndexesIds, TableIds } from '../../tinybase/index.mjs';
+import { attr, clsx, html, raw } from '../../utils/html.mjs';
+import { REACTION_TYPES } from '../../reactions/config.mjs';
+import { renderReactions } from '../../reactions/ui.mjs';
 
 /**
  * @typedef {Object} MessageData
@@ -65,7 +67,13 @@ class MessageElement extends HTMLElement {
 
     // Event handlers (accessible in template via onclick="eventName()")
     this.events = {
-      handleReaction: (reactionId) => {
+      handleReaction: (event) => {
+        const btn = event.target.closest('.quick-reaction-btn');
+        const reactionId = btn ? btn.getAttribute('data-reaction-id') : null;
+        if (!reactionId) {
+          console.error('No reaction ID found on button');
+          return;
+        }
         console.log('Quick reaction:', reactionId, 'on', this.data.messageId);
         if (window.reactionManager) {
           window.reactionManager.toggleReaction(
@@ -128,17 +136,24 @@ class MessageElement extends HTMLElement {
     // Listen to reactions for this specific message
     const indexes = getIndexes();
     if (indexes && this.data.messageId) {
+      // 正确的 API: addSliceRowIdsListener(indexId, sliceId, callback)
+      // 回调签名: (indexes, indexId, sliceId) => void
       this.reactionListener = indexes.addSliceRowIdsListener(
-        'reaction_instances',
-        'reactionsByMessage',
-        this.data.messageId,
-        (store, tableId, sliceId) => {
+        IndexesIds.ReactionsByMessage, // indexId
+        this.data.messageId, // sliceId (the message ID)
+        (indexes, indexId, sliceId) => {
           console.log(
-            `🔄 Reactions changed for message: ${this.data.messageId}`,
+            `🔄 Reactions changed for message: ${sliceId}`,
+            'Index:',
+            indexId,
           );
           // Trigger re-render by incrementing version or updating a dummy field
           this.data.version = (this.data.version || 0) + 1;
         },
+      );
+
+      console.log(
+        `✅ Reaction listener added for message: ${this.data.messageId}`,
       );
     }
   }
@@ -148,9 +163,10 @@ class MessageElement extends HTMLElement {
    * Clean up reaction listener
    */
   disconnectedCallback() {
+    const indexes = getIndexes();
     // Clean up listener when component is removed
-    if (this.reactionListener && window.store) {
-      window.store.delListener(this.reactionListener);
+    if (this.reactionListener && indexes) {
+      indexes.delListener(this.reactionListener);
       this.reactionListener = null;
     }
   }
@@ -205,12 +221,18 @@ class MessageElement extends HTMLElement {
     // Build quick reactions HTML
     const quickReactionsHtml = ['like', 'love', 'laugh']
       .map((reactionId) => {
-        const config = window.REACTION_TYPES?.[reactionId];
+        const config = REACTION_TYPES[reactionId];
         if (!config) return '';
         return html`
           <button
-            class="quick-reaction-btn"
-            onclick="handleReaction('${reactionId}')"
+            data-reaction-id="${reactionId}"
+            data-message-id="${d.messageId}"
+            class="${clsx('quick-reaction-btn', {
+              reacted:
+                window.reactionManager &&
+                window.reactionManager.hasUserReacted(d.messageId, reactionId),
+            })}"
+            onclick="handleReaction()"
             title="${config.label}"
             style="--reaction-color: ${config.color}"
           >
@@ -256,9 +278,10 @@ class MessageElement extends HTMLElement {
             <!-- Quick Reactions -->
             <div class="message-actions-section">
               ${raw(quickReactionsHtml)}
+              <!-- Add "More reactions" button -->
               <button
                 class="quick-reaction-btn"
-                onclick="handleShowReactionPicker(event)"
+                onclick="handleShowReactionPicker()"
                 title="More reactions"
               >
                 <i class="ri-add-circle-line"></i>
@@ -274,7 +297,7 @@ class MessageElement extends HTMLElement {
             <div class="message-actions-section">
               <button
                 class="message-action-btn"
-                onclick="handleShowMoreActions(event)"
+                onclick="handleShowMoreActions()"
                 title="More actions"
               >
                 <i class="ri-more-2-line"></i>
@@ -310,11 +333,7 @@ class MessageElement extends HTMLElement {
         </div>
 
         <!-- Reactions Display -->
-        ${raw(
-          window.renderReactions
-            ? window.renderReactions(d.messageId, window.reactionManager)
-            : '',
-        )}
+        ${raw(renderReactions(d.messageId, window.reactionManager))}
       </div>
     `;
   };

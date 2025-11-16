@@ -57,3 +57,21 @@ export function attrs(attributes) {
     .map(([key, value]) => attr(key, value))
     .join('');
 }
+
+export function clsx(...classes) {
+  return classes
+    .flatMap((cls) => {
+      if (typeof cls === 'string' || typeof cls === 'number') {
+        return cls;
+      } else if (Array.isArray(cls)) {
+        return clsx(...cls);
+      } else if (typeof cls === 'object' && cls !== null) {
+        return Object.entries(cls)
+          .filter(([_, v]) => Boolean(v))
+          .map(([k, _]) => k);
+      }
+      return [];
+    })
+    .filter(Boolean)
+    .join(' ');
+}

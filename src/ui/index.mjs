@@ -2373,11 +2373,13 @@ function setReplyTo(messageId, username, preview, rootMessageId) {
     chatInputComponent.focus();
   }
 }
+window.setReplyTo = setReplyTo;
 
 function clearReplyTo() {
   currentReplyTo = null;
   document.getElementById('reply-indicator').style.display = 'none';
 }
+window.clearReplyTo = clearReplyTo;
 
 // Count total replies for a message (including nested)
 function countTotalReplies(messageId) {
@@ -2928,6 +2930,7 @@ function showMessageActionsMenu(
     document.addEventListener('click', closeMenu);
   }, 0);
 }
+window.showMessageActionsMenu = showMessageActionsMenu;
 
 // Show mobile context menu for message actions
 function showMobileContextMenu(
@@ -3100,6 +3103,7 @@ function locateMessageInMainChat(messageId) {
     addSystemMessage('* Message not found in current chat view');
   }
 }
+window.locateMessageInMainChat = locateMessageInMainChat;
 
 // Load messages for a specific channel from TinyBase (no server request needed)
 async function loadChannelMessages(channel) {
@@ -4283,7 +4287,6 @@ async function startChat() {
       window.indexes, // Pass indexes for efficient querying
       '#chatlog',
       () => currentChannel,
-      createMessageElement, // 传入 createMessageElement 函数
       {
         // 加密上下文
         get currentRoomKey() {

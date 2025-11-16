@@ -40,7 +40,6 @@ const tableId = 'messages';
  * @param {import('tinybase').Indexes} tinybaseIndexes - TinyBase indexes instance for O(log n) filtering
  * @param {string} containerSelector - CSS selector for container element
  * @param {Function} getCurrentChannel - Function to get current channel
- * @param {() => HTMLElement} createMessageElement - Function to create message DOM element
  * @param {Object} encryptionContext - Encryption context { currentRoomKey, isRoomEncrypted }
  * @param {Map} messagesCache - Global messages cache for legacy features (threads, etc.)
  * @param {Function} updateThreadInfo - Function to update thread info for reply messages
@@ -53,7 +52,6 @@ export function initMessageList(
   tinybaseIndexes,
   containerSelector,
   getCurrentChannel,
-  createMessageElement,
   encryptionContext,
   messagesCache,
   updateThreadInfo,
@@ -89,7 +87,7 @@ export function initMessageList(
       // ✅ Use index for O(log n) query - much faster than O(n) filter!
       // Get message IDs for current channel from pre-built index
       const messageIds = tinybaseIndexes.getSliceRowIds(
-        'messagesByChannel',
+        IndexesIds.MessagesByChannel,
         currentChannel,
       );
 

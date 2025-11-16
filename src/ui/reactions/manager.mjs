@@ -3,6 +3,7 @@
  * Manages message reactions with foreign key relationships
  */
 
+import { TableIds } from '../tinybase/index.mjs';
 import { REACTION_TYPES, REACTION_ORDER } from './config.mjs';
 
 /**
@@ -54,7 +55,7 @@ export class ReactionManager {
 
     const rowId = this.generateReactionId();
 
-    this.store.setRow('reaction_instances', rowId, {
+    this.store.setRow(TableIds.Reactions, rowId, {
       messageId,
       reactionId,
       username: user,
@@ -78,7 +79,7 @@ export class ReactionManager {
     const reactionRowId = this.findUserReaction(messageId, reactionId, user);
 
     if (reactionRowId) {
-      this.store.delRow('reaction_instances', reactionRowId);
+      this.store.delRow(TableIds.Reactions, reactionRowId);
       console.log(
         `🗑️ Removed reaction: ${reactionId} by ${user} on ${messageId}`,
       );
@@ -150,7 +151,7 @@ export class ReactionManager {
       rowIds,
     );
     const reactions = rowIds.map((id) =>
-      this.store.getRow('reaction_instances', id),
+      this.store.getRow(TableIds.Reactions, id),
     );
     console.log(`📊 Raw reactions:`, reactions);
 
@@ -202,7 +203,7 @@ export class ReactionManager {
     const rowIds = this.indexes.getSliceRowIds('reactionsByMessage', messageId);
 
     return rowIds
-      .map((id) => this.store.getRow('reaction_instances', id))
+      .map((id) => this.store.getRow(TableIds.Reactions, id))
       .filter((r) => r.username === user)
       .map((r) => r.reactionId);
   }
@@ -215,7 +216,7 @@ export class ReactionManager {
   deleteMessageReactions(messageId) {
     const rowIds = this.indexes.getSliceRowIds('reactionsByMessage', messageId);
     rowIds.forEach((id) => {
-      this.store.delRow('reaction_instances', id);
+      this.store.delRow(TableIds.Reactions, id);
     });
     console.log(
       `🗑️ Cascade deleted ${rowIds.length} reactions for message ${messageId}`,

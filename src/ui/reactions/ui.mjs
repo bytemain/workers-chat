@@ -13,12 +13,12 @@ import { REACTION_TYPES, REACTION_ORDER } from './config.mjs';
  */
 export function renderReactions(messageId, reactionManager) {
   const reactions = reactionManager.getReactions(messageId);
+  console.log(`🎨 renderReactions for ${messageId}:`, reactions);
 
   if (reactions.length === 0) {
     return `<div class="message-reactions" data-message-id="${messageId}"></div>`;
   }
 
-  console.log(`🎨 renderReactions for ${messageId}:`, reactions);
   return `
     <div class="message-reactions" data-message-id="${messageId}">
       ${reactions
@@ -125,6 +125,7 @@ export function showReactionPicker(triggerElement, messageId, reactionManager) {
   }
   document.addEventListener('keydown', closePickerOnEscape);
 }
+window.showReactionPicker = showReactionPicker;
 
 /**
  * Initialize reaction event listeners
