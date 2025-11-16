@@ -28,8 +28,6 @@ import { getCurrentChannel } from '../utils/chat-state.mjs';
  * @property {string|null} replyToId - ID of the message being replied to, if any
  * @property {number|null} editedAt - Unix timestamp of last edit, if edited
  * @property {boolean} encrypted - Whether the message content is encrypted
- * @property {number} [uploadProgress] - File upload progress (0-100), if uploading
- * @property {string} [uploadStatus] - Upload status: 'uploading', 'success', 'error'
  */
 
 const SignalName = 'messagesSignal';
@@ -60,7 +58,8 @@ export function initMessageList(
   const messagesSignal = signal(
     {
       /** @type {RawMessage[]} */
-      items: [], // 消息列表
+      items: [], // 消息列表（来自 TinyBase）
+      tempItems: [], // 临时消息列表（仅本地，不同步）
       loading: false, // 加载状态
       error: null, // 错误信息
       version: 0, // 版本号，用于强制重新渲染
@@ -105,8 +104,6 @@ export function initMessageList(
           replyToId: row.replyToId || null,
           editedAt: row.editedAt || null,
           encrypted: CryptoUtils.isEncrypted(row.text || ''),
-          uploadProgress: row.uploadProgress,
-          uploadStatus: row.uploadStatus,
         };
       });
       // Note: Already sorted by timestamp via index definition!
@@ -165,7 +162,7 @@ export function initMessageList(
 
         // 返回完整的、解密后的消息数据
         return {
-          ...msg, // 保留所有原始字段（包括 uploadProgress, uploadStatus 等）
+          ...msg,
           message: decryptedMessage, // 覆盖：已解密的消息
           replyTo: replyTo, // 覆盖：已处理预览的 replyTo
         };
@@ -261,7 +258,7 @@ export function initMessageList(
     },
   );
 
-  // 监听单个 row 的变化（用于更新上传进度等局部属性）
+  // 监听单个 row 的变化
   tinybaseStore.addRowListener(
     tableId,
     null, // null = listen to all rows
@@ -298,8 +295,6 @@ export function initMessageList(
           replyToId: row.replyToId || null,
           editedAt: row.editedAt || null,
           encrypted: CryptoUtils.isEncrypted(row.text || ''),
-          uploadProgress: row.uploadProgress,
-          uploadStatus: row.uploadStatus,
         });
 
         console.log(`✅ Updated message element for row: ${rowId}`);
@@ -326,8 +321,14 @@ export function initMessageList(
       (msg) => msg.channel === currentChannel,
     );
 
+    // 追加临时消息（仅本地，不同步）
+    const tempChannelMessages = messagesSignal.tempItems.filter(
+      (msg) => msg.channel === currentChannel,
+    );
+    const allMessages = [...channelMessages, ...tempChannelMessages];
+
     // 空状态
-    if (channelMessages.length === 0 && !messagesSignal.loading) {
+    if (allMessages.length === 0 && !messagesSignal.loading) {
       container.innerHTML = `
         <div class="message-empty">
           <p>No messages in #${currentChannel} yet.</p>
@@ -361,13 +362,13 @@ export function initMessageList(
     const fragment = document.createDocumentFragment();
 
     // 遍历消息，创建或复用 message-element
-    channelMessages.forEach((item, index) => {
+    allMessages.forEach((item, index) => {
       let msgEl = existingElements.get(item.messageId);
 
       // 检查是否是同一用户组的第一条消息（用于头像显示）
       let isFirstInGroup = true;
       if (index > 0) {
-        const prevItem = channelMessages[index - 1];
+        const prevItem = allMessages[index - 1];
         // 如果同一用户且时间间隔小于 5 分钟，则不是第一条
         if (prevItem.name === item.name) {
           const timeDiff = item.timestamp - prevItem.timestamp;
@@ -466,11 +467,70 @@ export function initMessageList(
     console.log('✏️ Message edited in TinyBase:', messageId);
   }
 
+  /**
+   * 添加临时消息（仅本地，不同步到 TinyBase）
+   * 用于显示正在上传的文件等临时状态
+   * @param {RawMessage} message - 临时消息对象
+   * @returns {string} 临时消息 ID
+   */
+  function addTempMessage(message) {
+    const tempId =
+      message.messageId ||
+      `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const tempMessage = {
+      ...message,
+      messageId: tempId,
+      timestamp: message.timestamp || Date.now(),
+      channel: message.channel || getCurrentChannel(),
+      _isTemp: true, // 标记为临时消息
+    };
+
+    messagesSignal.tempItems = [...messagesSignal.tempItems, tempMessage];
+    return tempId;
+  }
+
+  /**
+   * 更新临时消息（例如更新上传进度）
+   * @param {string} tempId - 临时消息 ID
+   * @param {Partial<RawMessage>} updates - 要更新的字段
+   */
+  function updateTempMessage(tempId, updates) {
+    const index = messagesSignal.tempItems.findIndex(
+      (msg) => msg.messageId === tempId,
+    );
+    if (index === -1) {
+      console.warn('⚠️ Temp message not found:', tempId);
+      return;
+    }
+
+    const updatedItems = [...messagesSignal.tempItems];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      ...updates,
+    };
+    messagesSignal.tempItems = updatedItems;
+  }
+
+  /**
+   * 删除临时消息
+   * @param {string} tempId - 临时消息 ID
+   */
+  function removeTempMessage(tempId) {
+    messagesSignal.tempItems = messagesSignal.tempItems.filter(
+      (msg) => msg.messageId !== tempId,
+    );
+    console.log('🗑️ Temp message removed:', tempId);
+  }
+
   return {
     signal: messagesSignal,
     sendMessage,
     deleteMessage,
     editMessage,
+    addTempMessage,
+    updateTempMessage,
+    removeTempMessage,
     syncNow: syncTinybaseToSignal,
     render: renderMessages, // 暴露渲染函数供外部使用
   };

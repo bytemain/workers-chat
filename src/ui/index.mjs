@@ -784,7 +784,7 @@ class FileMessage extends HTMLElement {
     infoSection.appendChild(statusElement);
 
     // Progress bar (if uploading)
-    if (isUploading && uploadProgress) {
+    if (isUploading) {
       const progressBar = document.createElement('div');
       progressBar.style.cssText = `
         width: 100%;
@@ -792,12 +792,13 @@ class FileMessage extends HTMLElement {
         background: #e9ecef;
         border-radius: 2px;
         overflow: hidden;
+        margin-top: 4px;
       `;
       const progressFill = document.createElement('div');
       progressFill.style.cssText = `
         height: 100%;
         background: #0d6efd;
-        width: ${uploadProgress}%;
+        width: ${uploadProgress || 0}%;
         transition: width 0.3s ease;
       `;
       progressBar.appendChild(progressFill);
@@ -1200,11 +1201,13 @@ class ChatMessage extends HTMLElement {
       type: fileType,
       size: fileSize,
       encrypted: isEncrypted,
+      uploadProgress,
+      uploading,
+      error,
     } = fileData;
 
-    // Get upload progress/status from attributes if this is an uploading message
-    const uploadProgress = this.getAttribute('upload-progress');
-    const uploadStatus = this.getAttribute('upload-status');
+    // Determine upload status from fileData
+    const uploadStatus = uploading ? 'uploading' : error ? 'error' : null;
 
     // If it's an image, use lazy-img component
     if (fileType.startsWith('image/')) {
@@ -4680,8 +4683,6 @@ async function startChat() {
 
     // Handle file uploads from the component
     chatInputComponent.onFileUpload = async (file) => {
-      addSystemMessage('* Uploading file...');
-
       const success = await uploadFile(file, null, currentReplyTo);
       if (success && currentReplyTo) {
         // Clear reply state after successful upload
@@ -4722,9 +4723,6 @@ async function startChat() {
 
           // Determine file type for display
           const fileType = item.type.startsWith('image/') ? 'image' : 'file';
-
-          // Show uploading message
-          addSystemMessage(`* Uploading pasted ${fileType}...`);
 
           // Use file name if available, otherwise generate one with timestamp
           let fileName = file.name;
@@ -4833,8 +4831,6 @@ async function startChat() {
         // Only handle the first file
         const file = files[0];
 
-        addSystemMessage('* Uploading dropped file...');
-
         // Prepare replyTo info if replying to a message
         let replyToInfo = null;
         if (currentReplyTo) {
@@ -4915,8 +4911,6 @@ async function startChat() {
       const currentThreadId = chatState.value.threadId;
       if (!currentThreadId) return;
 
-      addSystemMessage('* Uploading file...');
-
       const originalMessage = messagesCache.get(currentThreadId);
       if (!originalMessage) {
         addSystemMessage('* Error: Thread message not found');
@@ -4955,9 +4949,6 @@ async function startChat() {
 
           // Determine file type for display
           const fileType = item.type.startsWith('image/') ? 'image' : 'file';
-
-          // Show uploading message
-          addSystemMessage(`* Uploading pasted ${fileType}...`);
 
           // Use file name if available, otherwise generate one with timestamp
           let fileName = file.name;
@@ -5027,11 +5018,15 @@ async function startChat() {
 
   // Upload file function with progress tracking
   async function uploadFile(file, fileName = null, replyTo = null) {
+    console.log('📤 [uploadFile] Starting upload:', {
+      fileName: fileName || file.name,
+      size: file.size,
+    });
+
+    const uploadFileName = fileName || file.name;
     let tempMessageId = null;
-    let uploader = null;
 
     try {
-      // Validate file size before anything else
       if (file.size > MAX_FILE_SIZE_BYTES) {
         const fileSizeFormatted = formatFileSize(file.size);
         const maxSizeFormatted = formatFileSize(MAX_FILE_SIZE_BYTES);
@@ -5042,32 +5037,30 @@ async function startChat() {
         return false;
       }
 
-      let fileToUpload = file;
-      let uploadFileName = fileName || file.name;
-
-      // Create temporary message to show upload progress
-      tempMessageId = 'temp_' + Date.now() + '_' + Math.random();
-      const tempMessage = {
-        text: `FILE:${JSON.stringify({
-          url: 'uploading',
+      // 1. 添加临时消息到 Reef.js signal（不进 TinyBase，不同步）
+      tempMessageId = window.messageList.addTempMessage({
+        name: userState.value.username,
+        message: `FILE:${JSON.stringify({
+          url: '',
           name: uploadFileName,
           type: file.type,
           size: file.size,
           encrypted: isRoomEncrypted && currentRoomKey && cryptoSupported,
+          uploading: true,
+          uploadProgress: 0,
         })}`,
-        username: userState.value.username,
         timestamp: Date.now(),
         channel: currentChannel || 'general',
-        uploadProgress: 0,
-        uploadStatus: 'uploading',
-      };
+        replyToId: replyTo?.messageId || null,
+      });
 
-      // Add to TinyBase store for immediate UI feedback
-      if (window.store) {
-        window.store.setRow('messages', tempMessageId, tempMessage);
+      // 滚动到底部显示新消息
+      if (isAtBottom) {
+        setTimeout(() => chatlog.scrollBy(0, 1e8), 50);
       }
 
-      // Encrypt file if room is encrypted AND crypto is supported
+      // 2. 加密文件（如果需要）
+      let fileToUpload = file;
       if (isRoomEncrypted && currentRoomKey && cryptoSupported) {
         try {
           console.log('🔒 Encrypting file...');
@@ -5077,15 +5070,19 @@ async function startChat() {
             currentRoomKey,
             (progress, stage) => {
               console.log(`File encryption ${stage}: ${progress}%`);
-              // Update progress (encryption is 0-30%)
-              if (
-                window.store &&
-                window.store.hasRow('messages', tempMessageId)
-              ) {
-                window.store.setPartialRow('messages', tempMessageId, {
-                  uploadProgress: Math.round(progress * 0.3),
-                });
-              }
+              // 更新临时消息的进度（加密是 0-30%）
+              const uploadProgress = Math.round(progress * 0.3);
+              window.messageList.updateTempMessage(tempMessageId, {
+                message: `FILE:${JSON.stringify({
+                  url: '',
+                  name: uploadFileName,
+                  type: file.type,
+                  size: file.size,
+                  encrypted: true,
+                  uploading: true,
+                  uploadProgress: uploadProgress,
+                })}`,
+              });
             },
           );
 
@@ -5095,46 +5092,50 @@ async function startChat() {
           });
         } catch (error) {
           console.error('❌ Failed to encrypt file:', error);
-
-          // Update temp message to show error
-          if (window.store && window.store.hasRow('messages', tempMessageId)) {
-            window.store.setPartialRow('messages', tempMessageId, {
-              uploadStatus: 'error',
-            });
-          }
-
-          addSystemMessage('* Failed to encrypt file: ' + error.message);
+          // 更新临时消息为错误状态
+          window.messageList.updateTempMessage(tempMessageId, {
+            message: `FILE:${JSON.stringify({
+              url: '',
+              name: uploadFileName,
+              type: file.type,
+              size: file.size,
+              encrypted: true,
+              uploading: false,
+              error: 'Encryption failed: ' + error.message,
+            })}`,
+          });
           return false;
         }
       } else if (isRoomEncrypted && currentRoomKey && !cryptoSupported) {
-        // Remove temp message
-        if (window.store && window.store.hasRow('messages', tempMessageId)) {
-          window.store.delRow('messages', tempMessageId);
-        }
-
-        // Room is encrypted but crypto not supported
+        // 删除临时消息
+        window.messageList.removeTempMessage(tempMessageId);
         addSystemMessage(
           '* Cannot upload encrypted file: Your browser does not support encryption. Please use a modern browser.',
         );
         return false;
       }
 
-      // Use smart upload (auto-select multipart for files > 5MB)
-      const baseProgress = isRoomEncrypted && currentRoomKey ? 30 : 0; // Offset if encrypted
+      // 3. 上传文件到服务器
+      const baseProgress = isRoomEncrypted && currentRoomKey ? 30 : 0;
       const progressRange = 100 - baseProgress;
 
       const result = await api.uploadFileAuto(roomname, fileToUpload, {
         onProgress: (progress) => {
-          // Map upload progress to remaining range (30-100% or 0-100%)
+          // 更新临时消息的进度（上传是 30-100% 或 0-100%）
           const totalProgress = Math.round(
             baseProgress + (progress.percentage / 100) * progressRange,
           );
-
-          if (window.store && window.store.hasRow('messages', tempMessageId)) {
-            window.store.setPartialRow('messages', tempMessageId, {
+          window.messageList.updateTempMessage(tempMessageId, {
+            message: `FILE:${JSON.stringify({
+              url: '',
+              name: uploadFileName,
+              type: file.type,
+              size: file.size,
+              encrypted: isRoomEncrypted && currentRoomKey && cryptoSupported,
+              uploading: true,
               uploadProgress: totalProgress,
-            });
-          }
+            })}`,
+          });
         },
         onChunkComplete: (chunkInfo) => {
           console.log(
@@ -5146,12 +5147,9 @@ async function startChat() {
         },
       });
 
-      // Remove temporary message
-      if (window.store && window.store.hasRow('messages', tempMessageId)) {
-        window.store.delRow('messages', tempMessageId);
-      }
+      // 4. 上传成功 - 删除临时消息，通过 WebSocket 发送真实消息
+      window.messageList.removeTempMessage(tempMessageId);
 
-      // Send file message using userApi (new JSON format)
       const fileMessage = `FILE:${JSON.stringify({
         url: result.fileUrl,
         name: uploadFileName,
@@ -5166,38 +5164,21 @@ async function startChat() {
     } catch (err) {
       console.error('❌ Upload failed:', err);
 
-      // Update temp message to show error state
-      if (
-        window.store &&
-        tempMessageId &&
-        window.store.hasRow('messages', tempMessageId)
-      ) {
-        window.store.setPartialRow('messages', tempMessageId, {
-          uploadStatus: 'error',
-          uploadProgress: 0,
+      // 更新临时消息为错误状态
+      if (tempMessageId) {
+        window.messageList.updateTempMessage(tempMessageId, {
+          message: `FILE:${JSON.stringify({
+            url: '',
+            name: uploadFileName,
+            type: file.type,
+            size: file.size,
+            encrypted: isRoomEncrypted && currentRoomKey && cryptoSupported,
+            uploading: false,
+            error: err.message,
+          })}`,
         });
-
-        // Add retry handler
-        setTimeout(() => {
-          const fileMessageElement = document.querySelector(
-            `[data-message-id="${tempMessageId}"] file-message`,
-          );
-          if (fileMessageElement) {
-            fileMessageElement.addEventListener(
-              'retry',
-              async () => {
-                // Remove error message
-                window.store.delRow('messages', tempMessageId);
-                // Retry upload
-                await uploadFile(file, fileName, replyTo);
-              },
-              { once: true },
-            );
-          }
-        }, 100);
       }
 
-      addSystemMessage('* Upload failed: ' + err.message);
       return false;
     }
   }

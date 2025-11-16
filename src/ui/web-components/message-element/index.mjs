@@ -14,8 +14,6 @@ import { renderReactions } from '../../reactions/ui.mjs';
  * @property {string|null} replyToId - ID of the message being replied to, if any
  * @property {number|null} editedAt - Unix timestamp of last edit, if edited
  * @property {boolean} encrypted - Whether the message content is encrypted
- * @property {number} [uploadProgress] - File upload progress (0-100), if uploading
- * @property {string} [uploadStatus] - Upload status: 'uploading', 'success', 'error'
  * @property {Object} [replyTo] - Reply context with messageId, username, preview
  * @property {Object} [threadInfo] - Thread info with replyCount, lastReplyTime
  */
@@ -54,8 +52,6 @@ class MessageElement extends HTMLElement {
         replyToId: null,
         editedAt: null,
         encrypted: false,
-        uploadProgress: null,
-        uploadStatus: null,
         replyTo: null,
         threadInfo: null,
         isInThread: false,
@@ -188,14 +184,6 @@ class MessageElement extends HTMLElement {
   }
 
   /**
-   * Update upload status (triggers automatic re-render)
-   * @param {string} status - Status: 'uploading', 'success', 'error'
-   */
-  updateStatus(status) {
-    this.data.uploadStatus = status;
-  }
-
-  /**
    * UI template (returns HTML string)
    * Re-renders automatically when this.data changes
    */
@@ -207,11 +195,7 @@ class MessageElement extends HTMLElement {
     const mm = String(date.getMinutes()).padStart(2, '0');
     const hoverTime = `${hh}:${mm}`;
 
-    // Render message content (simplified - actual implementation would handle files, etc.)
     let messageContent = d.message;
-    if (d.uploadProgress !== null && d.uploadStatus === 'uploading') {
-      messageContent = `Uploading... ${d.uploadProgress}%`;
-    }
 
     // Safely encode replyTo as JSON (manually escape for attribute context)
     const replyToAttr = d.replyTo
@@ -316,12 +300,6 @@ class MessageElement extends HTMLElement {
             channel="${d.channel}"
             ${attr('is-in-thread', d.isInThread)}
             ${attr('show-username', d.isFirstInGroup)}
-            ${raw(
-              d.uploadProgress !== null
-                ? `upload-progress="${d.uploadProgress}"`
-                : '',
-            )}
-            ${raw(d.uploadStatus ? `upload-status="${d.uploadStatus}"` : '')}
             ${raw(replyToAttr)}
             ${raw(
               d.threadInfo?.replyCount
