@@ -199,14 +199,19 @@ const app = ignite((app) => {
   app.get('/files/*', async (c) => {
     const { env, req } = c;
     const url = new URL(req.url);
-    const path = url.pathname.slice(7).split('/');
+    const path = url.pathname.slice(7); // Remove '/files/'
 
-    if (!path[0]) {
+    if (!path) {
       return new Response('Not found', { status: 404 });
     }
 
-    const fileKey = path.join('/');
-    const object = await env.CHAT_FILES.get(fileKey);
+    const fileKey = path;
+
+    // Support conditional requests (If-None-Match, Range)
+    const object = await env.CHAT_FILES.get(fileKey, {
+      onlyIf: req.raw.headers,
+      range: req.raw.headers,
+    });
 
     if (object === null) {
       return new Response('File not found', { status: 404 });
@@ -215,15 +220,22 @@ const app = ignite((app) => {
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set('etag', object.httpEtag);
-    headers.set('Cache-Control', 'public, max-age=31536000');
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 
-    // CRITICAL: Expose Content-Length for download progress tracking
+    // CRITICAL: Expose headers for CORS and download progress tracking
     headers.set(
       'Access-Control-Expose-Headers',
-      'Content-Length, Content-Type, ETag',
+      'Content-Length, Content-Type, Content-Range, ETag, Accept-Ranges',
     );
 
-    return new Response(object.body, { headers });
+    // Enable range requests for resumable downloads
+    headers.set('Accept-Ranges', 'bytes');
+
+    // When no body is present, preconditions have failed
+    return new Response('body' in object ? object.body : undefined, {
+      status: 'body' in object ? 200 : 412,
+      headers,
+    });
   });
 
   app.notFound(async (c) => {
@@ -255,25 +267,11 @@ const app = ignite((app) => {
     const response = await c.env.ASSETS.fetch(c.req.raw);
     const contentType = response.headers.get('Content-Type') || '';
 
-    console.log(
-      'Fetched asset with status:',
-      response.status,
-      'Content-Type:',
-      contentType,
-      'Body:',
-      await response
-        .clone()
-        .text()
-        .then((t) => t.substring(0, 200)),
-      c.req.raw.url,
-    );
-
     // If requesting asset path/extension but got HTML, it's a 404 fallback
     if (
       (isAssetPath || hasAssetExtension) &&
       contentType.includes('text/html')
     ) {
-      console.log('Asset not found (got HTML fallback):', pathname);
       return new Response('Not Found', {
         status: 404,
         headers: { 'Content-Type': 'text/plain; charset=UTF-8' },
@@ -535,15 +533,15 @@ export class ChatRoom {
       app.post('/upload', async (c) => {
         const { req } = c;
         const request = req.raw;
-        let ip = request.headers.get('CF-Connecting-IP');
+        const ip = request.headers.get('CF-Connecting-IP');
 
         // Rate limit check
-        let limiterId = this.env.limiters.idFromName(ip);
-        let limiter = this.env.limiters.get(limiterId);
-        let response = await limiter.fetch('https://dummy-url', {
+        const limiterId = this.env.limiters.idFromName(ip);
+        const limiter = this.env.limiters.get(limiterId);
+        const response = await limiter.fetch('https://dummy-url', {
           method: 'POST',
         });
-        let cooldown = +(await response.text());
+        const cooldown = +(await response.text());
 
         if (cooldown > 0) {
           return c.json(
@@ -561,7 +559,9 @@ export class ChatRoom {
 
         if (file.size > MAX_FILE_SIZE_BYTES) {
           return c.json(
-            { error: 'File too large (max 10MB)' },
+            {
+              error: `File too large (max ${MAX_FILE_SIZE_BYTES / 1024 / 1024}MB)`,
+            },
             { status: 413 },
           );
         }
@@ -570,9 +570,14 @@ export class ChatRoom {
         const fileExtension = file.name.split('.').pop() || 'bin';
         const fileKey = `${fileId}.${fileExtension}`;
 
+        // Use R2's conditional put to prevent overwrites
         await this.env.CHAT_FILES.put(fileKey, file.stream(), {
-          httpMetadata: {
-            contentType: file.type || 'application/octet-stream',
+          httpMetadata: request.headers,
+          onlyIf: request.headers,
+          customMetadata: {
+            originalName: file.name,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: ip || 'unknown',
           },
         });
 
@@ -583,6 +588,7 @@ export class ChatRoom {
           fileName: file.name,
           fileType: file.type,
           fileSize: file.size,
+          fileId: fileId,
         });
       });
 
