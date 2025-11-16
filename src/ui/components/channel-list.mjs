@@ -6,6 +6,8 @@
  */
 
 import { signal, component } from 'reefjs';
+import { listenReefEvent } from '../utils/reef-helpers.mjs';
+import { getCurrentChannel } from '../utils/chat-state.mjs';
 
 const SignalName = 'channelsSignal';
 
@@ -28,6 +30,7 @@ export function initChannelList(
       loading: false,
       error: null,
       currentChannel: 'general', // 当前选中的频道
+      unreadCounts: {}, // 未读消息计数 {channelName: count}
     },
     SignalName,
   );
@@ -118,7 +121,7 @@ export function initChannelList(
     return sortedChannels
       .map((item) => {
         const isActive = item.channel === currentChannel;
-        const unreadCount = window.getChannelUnreadCount(item.channel);
+        const unreadCount = channelsSignal.unreadCounts[item.channel] || 0;
         const showUnreadBadge = unreadCount > 0 && !isActive;
 
         return `
@@ -227,6 +230,48 @@ export function initChannelList(
     touchChannel(channelName);
   }
 
+  /**
+   * Helper: 设置频道未读计数
+   */
+  function setChannelUnreadCount(channelName, count) {
+    const key = channelName.toLowerCase();
+    if (count <= 0) {
+      // 删除计数
+      const newCounts = { ...channelsSignal.unreadCounts };
+      delete newCounts[key];
+      channelsSignal.unreadCounts = newCounts;
+    } else {
+      // 设置计数（触发 Reef.js 重新渲染）
+      channelsSignal.unreadCounts = {
+        ...channelsSignal.unreadCounts,
+        [key]: count,
+      };
+    }
+    console.log(`🔔 Channel unread count updated: ${channelName} = ${count}`);
+  }
+
+  /**
+   * Helper: 获取频道未读计数
+   */
+  function getChannelUnreadCount(channelName) {
+    return channelsSignal.unreadCounts[channelName.toLowerCase()] || 0;
+  }
+
+  /**
+   * Helper: 清除频道未读计数
+   */
+  function clearChannelUnreadCount(channelName) {
+    setChannelUnreadCount(channelName, 0);
+  }
+
+  /**
+   * Helper: 增加频道未读计数
+   */
+  function incrementChannelUnreadCount(channelName) {
+    const current = getChannelUnreadCount(channelName);
+    setChannelUnreadCount(channelName, current + 1);
+  }
+
   return {
     component: channelsComponent,
     signal: channelsSignal,
@@ -237,5 +282,22 @@ export function initChannelList(
     deleteChannel,
     setCurrentChannel,
     syncNow: syncTinybaseToSignal,
+    // Unread count management
+    setChannelUnreadCount,
+    getChannelUnreadCount,
+    clearChannelUnreadCount,
+    incrementChannelUnreadCount,
   };
+}
+
+export function whenChannelChange(callback) {
+  let channel = getCurrentChannel();
+  callback(channel);
+
+  listenReefEvent(SignalName, () => {
+    const newChannel = getCurrentChannel();
+    if (channel === newChannel) return;
+    callback(newChannel);
+    channel = newChannel;
+  });
 }

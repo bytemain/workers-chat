@@ -17,6 +17,8 @@ import { markChannelAsRead, getUnreadCount } from '../tinybase/read-status.mjs';
 import { forEach } from '../react/flow.mjs';
 import { IndexesIds } from '../tinybase/index.mjs';
 import { getCurrentChannel } from '../utils/chat-state.mjs';
+import { whenChannelChange } from './channel-list.mjs';
+import { Disposable, MutableDisposable } from '../../common/disposable.mjs';
 
 /**
  * @typedef {Object} RawMessage
@@ -42,6 +44,7 @@ const tableId = 'messages';
  * @param {Map} messagesCache - Global messages cache for legacy features (threads, etc.)
  * @param {Object} readStatusStore - TinyBase store for read status tracking
  * @param {string} roomName - Current room name
+ * @param {Object} channelList - Channel list component instance (for unread count updates)
  * @returns {Object} Component instance and helper functions
  */
 export function initMessageList(
@@ -52,6 +55,7 @@ export function initMessageList(
   messagesCache,
   readStatusStore,
   roomName,
+  channelList,
 ) {
   // Reef.js Signal - 响应式消息数据
 
@@ -177,7 +181,7 @@ export function initMessageList(
       });
 
       // Update unread counts using read status store
-      if (readStatusStore && roomName) {
+      if (readStatusStore && roomName && channelList) {
         // Get all messages from TinyBase
         const allMessages = Object.entries(
           tinybaseStore.getTable('messages') || {},
@@ -196,10 +200,8 @@ export function initMessageList(
             allMessages,
           );
 
-          // Update UI - call global function to set unread count
-          if (window.setChannelUnreadCount) {
-            window.setChannelUnreadCount(channel, unreadCount);
-          }
+          // Update channel list's unread count
+          channelList.setChannelUnreadCount(channel, unreadCount);
         });
 
         // Mark current channel messages as read
@@ -247,16 +249,27 @@ export function initMessageList(
     // 索引变化说明有消息新增或删除，触发全量同步
     // syncTinybaseToSignal();
   });
-  const currentChannel = getCurrentChannel();
 
-  tinybaseIndexes.addSliceRowIdsListener(
-    IndexesIds.MessagesByChannel,
-    currentChannel,
-    (indexes, indexId, sliceId) => {
-      console.log(`🔄 MessagesByChannel index changed for slice: ${sliceId}`);
-      syncTinybaseToSignal();
-    },
-  );
+  const mutableDisposable = new MutableDisposable();
+  whenChannelChange((channel) => {
+    const disposable = mutableDisposable.create();
+    const id = tinybaseIndexes.addSliceRowIdsListener(
+      IndexesIds.MessagesByChannel,
+      channel,
+      (indexes, indexId, sliceId) => {
+        console.log(`🔄 MessagesByChannel index changed for slice: ${sliceId}`);
+        syncTinybaseToSignal();
+      },
+    );
+
+    disposable.add({
+      dispose: () => {
+        tinybaseIndexes.delListener(id);
+      },
+    });
+
+    syncTinybaseToSignal();
+  });
 
   // 监听单个 row 的变化
   tinybaseStore.addRowListener(

@@ -2483,7 +2483,9 @@ async function switchToChannel(channel) {
   }
 
   // Clear unread count for this channel
-  clearChannelUnreadCount(normalizedChannel);
+  if (channelList) {
+    channelList.clearChannelUnreadCount(normalizedChannel);
+  }
 
   // Update channel info bar
   const channelNameDisplay = document.getElementById('channel-name-display');
@@ -4760,36 +4762,6 @@ function clearUnreadCount(roomName) {
   setUnreadCount(roomName, 0);
 }
 
-// Track unread counts for channels (within current room)
-const channelUnreadCounts = new Map();
-
-// Get unread count for a channel
-function getChannelUnreadCount(channelName) {
-  return channelUnreadCounts.get(channelName.toLowerCase()) || 0;
-}
-
-// Set unread count for a channel
-function setChannelUnreadCount(channelName, count) {
-  const key = channelName.toLowerCase();
-  if (count <= 0) {
-    channelUnreadCounts.delete(key);
-  } else {
-    channelUnreadCounts.set(key, count);
-  }
-  if (isMobile()) {
-    updateMobileChannelList();
-  }
-}
-
-// Clear unread count for a channel
-function clearChannelUnreadCount(channelName) {
-  setChannelUnreadCount(channelName, 0);
-}
-
-// Expose unread count functions to window (for message-list component)
-window.setChannelUnreadCount = setChannelUnreadCount;
-window.getChannelUnreadCount = getChannelUnreadCount;
-
 // Update room list UI - Now using isolated room-list component
 function updateRoomListUI() {
   const roomDropdown = document.querySelector('#room-dropdown');
@@ -5143,7 +5115,9 @@ function updateMobileChannelList() {
       const div = document.createElement('div');
       div.className = 'mobile-channel-item';
 
-      const unreadCount = getChannelUnreadCount(item.channel);
+      const unreadCount = channelList
+        ? channelList.getChannelUnreadCount(item.channel)
+        : 0;
       const unreadBadgeHTML =
         unreadCount > 0
           ? `<span class="channel-unread-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>`
