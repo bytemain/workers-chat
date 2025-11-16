@@ -316,17 +316,6 @@ export class ChatRoom {
     /** @type {Object} */
     this.env = env;
 
-    // Initialize database schema
-    this.initDatabase();
-
-    // Destruction timers
-    /** @type {NodeJS.Timeout | null} */
-    this.destructionTimer = null;
-    /** @type {number | null} */
-    this.destructionTime = null;
-    /** @type {NodeJS.Timeout | null} */
-    this.destructionBroadcastInterval = null;
-
     // Track WebSocket sessions
     /** @type {Map<WebSocket, {name?: string, limiterId: string, limiter: RateLimiterClient, blockedMessages: string[], quit?: boolean}>} */
     this.sessions = new Map();
@@ -355,66 +344,6 @@ export class ChatRoom {
     this.lastTimestamp = 0;
     /** @type {import('hono').Hono} */
     this.app = this.createApp();
-    this.restoreDestructionTimer();
-  }
-
-  /**
-   * Initialize SQLite database schema
-   * Creates table for room metadata (name, note, destruction timer)
-   * Note: Messages are now stored in TinyBase, not in Durable Object SQL
-   */
-  initDatabase() {
-    this.sql.exec(`
-      CREATE TABLE IF NOT EXISTS room_metadata (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
-    `);
-  }
-
-  /**
-   * Restore destruction timer from database on startup
-   * If destruction time has passed, executes destruction immediately
-   * Otherwise, schedules destruction and starts countdown broadcast
-   * @returns {Promise<void>}
-   */
-  async restoreDestructionTimer() {
-    try {
-      const results = this.sql
-        .exec(`SELECT value FROM room_metadata WHERE key = 'destruction-time'`)
-        .toArray();
-
-      if (results.length > 0) {
-        const result = results[0];
-        const destructionTime = parseInt(result.value);
-        const now = Date.now();
-        const remaining = destructionTime - now;
-
-        if (remaining <= 0) {
-          await this.executeDestruction();
-        } else {
-          this.destructionTime = destructionTime;
-          this.destructionTimer = setTimeout(() => {
-            this.executeDestruction();
-          }, remaining);
-
-          this.destructionBroadcastInterval = setInterval(() => {
-            const remaining = Math.max(
-              0,
-              Math.floor((this.destructionTime - Date.now()) / 1000),
-            );
-            this.broadcast({
-              destructionUpdate: {
-                countdown: remaining,
-                destructionTime: this.destructionTime,
-              },
-            });
-          }, 1000);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to restore destruction timer:', err);
-    }
   }
 
   /**
@@ -683,161 +612,14 @@ export class ChatRoom {
         }
       });
 
-      app.get('/info', async (c) => {
+      // Room info (name, note) is now stored in TinyBase Values for automatic sync
+
+      app.post('/shutdown', async (c) => {
         try {
-          const nameCursor = this.sql.exec(
-            `SELECT value FROM room_metadata WHERE key = 'name'`,
-          );
-          const noteCursor = this.sql.exec(
-            `SELECT value FROM room_metadata WHERE key = 'note'`,
-          );
-
-          const info = {};
-          const nameResult = nameCursor.one();
-          const noteResult = noteCursor.one();
-
-          if (nameResult) info.name = nameResult.value;
-          if (noteResult) info.note = noteResult.value;
-
-          return c.json(info);
-        } catch (err) {
-          return c.json({});
-        }
-      });
-
-      app.put('/info', async (c) => {
-        const data = await c.req.json();
-        let changed = false;
-
-        if (data.name !== undefined) {
-          this.sql.exec(
-            `
-            INSERT OR REPLACE INTO room_metadata (key, value)
-            VALUES ('name', ?)
-          `,
-            data.name,
-          );
-          changed = true;
-        }
-
-        if (data.note !== undefined) {
-          this.sql.exec(
-            `
-            INSERT OR REPLACE INTO room_metadata (key, value)
-            VALUES ('note', ?)
-          `,
-            data.note,
-          );
-          changed = true;
-        }
-
-        if (changed) {
-          this.broadcast({
-            roomInfoUpdate: {
-              name: data.name,
-              note: data.note,
-            },
-          });
-        }
-
-        return c.json({ success: true });
-      });
-
-      app.post('/destruction/start', async (c) => {
-        try {
-          const { countdownSeconds } = await c.req.json();
-          const countdown = parseInt(countdownSeconds) || 300;
-
-          if (countdown < 10 || countdown > 86400) {
-            return c.json(
-              { error: 'Countdown must be between 10 and 86400 seconds' },
-              400,
-            );
-          }
-
-          this.destructionTime = Date.now() + countdown * 1000;
-
-          this.sql.exec(
-            `
-            INSERT OR REPLACE INTO room_metadata (key, value)
-            VALUES ('destruction-time', ?)
-          `,
-            this.destructionTime.toString(),
-          );
-
-          if (this.destructionTimer) {
-            clearTimeout(this.destructionTimer);
-          }
-          if (this.destructionBroadcastInterval) {
-            clearInterval(this.destructionBroadcastInterval);
-          }
-
-          this.destructionTimer = setTimeout(() => {
-            this.executeDestruction();
-          }, countdown * 1000);
-
-          this.destructionBroadcastInterval = setInterval(() => {
-            const remaining = Math.max(
-              0,
-              Math.floor((this.destructionTime - Date.now()) / 1000),
-            );
-            this.broadcast({
-              destructionUpdate: {
-                countdown: remaining,
-                destructionTime: this.destructionTime,
-              },
-            });
-
-            if (remaining <= 0) {
-              clearInterval(this.destructionBroadcastInterval);
-              this.destructionBroadcastInterval = null;
-            }
-          }, 1000);
-
-          this.broadcast({
-            destructionUpdate: {
-              countdown,
-              destructionTime: this.destructionTime,
-            },
-          });
-
-          return c.json({
-            success: true,
-            countdown,
-            destructionTime: this.destructionTime,
-          });
-        } catch (err) {
-          console.error('Failed to start destruction:', err);
-          return c.json({ error: err.message }, 500);
-        }
-      });
-
-      app.post('/destruction/cancel', async (c) => {
-        try {
-          if (this.destructionTimer) {
-            clearTimeout(this.destructionTimer);
-            this.destructionTimer = null;
-          }
-          if (this.destructionBroadcastInterval) {
-            clearInterval(this.destructionBroadcastInterval);
-            this.destructionBroadcastInterval = null;
-          }
-
-          this.destructionTime = null;
-
-          this.sql.exec(
-            `DELETE FROM room_metadata WHERE key = 'destruction-time'`,
-          );
-
-          this.broadcast({
-            destructionUpdate: {
-              cancelled: true,
-            },
-          });
-
+          await this.shutdown();
           return c.json({ success: true });
         } catch (err) {
-          console.error('Failed to cancel destruction:', err);
+          console.error('Failed to shutdown room:', err);
           return c.json({ error: err.message }, 500);
         }
       });
@@ -1041,47 +823,31 @@ export class ChatRoom {
   }
 
   /**
-   * Execute room destruction
-   * Closes all WebSockets and clears room metadata
+   * Shutdown room immediately
+   * Closes all WebSockets and notifies clients
    * Note: Messages and files are managed by TinyBase and R2, not by this DO
    * @returns {Promise<void>}
    */
-  async executeDestruction() {
+  async shutdown() {
     try {
-      console.log('Executing room destruction...');
+      console.log('Shutting down room...');
 
+      // Notify all clients
       this.broadcast({
-        destructionUpdate: {
-          roomDestroyed: true,
-        },
+        roomShutdown: true,
       });
 
       // Close all WebSockets
-      for (const [webSocket, session] of this.sessions.entries()) {
+      for (const [webSocket] of this.sessions.entries()) {
         try {
-          webSocket.close(1000, 'Room destroyed');
+          webSocket.close(1000, 'Room shutdown');
         } catch (e) {}
       }
       this.sessions.clear();
 
-      // Clear room metadata
-      console.log('Clearing room metadata...');
-      this.sql.exec(`DELETE FROM room_metadata`);
-
-      // Clear timers
-      if (this.destructionTimer) {
-        clearTimeout(this.destructionTimer);
-        this.destructionTimer = null;
-      }
-      if (this.destructionBroadcastInterval) {
-        clearInterval(this.destructionBroadcastInterval);
-        this.destructionBroadcastInterval = null;
-      }
-      this.destructionTime = null;
-
-      console.log('Room destruction completed');
+      console.log('Room shutdown completed');
     } catch (err) {
-      console.error('Failed to execute room destruction:', err);
+      console.error('Failed to shutdown room:', err);
     }
   }
 }

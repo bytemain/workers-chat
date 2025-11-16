@@ -3391,113 +3391,8 @@ let roomNameLarge = document.querySelector('#room-name-large');
 let documentTitlePrefix = '';
 const { state: roomInfo, subscribe: subscribeRoomInfo } = createReactiveState({
   name: '',
-  description: '',
   isLocalUpdate: false,
 });
-
-// Room Destruction Management (global scope for WebSocket access)
-let destructionCountdownInterval = null;
-let destructionEndTime = null;
-let destructionCountdown = null;
-let countdownTime = null;
-let btnStartDestruction = null;
-let btnCancelDestruction = null;
-let destructionTimerSelect = null;
-
-// Update countdown display
-function updateCountdownDisplay() {
-  if (!destructionEndTime || !countdownTime) return;
-
-  const now = Date.now();
-  const remaining = Math.max(0, destructionEndTime - now);
-
-  if (remaining === 0) {
-    // Destruction time reached
-    if (destructionCountdown) {
-      destructionCountdown.classList.remove('active');
-    }
-    addSystemMessage('* Room has been destroyed!');
-    // The server will handle the actual destruction
-    return;
-  }
-
-  const minutes = Math.floor(remaining / 60000);
-  const seconds = Math.floor((remaining % 60000) / 1000);
-  countdownTime.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-// Handle destruction updates from WebSocket (global function)
-function handleDestructionUpdate(data) {
-  if (data.destructionStarted) {
-    destructionEndTime = data.destructionTime;
-    if (destructionCountdown) {
-      destructionCountdown.classList.add('active');
-    }
-    if (btnStartDestruction) {
-      btnStartDestruction.style.display = 'none';
-    }
-    if (btnCancelDestruction) {
-      btnCancelDestruction.style.display = 'block';
-    }
-    if (destructionTimerSelect) {
-      destructionTimerSelect.disabled = true;
-    }
-
-    if (destructionCountdownInterval) {
-      clearInterval(destructionCountdownInterval);
-    }
-    destructionCountdownInterval = setInterval(updateCountdownDisplay, 1000);
-    updateCountdownDisplay();
-
-    // Show system message about ongoing destruction
-    const remaining = destructionEndTime - Date.now();
-    const minutes = Math.ceil(remaining / 60000);
-    addSystemMessage(
-      `⚠️ Warning: This room will be destroyed in ${minutes} minute(s)!`,
-    );
-  } else if (data.destructionCancelled) {
-    destructionEndTime = null;
-    if (destructionCountdownInterval) {
-      clearInterval(destructionCountdownInterval);
-      destructionCountdownInterval = null;
-    }
-    if (destructionCountdown) {
-      destructionCountdown.classList.remove('active');
-    }
-    if (btnStartDestruction) {
-      btnStartDestruction.style.display = 'block';
-    }
-    if (btnCancelDestruction) {
-      btnCancelDestruction.style.display = 'none';
-    }
-    if (destructionTimerSelect) {
-      destructionTimerSelect.disabled = false;
-    }
-  } else if (data.roomDestroyed) {
-    // Room has been destroyed
-    if (destructionCountdownInterval) {
-      clearInterval(destructionCountdownInterval);
-      destructionCountdownInterval = null;
-    }
-
-    // Clear encryption key from IndexedDB
-    if (roomname && keyManager) {
-      keyManager
-        .deleteRoomPassword(roomname)
-        .then(() => {
-          console.log('🗑️ Cleared encryption key for destroyed room');
-        })
-        .catch((err) => {
-          console.error('❌ Failed to clear encryption key:', err);
-        });
-    }
-
-    addSystemMessage('* This room has been destroyed. Redirecting...');
-    setTimeout(() => {
-      window.location.href = '/';
-    }, 2000);
-  }
-}
 
 async function startChat() {
   // Hide room selector and show chat interface
@@ -3690,35 +3585,48 @@ async function startChat() {
   documentTitlePrefix = roomInfo.name;
   document.title = documentTitlePrefix + ' - Workers Chat';
 
-  // Load room info from server
-  async function loadRoomInfo() {
-    try {
-      const data = await api.getRoomInfo(roomname);
-      // Only update if server has a custom name, otherwise keep the default
-      if (data.name && data.name !== '') {
-        roomInfo.name = data.name;
-      }
-      if (data.note) {
-        roomInfo.description = data.note;
-      }
-    } catch (err) {
-      console.error('Failed to load room info:', err);
+  // Load room info from TinyBase Values
+  function loadRoomInfo() {
+    const store = window.store;
+    if (!store) return;
+
+    const savedName = store.getValue('roomName');
+
+    if (savedName) {
+      roomInfo.name = savedName;
     }
   }
 
-  // Save room info to server
-  async function saveRoomInfo() {
-    try {
-      await api.updateRoomInfo(roomname, {
-        name: roomInfo.name,
-        note: roomInfo.description,
-      });
-    } catch (err) {
-      console.error('Failed to save room info:', err);
-    }
+  // Save room info to TinyBase Values (auto-syncs to all clients)
+  function saveRoomInfo() {
+    const store = window.store;
+    if (!store) return;
+
+    store.setValue('roomName', roomInfo.name);
   }
 
-  loadRoomInfo();
+  // Listen for room info changes from other clients
+  function setupRoomInfoListeners() {
+    const store = window.store;
+    if (!store) return;
+
+    store.addValueListener('roomName', (store, valueId, newValue) => {
+      if (newValue && newValue !== roomInfo.name) {
+        roomInfo.name = newValue;
+        addSystemMessage('* Room name has been updated');
+      }
+    });
+  }
+
+  // Initialize room info after TinyBase is ready
+  async function initRoomInfo() {
+    // Wait for store to be ready
+    await isStoreReady;
+    loadRoomInfo();
+    setupRoomInfoListeners();
+  }
+
+  initRoomInfo();
 
   // Room name editing (room-name-large in left sidebar)
   if (roomNameLarge) {
@@ -3830,127 +3738,6 @@ async function startChat() {
       }
     });
   }
-
-  // Room Destruction Management - Initialize DOM elements
-  destructionCountdown = document.querySelector('#destruction-countdown');
-  countdownTime = document.querySelector('#countdown-time');
-  btnStartDestruction = document.querySelector('#btn-start-destruction');
-  btnCancelDestruction = document.querySelector('#btn-cancel-destruction');
-  destructionTimerSelect = document.querySelector('#destruction-timer');
-
-  // Start destruction countdown
-  async function startDestruction() {
-    // Prevent duplicate requests
-    if (btnStartDestruction.disabled) {
-      return;
-    }
-
-    const minutes = parseInt(destructionTimerSelect.value);
-
-    const timeText = minutes === 0 ? 'immediately' : `in ${minutes} minutes`;
-    if (
-      !confirm(
-        `Are you sure you want to destroy this room ${timeText}? All messages and files will be permanently deleted!`,
-      )
-    ) {
-      return;
-    }
-
-    try {
-      // Disable button during request
-      btnStartDestruction.disabled = true;
-      const originalText = btnStartDestruction.textContent;
-      btnStartDestruction.textContent = '⏳ Starting...';
-
-      const response = await api.destroyRoom(roomname, minutes);
-      if (!response.ok) {
-        throw new Error('Failed to start destruction');
-      }
-
-      const data = await response.json();
-      destructionEndTime = data.destructionTime;
-
-      if (minutes === 0) {
-        // Immediate destruction - no countdown needed
-        addSystemMessage(`* Room is being destroyed immediately...`);
-        // The server will handle the destruction and notify us
-      } else {
-        // Show countdown
-        destructionCountdown.classList.add('active');
-        btnStartDestruction.style.display = 'none';
-        btnCancelDestruction.style.display = 'block';
-        destructionTimerSelect.disabled = true;
-
-        // Start countdown interval
-        if (destructionCountdownInterval) {
-          clearInterval(destructionCountdownInterval);
-        }
-        destructionCountdownInterval = setInterval(
-          updateCountdownDisplay,
-          1000,
-        );
-        updateCountdownDisplay();
-
-        addSystemMessage(`* Room destruction scheduled in ${minutes} minutes`);
-      }
-    } catch (err) {
-      console.error('Failed to start destruction:', err);
-      alert('Failed to start room destruction');
-
-      // Restore button on error
-      btnStartDestruction.disabled = false;
-      btnStartDestruction.textContent = '🔥 Start Destruction';
-    }
-  }
-
-  // Cancel destruction
-  async function cancelDestruction() {
-    // Prevent duplicate requests
-    if (btnCancelDestruction.disabled) {
-      return;
-    }
-
-    if (!confirm('Cancel room destruction?')) {
-      return;
-    }
-
-    const originalText = btnCancelDestruction.textContent;
-    try {
-      // Disable button during request
-      btnCancelDestruction.disabled = true;
-      btnCancelDestruction.textContent = '⏳ Cancelling...';
-
-      await api.cancelRoomDestruction(roomname);
-
-      // Clear countdown
-      destructionEndTime = null;
-      if (destructionCountdownInterval) {
-        clearInterval(destructionCountdownInterval);
-        destructionCountdownInterval = null;
-      }
-
-      destructionCountdown.classList.remove('active');
-      btnStartDestruction.style.display = 'block';
-      btnCancelDestruction.style.display = 'none';
-      destructionTimerSelect.disabled = false;
-
-      // Re-enable start button
-      btnStartDestruction.disabled = false;
-
-      addSystemMessage('* Room destruction cancelled');
-    } catch (err) {
-      console.error('Failed to cancel destruction:', err);
-      alert('Failed to cancel room destruction');
-
-      // Restore button on error
-      btnCancelDestruction.disabled = false;
-      btnCancelDestruction.textContent = originalText;
-    }
-  }
-
-  // Bind event listeners
-  btnStartDestruction.addEventListener('click', startDestruction);
-  btnCancelDestruction.addEventListener('click', cancelDestruction);
 
   // Prevent form submission (we handle it via custom events)
   chatroom.addEventListener('submit', (event) => {
@@ -4588,28 +4375,6 @@ function join() {
 
     if (data.error) {
       addSystemMessage('* Error: ' + data.error);
-    } else if (data.roomInfoUpdate) {
-      // Room info has been updated, refresh the display
-      const info = data.roomInfoUpdate;
-      let updated = false;
-
-      if (info.name !== undefined && info.name !== roomInfo.name) {
-        roomInfo.name = info.name;
-        updated = true;
-      }
-
-      if (info.note !== undefined && info.note !== roomInfo.description) {
-        roomInfo.description = info.note;
-        updated = true;
-      }
-
-      // Show a notification that room info was updated (only if not from local edit)
-      if (updated && !roomInfo.isLocalUpdate) {
-        addSystemMessage('* Room info has been updated');
-      }
-    } else if (data.destructionUpdate) {
-      // Handle room destruction updates
-      handleDestructionUpdate(data.destructionUpdate);
     } else if (data.joined) {
       // Check if user is already in the roster (prevent duplicates)
       let alreadyInRoster = false;

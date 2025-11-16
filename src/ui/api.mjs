@@ -17,33 +17,6 @@ class ChatAPI {
     return await response.text();
   }
 
-  // Get room info
-  async getRoomInfo(roomName) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/info`);
-    if (!response.ok) {
-      throw new Error('Failed to load room info');
-    }
-    return await response.json();
-  }
-
-  // Update room info
-  async updateRoomInfo(roomName, data) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/info`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const error = new Error(errorData.error || 'Failed to save room info');
-      Object.assign(error, { code: errorData.code, status: response.status });
-      throw error;
-    }
-    return await response.json();
-  }
-
   // Upload file (legacy - single request, kept for backward compatibility)
   async uploadFile(roomName, formData) {
     const response = await fetch(`${this.baseUrl}/room/${roomName}/upload`, {
@@ -131,40 +104,6 @@ class ChatAPI {
   getTinybaseSyncUrl(storeName) {
     const wss = window.location.protocol === 'http:' ? 'ws://' : 'wss://';
     return `${wss}${this.hostname}/api/tinybase/${storeName}`;
-  }
-
-  // destruction/start
-  async destroyRoom(roomName, minutes) {
-    const response = await fetch(
-      `${this.baseUrl}/room/${roomName}/destruction/start`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ minutes }),
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error('Failed to start destruction');
-    }
-
-    const data = await response.json();
-    return data;
-  }
-
-  async cancelRoomDestruction(roomName) {
-    const response = await fetch(
-      `${this.baseUrl}/room/${roomName}/destruction/cancel`,
-      {
-        method: 'POST',
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error('Failed to cancel destruction');
-    }
-    const data = await response.json();
-    return data;
   }
 
   // Delete message
