@@ -132,24 +132,13 @@ class MessageElement extends HTMLElement {
     // Listen to reactions for this specific message
     const indexes = getIndexes();
     if (indexes && this.data.messageId) {
-      // 正确的 API: addSliceRowIdsListener(indexId, sliceId, callback)
-      // 回调签名: (indexes, indexId, sliceId) => void
       this.reactionListener = indexes.addSliceRowIdsListener(
         IndexesIds.ReactionsByMessage, // indexId
         this.data.messageId, // sliceId (the message ID)
         (indexes, indexId, sliceId) => {
-          console.log(
-            `🔄 Reactions changed for message: ${sliceId}`,
-            'Index:',
-            indexId,
-          );
           // Trigger re-render by incrementing version or updating a dummy field
           this.data.version = (this.data.version || 0) + 1;
         },
-      );
-
-      console.log(
-        `✅ Reaction listener added for message: ${this.data.messageId}`,
       );
     }
   }

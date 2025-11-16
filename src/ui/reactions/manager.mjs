@@ -146,14 +146,10 @@ export class ReactionManager {
 
     // Use index for O(log n) query
     const rowIds = this.indexes.getSliceRowIds('reactionsByMessage', messageId);
-    console.log(
-      `🔍 getReactions(${messageId}): found ${rowIds.length} reaction instances`,
-      rowIds,
-    );
+
     const reactions = rowIds.map((id) =>
       this.store.getRow(TableIds.Reactions, id),
     );
-    console.log(`📊 Raw reactions:`, reactions);
 
     // Group by reactionId
     const grouped = {};
@@ -174,11 +170,8 @@ export class ReactionManager {
       }
     });
 
-    console.log(`📦 Grouped reactions:`, grouped);
-
     // Return in consistent order
     const result = REACTION_ORDER.map((id) => grouped[id]).filter(Boolean);
-    console.log(`✅ Final result:`, result);
     return result;
   }
 
