@@ -4,7 +4,7 @@ import { decryptPins } from './utils/pin-crypto.mjs';
 class ChatAPI {
   constructor() {
     this.hostname = window.location.host;
-    this.baseUrl = `https://${this.hostname}/api`;
+    this.baseUrl = `${window.location.protocol}//${this.hostname}/api`;
   }
 
   // Create private room
@@ -86,16 +86,19 @@ class ChatAPI {
 
   getTinybaseSyncUrl(storeName) {
     const wss = window.location.protocol === 'http:' ? 'ws://' : 'wss://';
-    return `${wss}${this.hostname}/tinybase/${storeName}`;
+    return `${wss}${this.hostname}/api/tinybase/${storeName}`;
   }
 
   // destruction/start
   async destroyRoom(roomName, minutes) {
-    const response = await fetch(`/api/room/${roomName}/destruction/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ minutes }),
-    });
+    const response = await fetch(
+      `${this.baseUrl}/room/${roomName}/destruction/start`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minutes }),
+      },
+    );
 
     if (!response.ok) {
       throw new Error('Failed to start destruction');
@@ -106,9 +109,12 @@ class ChatAPI {
   }
 
   async cancelRoomDestruction(roomName) {
-    const response = await fetch(`/api/room/${roomName}/destruction/cancel`, {
-      method: 'POST',
-    });
+    const response = await fetch(
+      `${this.baseUrl}/room/${roomName}/destruction/cancel`,
+      {
+        method: 'POST',
+      },
+    );
 
     if (!response.ok) {
       throw new Error('Failed to cancel destruction');

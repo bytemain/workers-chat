@@ -33,11 +33,6 @@ binding = "ASSETS"
 run_worker_first = true
 not_found_handling = "single-page-application"
 
-[build]
-command = "npm run ui"
-cwd = "."
-watch_dir = "src/ui"
-
 [env.prod]
 name = "edge-chat"
 
@@ -54,3 +49,5 @@ bucket_name = "edge-chat-files"
 
 [env.prod.build]
 command = "npm run ui:prod"
+cwd = "."
+watch_dir = "src/ui"

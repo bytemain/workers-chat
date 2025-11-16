@@ -55,7 +55,7 @@ function ignite(mount) {
 const app = ignite((app) => {
   function apiRoutes() {
     const api = new Hono();
-
+    api.route('/tinybase', tinybaseRoutes());
     api.post('/room', (c) => {
       // POST to /api/room creates a private room.
       //
@@ -155,7 +155,6 @@ const app = ignite((app) => {
   }
 
   app.route('/api', apiRoutes());
-  app.route('/tinybase', tinybaseRoutes());
 
   /**
    * Fix Content-Type charset to UTF-8 for text-based content

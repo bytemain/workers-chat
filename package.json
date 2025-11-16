@@ -5,7 +5,9 @@
   "module": "./src/chat.mjs",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "runp :p 'dev:*'",
+    "dev:workers": "wrangler dev",
+    "dev:ui": "node ./dev-server.mjs",
     "ui": "rna build -C rna.config.mjs",
     "ui:prod": "npm run ui -- --minify",
     "postui:prod": "npm run sw",
@@ -14,6 +16,7 @@
   },
   "dependencies": {
     "@opensumi/reconnecting-websocket": "^4.4.0",
+    "@schummar/runp": "^2.2.4",
     "hono": "^4.10.5",
     "ruply": "^1.0.1",
     "tinybase": "^6.7.2",
@@ -25,7 +28,10 @@
   "devDependencies": {
     "@chialab/rna": "^0.19.0",
     "esbuild-plugin-manifest": "^1.0.5",
+    "koa-proxies": "^0.12.4",
+    "marked": "^17.0.0",
     "prettier": "^3.6.2",
+    "reefjs": "^13.0.6",
     "workbox-cli": "^7.3.0"
   }
 }

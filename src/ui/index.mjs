@@ -2173,11 +2173,6 @@ class UserMessageAPI {
       return false;
     }
 
-    // Wait for WebSocket session to be ready (server has confirmed username)
-    if (isSessionReady && isSessionReady.promise) {
-      await isSessionReady.promise;
-    }
-
     // Wait for TinyBase store to be ready
     if (isStoreReady && isStoreReady.promise) {
       await isStoreReady.promise;
@@ -4261,7 +4256,6 @@ async function startChat() {
       window.store,
       window.indexes, // Pass indexes for efficient querying
       '#chatlog',
-      () => currentChannel,
       {
         // 加密上下文
         get currentRoomKey() {
@@ -5260,13 +5254,9 @@ function createPromiseResolvers() {
   return { promise, resolve, reject };
 }
 
-let isSessionReady = null; // Promise that resolves when server confirms session is ready
 let isStoreReady = null; // Promise that resolves when TinyBase store is initialized
 
 function join() {
-  // Create new deferred promise for session ready
-  isSessionReady = createPromiseResolvers();
-
   let ws = new WebSocket(api.getWebSocketUrl(roomname));
   let rejoined = false;
   let startTime = Date.now();
@@ -5396,9 +5386,6 @@ function join() {
       }
       addSystemMessage(`* ${data.quit} has left the room`);
     } else if (data.ready) {
-      // Session is ready
-      isSessionReady.resolve();
-
       if (isReconnecting) {
         updateConnectionStatus('connected');
         isReconnecting = false;

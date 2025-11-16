@@ -1,5 +1,5 @@
 import { copyFileSync, mkdirSync, readdirSync, statSync } from 'fs';
-import { join, dirname } from 'path';
+import { join } from 'path';
 
 // Plugin to copy static files from src/public to dist/ui
 const copyStaticFilesPlugin = {

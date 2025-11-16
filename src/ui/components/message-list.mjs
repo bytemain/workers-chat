@@ -16,6 +16,7 @@ import CryptoUtils from '../../common/crypto-utils.js';
 import { markChannelAsRead, getUnreadCount } from '../tinybase/read-status.mjs';
 import { forEach } from '../react/flow.mjs';
 import { IndexesIds } from '../tinybase/index.mjs';
+import { getCurrentChannel } from '../utils/chat-state.mjs';
 
 /**
  * @typedef {Object} RawMessage
@@ -39,7 +40,6 @@ const tableId = 'messages';
  * @param {import('tinybase').Store} tinybaseStore - TinyBase store instance
  * @param {import('tinybase').Indexes} tinybaseIndexes - TinyBase indexes instance for O(log n) filtering
  * @param {string} containerSelector - CSS selector for container element
- * @param {Function} getCurrentChannel - Function to get current channel
  * @param {Object} encryptionContext - Encryption context { currentRoomKey, isRoomEncrypted }
  * @param {Map} messagesCache - Global messages cache for legacy features (threads, etc.)
  * @param {Object} readStatusStore - TinyBase store for read status tracking
@@ -50,7 +50,6 @@ export function initMessageList(
   tinybaseStore,
   tinybaseIndexes,
   containerSelector,
-  getCurrentChannel,
   encryptionContext,
   messagesCache,
   readStatusStore,
