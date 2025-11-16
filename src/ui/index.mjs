@@ -32,6 +32,7 @@ import { userState, initUserState } from './utils/user-state.mjs';
 import { createTinybaseStorage } from './tinybase/index.mjs';
 import { initMessageList } from './components/message-list.mjs';
 import { initChannelList } from './components/channel-list.mjs';
+import { initUserRoster } from './components/user-roster.mjs';
 import { listenReefEvent } from './utils/reef-helpers.mjs';
 import { createReadStatusStore } from './tinybase/read-status.mjs';
 import { createQueries } from 'tinybase';
@@ -1325,7 +1326,7 @@ let currentWebSocket = null;
 let chatroom = document.querySelector('#chatroom');
 let chatlog = document.querySelector('#chatlog');
 let chatInputComponent = null; // Will be initialized after DOM is ready
-let roster = document.querySelector('#roster');
+let userRoster = null; // Will be initialized with Reef.js component
 
 // Connection status element
 let connectionStatus = document.querySelector('#connection-status');
@@ -3739,6 +3740,21 @@ async function startChat() {
     });
   }
 
+  // Initialize user roster component
+  userRoster = initUserRoster('#roster');
+
+  // Listen for logout event from roster
+  document.querySelector('#roster').addEventListener('roster:logout', () => {
+    // Clear saved username
+    userState.clearUsername();
+    // Close WebSocket
+    if (currentWebSocket) {
+      currentWebSocket.close();
+    }
+    // Navigate to room selector
+    navigateToRoom('');
+  });
+
   // Prevent form submission (we handle it via custom events)
   chatroom.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -4341,9 +4357,9 @@ function join() {
       currentWebSocket = null;
       isReconnecting = true; // Mark as reconnecting
 
-      // Clear the roster.
-      while (roster.firstChild) {
-        roster.removeChild(roster.firstChild);
+      // Clear the roster
+      if (userRoster) {
+        userRoster.clearUsers();
       }
 
       // Don't try to reconnect too rapidly.
@@ -4376,67 +4392,21 @@ function join() {
     if (data.error) {
       addSystemMessage('* Error: ' + data.error);
     } else if (data.joined) {
-      // Check if user is already in the roster (prevent duplicates)
-      let alreadyInRoster = false;
-      for (let child of roster.childNodes) {
-        const existingUserName = child.querySelector
-          ? child.querySelector('span')?.innerText
-          : child.innerText;
-        const normalizedExisting = existingUserName?.replace(' (me)', '');
-        if (normalizedExisting === data.joined) {
-          alreadyInRoster = true;
-          break;
-        }
-      }
+      // Add user to roster (Reef.js component handles rendering)
+      if (userRoster && !userRoster.hasUser(data.joined)) {
+        userRoster.addUser(data.joined);
 
-      // Only add if not already in roster
-      if (!alreadyInRoster) {
-        let userItem = document.createElement('div');
-        userItem.className = 'user-item';
-
-        let userName = document.createElement('span');
-        userName.innerText =
-          data.joined +
-          (data.joined === userState.value.username ? ' (me)' : '');
-        userItem.appendChild(userName);
-
-        // Add logout button only for current user
-        if (data.joined === userState.value.username) {
-          let logoutBtn = document.createElement('button');
-          logoutBtn.className = 'logout-btn';
-          logoutBtn.innerText = '×';
-          logoutBtn.title = 'Logout and change username';
-          logoutBtn.onclick = (e) => {
-            e.stopPropagation();
-            // Clear saved username using userState
-            userState.clearUsername();
-            // Close WebSocket
-            if (currentWebSocket) {
-              currentWebSocket.close();
-            }
-            // Navigate to room selector
-            navigateToRoom('');
-          };
-          userItem.appendChild(logoutBtn);
-          userItem.classList.add('current-user');
-        } else {
-          userItem.classList.add('other-user');
+        // Show system message only for other users
+        if (data.joined !== userState.value.username) {
           addSystemMessage(`* ${data.joined} has joined the room`);
         }
-
-        roster.appendChild(userItem);
       }
     } else if (data.quit) {
-      for (let child of roster.childNodes) {
-        const userName = child.querySelector
-          ? child.querySelector('span')?.innerText
-          : child.innerText;
-        if (userName == data.quit || userName == data.quit + ' (me)') {
-          roster.removeChild(child);
-          break;
-        }
+      // Remove user from roster (Reef.js component handles rendering)
+      if (userRoster && userRoster.hasUser(data.quit)) {
+        userRoster.removeUser(data.quit);
+        addSystemMessage(`* ${data.quit} has left the room`);
       }
-      addSystemMessage(`* ${data.quit} has left the room`);
     } else if (data.ready) {
       if (isReconnecting) {
         updateConnectionStatus('connected');
