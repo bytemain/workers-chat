@@ -5028,6 +5028,7 @@ async function startChat() {
   // Upload file function with progress tracking
   async function uploadFile(file, fileName = null, replyTo = null) {
     let tempMessageId = null;
+    let uploader = null;
 
     try {
       // Validate file size before anything else
@@ -5076,13 +5077,13 @@ async function startChat() {
             currentRoomKey,
             (progress, stage) => {
               console.log(`File encryption ${stage}: ${progress}%`);
-              // Update progress (encryption is 0-50%)
+              // Update progress (encryption is 0-30%)
               if (
                 window.store &&
                 window.store.hasRow('messages', tempMessageId)
               ) {
                 window.store.setPartialRow('messages', tempMessageId, {
-                  uploadProgress: Math.round(progress / 2),
+                  uploadProgress: Math.round(progress * 0.3),
                 });
               }
             },
@@ -5118,53 +5119,31 @@ async function startChat() {
         return false;
       }
 
-      // Create form data
-      const formData = new FormData();
-      formData.append('file', fileToUpload, fileToUpload.name);
+      // Use smart upload (auto-select multipart for files > 5MB)
+      const baseProgress = isRoomEncrypted && currentRoomKey ? 30 : 0; // Offset if encrypted
+      const progressRange = 100 - baseProgress;
 
-      // Create XMLHttpRequest for upload progress tracking
-      const result = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
+      const result = await api.uploadFileAuto(roomname, fileToUpload, {
+        onProgress: (progress) => {
+          // Map upload progress to remaining range (30-100% or 0-100%)
+          const totalProgress = Math.round(
+            baseProgress + (progress.percentage / 100) * progressRange,
+          );
 
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            // Upload is 50-100% of total progress
-            const uploadProgress = 50 + Math.round((e.loaded / e.total) * 50);
-
-            if (
-              window.store &&
-              window.store.hasRow('messages', tempMessageId)
-            ) {
-              window.store.setPartialRow('messages', tempMessageId, {
-                uploadProgress: uploadProgress,
-              });
-            }
+          if (window.store && window.store.hasRow('messages', tempMessageId)) {
+            window.store.setPartialRow('messages', tempMessageId, {
+              uploadProgress: totalProgress,
+            });
           }
-        });
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (error) {
-              reject(new Error('Invalid server response'));
-            }
-          } else {
-            reject(new Error(`Upload failed with status ${xhr.status}`));
-          }
-        });
-
-        xhr.addEventListener('error', () => {
-          reject(new Error('Network error during upload'));
-        });
-
-        xhr.addEventListener('abort', () => {
-          reject(new Error('Upload cancelled'));
-        });
-
-        xhr.open('POST', `/api/room/${roomname}/upload`);
-        xhr.send(formData);
+        },
+        onChunkComplete: (chunkInfo) => {
+          console.log(
+            `📦 Chunk ${chunkInfo.chunkIndex + 1}/${chunkInfo.totalChunks} uploaded`,
+          );
+        },
+        onError: (error) => {
+          console.error('❌ Upload chunk error:', error);
+        },
       });
 
       // Remove temporary message

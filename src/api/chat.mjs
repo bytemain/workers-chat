@@ -591,6 +591,177 @@ export class ChatRoom {
         });
       });
 
+      // Multipart upload: Create multipart upload
+      app.post('/upload/mpu-create', async (c) => {
+        const { req } = c;
+        const request = req.raw;
+        const ip = request.headers.get('CF-Connecting-IP');
+
+        // Rate limit check
+        const limiterId = this.env.limiters.idFromName(ip);
+        const limiter = this.env.limiters.get(limiterId);
+        const response = await limiter.fetch('https://dummy-url', {
+          method: 'POST',
+        });
+        const cooldown = +(await response.text());
+
+        if (cooldown > 0) {
+          return c.json(
+            { error: 'Rate limit exceeded. Please wait before uploading.' },
+            { status: 429 },
+          );
+        }
+
+        const { fileName, fileType, fileSize } = await request.json();
+
+        if (!fileName) {
+          return c.json({ error: 'Missing fileName' }, { status: 400 });
+        }
+
+        const fileId = crypto.randomUUID();
+        const fileExtension = fileName.split('.').pop() || 'bin';
+        const fileKey = `${fileId}.${fileExtension}`;
+
+        try {
+          const multipartUpload =
+            await this.env.CHAT_FILES.createMultipartUpload(fileKey, {
+              customMetadata: {
+                originalName: fileName,
+                uploadedAt: new Date().toISOString(),
+                uploadedBy: ip || 'unknown',
+                fileSize: fileSize?.toString() || '',
+              },
+              httpMetadata: fileType ? { contentType: fileType } : undefined,
+            });
+
+          return c.json({
+            success: true,
+            key: multipartUpload.key,
+            uploadId: multipartUpload.uploadId,
+            fileId: fileId,
+            fileKey: fileKey,
+          });
+        } catch (error) {
+          console.error('Failed to create multipart upload:', error);
+          return c.json(
+            { error: 'Failed to create multipart upload' },
+            { status: 500 },
+          );
+        }
+      });
+
+      // Multipart upload: Upload a part
+      app.put('/upload/mpu-uploadpart', async (c) => {
+        const { req } = c;
+        const request = req.raw;
+        const url = new URL(request.url);
+        const uploadId = url.searchParams.get('uploadId');
+        const partNumber = url.searchParams.get('partNumber');
+        const fileKey = url.searchParams.get('key');
+
+        if (!uploadId || !partNumber || !fileKey) {
+          return c.json(
+            { error: 'Missing uploadId, partNumber, or key' },
+            { status: 400 },
+          );
+        }
+
+        if (!request.body) {
+          return c.json({ error: 'Missing request body' }, { status: 400 });
+        }
+
+        try {
+          const multipartUpload = this.env.CHAT_FILES.resumeMultipartUpload(
+            fileKey,
+            uploadId,
+          );
+
+          const uploadedPart = await multipartUpload.uploadPart(
+            parseInt(partNumber),
+            request.body,
+          );
+
+          return c.json({
+            success: true,
+            partNumber: uploadedPart.partNumber,
+            etag: uploadedPart.etag,
+          });
+        } catch (error) {
+          console.error('Failed to upload part:', error);
+          return c.json(
+            { error: `Failed to upload part: ${error.message}` },
+            { status: 500 },
+          );
+        }
+      });
+
+      // Multipart upload: Complete multipart upload
+      app.post('/upload/mpu-complete', async (c) => {
+        const { req } = c;
+        const request = req.raw;
+        const { uploadId, key, parts, fileName, fileType, fileSize } =
+          await request.json();
+
+        if (!uploadId || !key || !parts || !Array.isArray(parts)) {
+          return c.json(
+            { error: 'Missing or invalid uploadId, key, or parts' },
+            { status: 400 },
+          );
+        }
+
+        try {
+          const multipartUpload = this.env.CHAT_FILES.resumeMultipartUpload(
+            key,
+            uploadId,
+          );
+
+          const object = await multipartUpload.complete(parts);
+
+          const fileUrl = `/files/${key}`;
+          return c.json({
+            success: true,
+            fileUrl: fileUrl,
+            fileName: fileName || key,
+            fileType: fileType || 'application/octet-stream',
+            fileSize: fileSize || 0,
+            etag: object.httpEtag,
+          });
+        } catch (error) {
+          console.error('Failed to complete multipart upload:', error);
+          return c.json(
+            { error: `Failed to complete upload: ${error.message}` },
+            { status: 500 },
+          );
+        }
+      });
+
+      // Multipart upload: Abort multipart upload
+      app.post('/upload/mpu-abort', async (c) => {
+        const { req } = c;
+        const request = req.raw;
+        const { uploadId, key } = await request.json();
+
+        if (!uploadId || !key) {
+          return c.json({ error: 'Missing uploadId or key' }, { status: 400 });
+        }
+
+        try {
+          const multipartUpload = this.env.CHAT_FILES.resumeMultipartUpload(
+            key,
+            uploadId,
+          );
+          await multipartUpload.abort();
+
+          return c.json({ success: true });
+        } catch (error) {
+          console.error('Failed to abort multipart upload:', error);
+          return c.json(
+            { error: `Failed to abort upload: ${error.message}` },
+            { status: 500 },
+          );
+        }
+      });
+
       app.get('/channels', async (c) => {
         const cursor = this.sql.exec(`
           SELECT 
