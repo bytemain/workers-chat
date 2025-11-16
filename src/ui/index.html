@@ -71,6 +71,8 @@
       * {
         box-sizing: border-box;
         -webkit-tap-highlight-color: transparent;
+        /* Don't prevent default touch behavior on scrollable elements */
+        touch-action: manipulation;
       }
 
       p {
@@ -101,6 +103,16 @@
         flex: 1;
         display: flex;
         overflow: hidden;
+      }
+
+      /* Mobile: allow natural scrolling */
+      @media (max-width: 600px) {
+        body {
+          overflow: visible;
+        }
+        #main-container {
+          overflow: visible;
+        }
       }
 
       #chatroom {
@@ -209,6 +221,10 @@
         overflow-wrap: break-word;
         display: flex;
         flex-direction: column;
+        /* Enable momentum scrolling on iOS */
+        -webkit-overflow-scrolling: touch;
+        /* Prevent scroll chaining to parent */
+        overscroll-behavior: contain;
       }
 
       /* Room Selector in Chatlog */
@@ -332,6 +348,9 @@
           display: flex;
           flex-direction: column;
           gap: 8px;
+          min-height: 100%;
+          /* Allow touch scrolling */
+          touch-action: pan-y;
         }
 
         .message-item {
@@ -669,6 +688,10 @@
           flex: 1;
           overflow-y: auto;
           padding-top: var(--mobile-nav-bar-height);
+          /* Enable momentum scrolling on iOS */
+          -webkit-overflow-scrolling: touch;
+          /* Prevent scroll chaining to parent */
+          overscroll-behavior: contain;
         }
 
         /* Mobile Room Header - enhanced mobile-nav-bar with room selector */
@@ -814,7 +837,7 @@
         }
 
         body:has(#mobile-chat-page.active) #main-container {
-          padding-top: 56px;
+          padding-top: 0px;
           height: 100vh;
           height: 100dvh; /* Use dynamic viewport height for mobile browsers */
         }
@@ -852,6 +875,11 @@
           padding-bottom: 80px; /* Extra space for input container */
           /* Ensure scrolling works smoothly with keyboard */
           overscroll-behavior: contain;
+          /* Force scrolling on mobile */
+          overflow-y: scroll !important;
+          -webkit-overflow-scrolling: touch;
+          /* Allow touch events */
+          touch-action: pan-y;
         }
 
         /* Thread input container positioning on mobile */

@@ -8,8 +8,8 @@
     "dev": "wrangler dev",
     "ui": "rna build -C rna.config.mjs",
     "ui:prod": "npm run ui -- --minify",
+    "postui:prod": "npm run sw",
     "sw": "workbox generateSW workbox-config.js",
-    "postui": "npm run sw",
     "format": "prettier --write ./src"
   },
   "dependencies": {
