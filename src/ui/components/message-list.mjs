@@ -71,6 +71,10 @@ export function initMessageList(
     SignalName,
   );
 
+  // Track if user is at bottom of scroll (for auto-scroll behavior)
+  let isAtBottom = true;
+  let isInitialLoad = true;
+
   /**
    * Sync TinyBase → Signal
    * 监听 TinyBase 的 messages 表变化，自动更新 Signal
@@ -268,6 +272,8 @@ export function initMessageList(
       },
     });
 
+    // Reset to scroll to bottom when switching channels
+    isInitialLoad = true;
     syncTinybaseToSignal();
   });
 
@@ -428,6 +434,20 @@ export function initMessageList(
     console.log(
       `✅ Rendered ${channelMessages.length} messages in #${currentChannel}`,
     );
+
+    // Scroll to bottom if this is initial load or user was at bottom
+    if (isInitialLoad || isAtBottom) {
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+        console.log('📜 Scrolled to bottom');
+      });
+      
+      // Reset initial load flag after first render
+      if (isInitialLoad) {
+        isInitialLoad = false;
+      }
+    }
   }
 
   listenReefEvent(SignalName, renderMessages);
@@ -437,6 +457,14 @@ export function initMessageList(
   if (!container) {
     throw new Error(`Container not found: ${containerSelector}`);
   }
+
+  // Track scroll position to determine if user is at bottom
+  container.addEventListener('scroll', () => {
+    // Allow 1px tolerance for floating point calculation errors
+    isAtBottom =
+      container.scrollTop + container.clientHeight >= container.scrollHeight - 1;
+  });
+
   renderMessages();
 
   function sendMessage(text, username, channel, options = {}) {
