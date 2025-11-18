@@ -1335,6 +1335,7 @@ let connectionStatus = document.querySelector('#connection-status');
 let threadPanel = document.querySelector('#thread-panel');
 let threadClose = document.querySelector('#thread-close');
 let threadOriginalMessage = document.querySelector('#thread-original-message');
+let threadExpandToggle = document.querySelector('#thread-expand-toggle');
 let threadReplies = document.querySelector('#thread-replies');
 let threadInputComponent = null; // Will be initialized after DOM is ready
 
@@ -1893,6 +1894,12 @@ window.openThread = async function (messageId) {
   const rootMessage = messagesCache.get(rootMessageId);
   if (rootMessage) {
     threadOriginalMessage.innerHTML = '';
+    
+    // Re-add the expand button
+    if (threadExpandToggle) {
+      threadOriginalMessage.appendChild(threadExpandToggle);
+    }
+    
     const msgElement = document.createElement('message-element');
     msgElement.setData({
       ...rootMessage,
@@ -1901,6 +1908,24 @@ window.openThread = async function (messageId) {
       isFirstInGroup: true,
     });
     threadOriginalMessage.appendChild(msgElement);
+    
+    // Check if content overflows and show expand button if needed
+    setTimeout(() => {
+      const hasOverflow = threadOriginalMessage.scrollHeight > threadOriginalMessage.clientHeight;
+      if (hasOverflow) {
+        threadOriginalMessage.classList.add('has-overflow');
+      } else {
+        threadOriginalMessage.classList.remove('has-overflow');
+      }
+      // Reset expanded state
+      threadOriginalMessage.classList.remove('expanded');
+      if (threadExpandToggle) {
+        const icon = threadExpandToggle.querySelector('i');
+        const text = threadExpandToggle.querySelector('span');
+        if (icon) icon.className = 'ri-arrow-down-s-line';
+        if (text) text.textContent = 'Expand';
+      }
+    }, 100);
   } else {
     threadOriginalMessage.innerHTML =
       '<p style="color:#999;padding:16px;">Original message not available</p>';
@@ -3999,6 +4024,24 @@ async function startChat() {
     event.stopPropagation();
     window.closeThread();
   });
+
+  // Thread expand/collapse toggle
+  if (threadExpandToggle) {
+    threadExpandToggle.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const isExpanded = threadOriginalMessage.classList.toggle('expanded');
+      const icon = threadExpandToggle.querySelector('i');
+      const text = threadExpandToggle.querySelector('span');
+      
+      if (isExpanded) {
+        icon.className = 'ri-arrow-up-s-line';
+        text.textContent = 'Collapse';
+      } else {
+        icon.className = 'ri-arrow-down-s-line';
+        text.textContent = 'Expand';
+      }
+    });
+  }
 
   // Reply indicator close button
   replyIndicatorClose.addEventListener('click', () => {

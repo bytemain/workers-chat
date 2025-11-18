@@ -1438,6 +1438,39 @@
         border-bottom: 1px solid var(--border);
         background: var(--background-alt);
         flex-shrink: 0;
+        max-height: 300px;
+        overflow-y: auto;
+        position: relative;
+      }
+      
+      #thread-original-message.expanded {
+        max-height: 700px;
+      }
+      
+      #thread-expand-toggle {
+        position: absolute;
+        bottom: 8px;
+        right: 8px;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--border-radius);
+        padding: 4px 8px;
+        font-size: 0.85em;
+        cursor: pointer;
+        color: var(--text-muted);
+        display: none;
+        z-index: 1;
+        transition: var(--transition);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      
+      #thread-expand-toggle:hover {
+        color: var(--text-main);
+        background: var(--background-alt);
+      }
+      
+      #thread-original-message.has-overflow #thread-expand-toggle {
+        display: block;
       }
 
       #thread-replies {
@@ -2705,7 +2738,12 @@
           <h3>💬 Thread</h3>
           <button id="thread-close" title="Close thread">✕</button>
         </div>
-        <div id="thread-original-message"></div>
+        <div id="thread-original-message">
+          <button id="thread-expand-toggle" title="Expand/Collapse">
+            <i class="ri-arrow-down-s-line"></i>
+            <span>Expand</span>
+          </button>
+        </div>
         <div id="thread-replies"></div>
         <div id="thread-input-container">
           <div
