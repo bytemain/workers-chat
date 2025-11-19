@@ -32,6 +32,7 @@
     "marked": "^17.0.0",
     "prettier": "^3.6.2",
     "reefjs": "^13.0.6",
-    "workbox-cli": "^7.3.0"
+    "workbox-cli": "^7.3.0",
+    "wrangler": "^4.49.0"
   }
 }
