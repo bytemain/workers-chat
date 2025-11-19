@@ -442,7 +442,7 @@ export function initMessageList(
         container.scrollTop = container.scrollHeight;
         console.log('📜 Scrolled to bottom');
       });
-      
+
       // Reset initial load flag after first render
       if (isInitialLoad) {
         isInitialLoad = false;
@@ -462,7 +462,8 @@ export function initMessageList(
   container.addEventListener('scroll', () => {
     // Allow 1px tolerance for floating point calculation errors
     isAtBottom =
-      container.scrollTop + container.clientHeight >= container.scrollHeight - 1;
+      container.scrollTop + container.clientHeight >=
+      container.scrollHeight - 1;
   });
 
   renderMessages();
@@ -497,6 +498,24 @@ export function initMessageList(
   function deleteMessage(messageId) {
     tinybaseStore.delRow('messages', messageId);
     console.log('🗑️ Message deleted from TinyBase:', messageId);
+  }
+
+  /**
+   * Helper: 强制滚动到底部
+   */
+  function scrollToBottom() {
+    isAtBottom = true;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+      console.log('📜 Force scrolled to bottom');
+    });
+  }
+
+  /**
+   * Helper: 设置 isAtBottom 状态（用于外部同步）
+   */
+  function setAtBottom(value) {
+    isAtBottom = value;
   }
 
   /**
@@ -564,6 +583,24 @@ export function initMessageList(
     console.log('🗑️ Temp message removed:', tempId);
   }
 
+  /**
+   * Helper: 强制滚动到底部
+   */
+  function scrollToBottom() {
+    isAtBottom = true;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+      console.log('📜 Force scrolled to bottom');
+    });
+  }
+
+  /**
+   * Helper: 设置 isAtBottom 状态（用于外部同步）
+   */
+  function setAtBottom(value) {
+    isAtBottom = value;
+  }
+
   return {
     signal: messagesSignal,
     sendMessage,
@@ -574,5 +611,7 @@ export function initMessageList(
     removeTempMessage,
     syncNow: syncTinybaseToSignal,
     render: renderMessages, // 暴露渲染函数供外部使用
+    scrollToBottom, // 强制滚动到底部
+    setAtBottom, // 设置 isAtBottom 状态
   };
 }

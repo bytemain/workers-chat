@@ -279,7 +279,16 @@ class LazyImg extends HTMLElement {
               ) < 2
             );
           }
-        : () => window.isAtBottom;
+        : () => {
+            // Check scroll position directly
+            const container =
+              scrollContainer || document.querySelector('.chat-messages');
+            if (!container) return false;
+            return (
+              container.scrollTop + container.clientHeight >=
+              container.scrollHeight - 1
+            );
+          };
 
       if (window.setupImageScrollHandler) {
         window.setupImageScrollHandler(img, scrollContainer, shouldScroll);
@@ -1345,9 +1354,6 @@ let replyIndicatorClose = replyIndicator.querySelector(
   '.reply-indicator-close',
 );
 
-// Is the chatlog scrolled to the bottom?
-let isAtBottom = true;
-
 let roomname;
 let currentChannel = 'general'; // Current channel for sending messages (DEPRECATED: use chatState)
 
@@ -1822,8 +1828,9 @@ class UserMessageAPI {
     }
 
     // Scroll to bottom whenever sending a message
-    chatlog.scrollBy(0, 1e8);
-    isAtBottom = true;
+    if (window.messageList && window.messageList.scrollToBottom) {
+      window.messageList.scrollToBottom();
+    }
 
     return true;
   }
@@ -1894,12 +1901,12 @@ window.openThread = async function (messageId) {
   const rootMessage = messagesCache.get(rootMessageId);
   if (rootMessage) {
     threadOriginalMessage.innerHTML = '';
-    
+
     // Re-add the expand button
     if (threadExpandToggle) {
       threadOriginalMessage.appendChild(threadExpandToggle);
     }
-    
+
     const msgElement = document.createElement('message-element');
     msgElement.setData({
       ...rootMessage,
@@ -1908,10 +1915,11 @@ window.openThread = async function (messageId) {
       isFirstInGroup: true,
     });
     threadOriginalMessage.appendChild(msgElement);
-    
+
     // Check if content overflows and show expand button if needed
     setTimeout(() => {
-      const hasOverflow = threadOriginalMessage.scrollHeight > threadOriginalMessage.clientHeight;
+      const hasOverflow =
+        threadOriginalMessage.scrollHeight > threadOriginalMessage.clientHeight;
       if (hasOverflow) {
         threadOriginalMessage.classList.add('has-overflow');
       } else {
@@ -4013,12 +4021,6 @@ async function startChat() {
     });
   }
 
-  chatlog.addEventListener('scroll', (event) => {
-    // Allow 1px tolerance for floating point calculation errors
-    isAtBottom =
-      chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight - 1;
-  });
-
   // Thread panel close
   threadClose.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -4032,7 +4034,7 @@ async function startChat() {
       const isExpanded = threadOriginalMessage.classList.toggle('expanded');
       const icon = threadExpandToggle.querySelector('i');
       const text = threadExpandToggle.querySelector('span');
-      
+
       if (isExpanded) {
         icon.className = 'ri-arrow-up-s-line';
         text.textContent = 'Collapse';
@@ -4229,11 +4231,6 @@ async function startChat() {
         replyToId: replyTo?.messageId || null,
       });
 
-      // 滚动到底部显示新消息
-      if (isAtBottom) {
-        setTimeout(() => chatlog.scrollBy(0, 1e8), 50);
-      }
-
       // 2. 加密文件（如果需要）
       let fileToUpload = file;
       if (isRoomEncrypted && currentRoomKey && cryptoSupported) {
@@ -4358,8 +4355,14 @@ async function startChat() {
     }
   }
 
-  // Setup mobile keyboard handler
-  MobileUI.setupMobileKeyboardHandler(chatlog, () => isAtBottom);
+  // Setup mobile keyboard handler - pass function to check if message list is at bottom
+  MobileUI.setupMobileKeyboardHandler(chatlog, () => {
+    // Check scroll position directly since message-list maintains the state internally
+    const container = chatlog;
+    return (
+      container.scrollTop + container.clientHeight >= container.scrollHeight - 1
+    );
+  });
 
   // Initialize left sidebar with room list and user info
   initializeLeftSidebar();
@@ -4526,8 +4529,7 @@ function addSystemMessage(text) {
   sysMsg.setAttribute('message', text);
   p.appendChild(sysMsg);
   chatlog.appendChild(p);
-  isAtBottom = true;
-  chatlog.scrollBy(0, 1e8);
+  // Message list component handles scrolling automatically
 }
 
 // Show re-edit button after deleting a message
@@ -4596,10 +4598,6 @@ function showReEditBanner(deletedMessage) {
 
   // Add to chatlog
   chatlog.appendChild(container);
-
-  // Scroll to show the element
-  isAtBottom = true;
-  chatlog.scrollBy(0, 1e8);
 }
 
 // Show edit dialog for a message
