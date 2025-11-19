@@ -9,6 +9,7 @@
 
 import { signal, component } from 'reefjs';
 import { userState } from '../utils/user-state.mjs';
+import logger from '../../common/logger.mjs';
 
 const SignalName = 'userRosterSignal';
 
@@ -90,13 +91,13 @@ export function initUserRoster(containerSelector) {
   function addUser(username) {
     // 防止重复添加
     if (rosterSignal.users.includes(username)) {
-      console.warn(`⚠️ User already in roster: ${username}`);
+      logger.debug(`⚠️ User already in roster: ${username}`);
       return;
     }
 
     // 添加用户（触发 Reef.js 重新渲染）
     rosterSignal.users = [...rosterSignal.users, username];
-    console.log(`✅ User added to roster: ${username}`);
+    logger.log(`✅ User added to roster: ${username}`);
   }
 
   /**
@@ -106,7 +107,7 @@ export function initUserRoster(containerSelector) {
   function removeUser(username) {
     // 移除用户（触发 Reef.js 重新渲染）
     rosterSignal.users = rosterSignal.users.filter((u) => u !== username);
-    console.log(`🗑️ User removed from roster: ${username}`);
+    logger.log(`🗑️ User removed from roster: ${username}`);
   }
 
   /**
@@ -114,7 +115,7 @@ export function initUserRoster(containerSelector) {
    */
   function clearUsers() {
     rosterSignal.users = [];
-    console.log('🗑️ Roster cleared');
+    logger.log('🗑️ Roster cleared');
   }
 
   /**

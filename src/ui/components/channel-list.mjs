@@ -8,6 +8,7 @@
 import { signal, component } from 'reefjs';
 import { listenReefEvent } from '../utils/reef-helpers.mjs';
 import { getCurrentChannel } from '../utils/chat-state.mjs';
+import logger from '../../common/logger.mjs';
 
 const SignalName = 'channelsSignal';
 
@@ -61,16 +62,16 @@ export function initChannelList(
       channelsSignal.items = channelsList;
       channelsSignal.error = null;
 
-      console.log('📊 Channels synced to Signal:', channelsList.length);
+      logger.log('📊 Channels synced to Signal:', channelsList.length);
     } catch (error) {
-      console.error('Failed to sync channels to Signal:', error);
+      logger.error('Failed to sync channels to Signal:', error);
       channelsSignal.error = error.message;
     }
   }
 
   // 监听 TinyBase channels 表变化
   tinybaseStore.addTableListener('channels', () => {
-    console.log('🔄 TinyBase channels table changed, syncing...');
+    logger.debug('🔄 TinyBase channels table changed, syncing...');
     syncTinybaseToSignal();
   });
 
@@ -183,7 +184,7 @@ export function initChannelList(
     const now = Date.now();
     tinybaseStore.setCell('channels', channelName, 'count', count);
     tinybaseStore.setCell('channels', channelName, 'lastUsed', now);
-    console.log(`📝 Channel upserted: ${channelName}`);
+    logger.log(`📝 Channel upserted: ${channelName}`);
   }
 
   /**
@@ -191,7 +192,7 @@ export function initChannelList(
    */
   function updateChannelCount(channelName, count) {
     tinybaseStore.setCell('channels', channelName, 'count', count);
-    console.log(`🔢 Channel count updated: ${channelName} = ${count}`);
+    logger.log(`🔢 Channel count updated: ${channelName} = ${count}`);
   }
 
   /**
@@ -215,11 +216,11 @@ export function initChannelList(
    */
   function deleteChannel(channelName) {
     if (channelName === 'general') {
-      console.warn('Cannot delete general channel');
+      logger.warn('Cannot delete general channel');
       return;
     }
     tinybaseStore.delRow('channels', channelName);
-    console.log(`🗑️ Channel deleted: ${channelName}`);
+    logger.log(`🗑️ Channel deleted: ${channelName}`);
   }
 
   /**
@@ -247,7 +248,7 @@ export function initChannelList(
         [key]: count,
       };
     }
-    console.log(`🔔 Channel unread count updated: ${channelName} = ${count}`);
+    logger.debug(`🔔 Channel unread count updated: ${channelName} = ${count}`);
   }
 
   /**

@@ -11,6 +11,7 @@
 import { signal, component } from 'reefjs';
 import { throttle } from '../../common/utils.mjs';
 import { listenReefEvent } from '../utils/reef-helpers.mjs';
+import logger from '../../common/logger.mjs';
 import { tryDecryptMessage } from '../utils/message-crypto.mjs';
 import CryptoUtils from '../../common/crypto-utils.js';
 import { markChannelAsRead, getUnreadCount } from '../tinybase/read-status.mjs';
@@ -83,7 +84,7 @@ export function initMessageList(
   async function syncTinybaseToSignalInternal() {
     try {
       const currentChannel = getCurrentChannel();
-      console.log(
+      logger.debug(
         `🚀 ~ syncTinybaseToSignalInternal ~ currentChannel:`,
         currentChannel,
       );
@@ -95,7 +96,7 @@ export function initMessageList(
         currentChannel,
       );
 
-      console.log(
+      logger.log(
         `📇 Index query: found ${messageIds.length} messages in #${currentChannel}`,
       );
 
@@ -219,7 +220,7 @@ export function initMessageList(
             currentChannel,
             currentChannelMessages,
           );
-          console.log(
+          logger.log(
             `✅ Marked ${currentChannelMessages.length} messages in #${currentChannel} as read`,
           );
         }
@@ -230,12 +231,12 @@ export function initMessageList(
       messagesSignal.error = null;
       messagesSignal.version++; // 增加版本号，强制重新渲染
 
-      console.log(
+      logger.log(
         '📊 Messages synced to Signal (decrypted):',
         messagesList.length,
       );
     } catch (error) {
-      console.error('Failed to sync TinyBase to Signal:', error);
+      logger.error('Failed to sync TinyBase to Signal:', error);
       messagesSignal.error = error.message;
     }
   }
@@ -246,9 +247,9 @@ export function initMessageList(
     const changedRows = getIdChanges();
     Object.keys(changedRows).forEach((rowId) => {
       const changeType = changedRows[rowId];
-      console.log(`🔄 Message row ${changeType}: ${rowId}`);
+      logger.debug(`🔄 Message row ${changeType}: ${rowId}`);
       const cellData = tinybaseStore.getRow(tableId, rowId);
-      console.log(`📄 Message data:`, cellData);
+      logger.debug(`📄 Message data:`, cellData);
     });
     // 索引变化说明有消息新增或删除，触发全量同步
     // syncTinybaseToSignal();
@@ -261,7 +262,9 @@ export function initMessageList(
       IndexesIds.MessagesByChannel,
       channel,
       (indexes, indexId, sliceId) => {
-        console.log(`🔄 MessagesByChannel index changed for slice: ${sliceId}`);
+        logger.debug(
+          `🔄 MessagesByChannel index changed for slice: ${sliceId}`,
+        );
         syncTinybaseToSignal();
       },
     );
@@ -283,7 +286,7 @@ export function initMessageList(
     null, // null = listen to all rows
     async (store, tableId, rowId, getCellChange) => {
       const cellChange = getCellChange();
-      console.log(
+      logger.debug(
         `🔄 TinyBase message row changed: ${rowId}, changes:`,
         cellChange,
       );
@@ -316,7 +319,7 @@ export function initMessageList(
           encrypted: CryptoUtils.isEncrypted(row.text || ''),
         });
 
-        console.log(`✅ Updated message element for row: ${rowId}`);
+        logger.log(`✅ Updated message element for row: ${rowId}`);
       }
     },
   );
@@ -431,7 +434,7 @@ export function initMessageList(
     messagesContainer.innerHTML = '';
     messagesContainer.appendChild(fragment);
 
-    console.log(
+    logger.log(
       `✅ Rendered ${channelMessages.length} messages in #${currentChannel}`,
     );
 
@@ -440,7 +443,7 @@ export function initMessageList(
       // Use requestAnimationFrame to ensure DOM is updated
       requestAnimationFrame(() => {
         container.scrollTop = container.scrollHeight;
-        console.log('📜 Scrolled to bottom');
+        logger.debug('📜 Scrolled to bottom');
       });
 
       // Reset initial load flag after first render
@@ -488,7 +491,7 @@ export function initMessageList(
 
     tinybaseStore.setRow('messages', messageId, messageData);
 
-    console.log('📤 Message sent to TinyBase:', messageId);
+    logger.log('📤 Message sent to TinyBase:', messageId);
     return messageId;
   }
 
@@ -497,7 +500,7 @@ export function initMessageList(
    */
   function deleteMessage(messageId) {
     tinybaseStore.delRow('messages', messageId);
-    console.log('🗑️ Message deleted from TinyBase:', messageId);
+    logger.log('🗑️ Message deleted from TinyBase:', messageId);
   }
 
   /**
@@ -507,15 +510,8 @@ export function initMessageList(
     isAtBottom = true;
     requestAnimationFrame(() => {
       container.scrollTop = container.scrollHeight;
-      console.log('📜 Force scrolled to bottom');
+      logger.debug('📜 Force scrolled to bottom');
     });
-  }
-
-  /**
-   * Helper: 设置 isAtBottom 状态（用于外部同步）
-   */
-  function setAtBottom(value) {
-    isAtBottom = value;
   }
 
   /**
@@ -524,7 +520,7 @@ export function initMessageList(
   function editMessage(messageId, newText) {
     tinybaseStore.setCell('messages', messageId, 'text', newText);
     tinybaseStore.setCell('messages', messageId, 'editedAt', Date.now());
-    console.log('✏️ Message edited in TinyBase:', messageId);
+    logger.log('✏️ Message edited in TinyBase:', messageId);
   }
 
   /**
@@ -560,7 +556,7 @@ export function initMessageList(
       (msg) => msg.messageId === tempId,
     );
     if (index === -1) {
-      console.warn('⚠️ Temp message not found:', tempId);
+      logger.warn('⚠️ Temp message not found:', tempId);
       return;
     }
 
@@ -580,18 +576,7 @@ export function initMessageList(
     messagesSignal.tempItems = messagesSignal.tempItems.filter(
       (msg) => msg.messageId !== tempId,
     );
-    console.log('🗑️ Temp message removed:', tempId);
-  }
-
-  /**
-   * Helper: 强制滚动到底部
-   */
-  function scrollToBottom() {
-    isAtBottom = true;
-    requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
-      console.log('📜 Force scrolled to bottom');
-    });
+    logger.log('🗑️ Temp message removed:', tempId);
   }
 
   /**
@@ -599,6 +584,13 @@ export function initMessageList(
    */
   function setAtBottom(value) {
     isAtBottom = value;
+  }
+
+  /**
+   * Helper: 获取当前 isAtBottom 状态
+   */
+  function getAtBottom() {
+    return isAtBottom;
   }
 
   return {
@@ -613,5 +605,6 @@ export function initMessageList(
     render: renderMessages, // 暴露渲染函数供外部使用
     scrollToBottom, // 强制滚动到底部
     setAtBottom, // 设置 isAtBottom 状态
+    getAtBottom, // 获取 isAtBottom 状态
   };
 }
