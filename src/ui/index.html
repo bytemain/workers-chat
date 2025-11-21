@@ -1132,26 +1132,6 @@
         align-items: center;
         gap: var(--spacing-xs);
         padding: 4px 8px;
-        border-radius: var(--border-radius);
-        outline: none;
-        cursor: text;
-        transition: background-color 0.2s ease;
-      }
-
-      #room-name-large:hover {
-        background: var(--background-alt);
-      }
-
-      #room-name-large:focus {
-        background: var(--background-body);
-        box-shadow: 0 0 0 2px var(--links);
-      }
-
-      #room-name-large:empty::before {
-        content: 'Click to set room name';
-        color: var(--text-muted);
-        font-style: italic;
-        font-size: 0.9em;
       }
 
       #room-name-large::after {
@@ -2580,9 +2560,7 @@
       <div id="channel-panel">
         <!-- Room Info Header with Dropdown -->
         <div id="room-info-header">
-          <div id="room-name-large" contenteditable="true" spellcheck="false">
-            Select a Room
-          </div>
+          <div id="room-name-large">Select a Room</div>
           <button id="room-menu-btn" class="icon-btn" title="Room menu">
             <i class="ri-more-fill"></i>
           </button>

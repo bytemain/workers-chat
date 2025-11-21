@@ -10,7 +10,6 @@ import { createReactiveState } from './react/state.mjs';
 import { api } from './api.mjs';
 import { generateRandomUsername } from './utils/random.mjs';
 import { isMobile } from './utils/device.mjs';
-import tooltip from './tooltip.js';
 import { updateRoomList } from './room-list.mjs';
 import * as MobileUI from './mobile.mjs';
 import { initCryptoCompatCheck } from '../common/crypto-compat.js';
@@ -3671,60 +3670,6 @@ async function startChat() {
   }
 
   initRoomInfo();
-
-  // Room name editing (room-name-large in left sidebar)
-  if (roomNameLarge) {
-    // Store original content when focusing
-    let originalContent = '';
-
-    roomNameLarge.addEventListener('focus', () => {
-      originalContent = roomNameLarge.textContent;
-      // Select all text when focused
-      const range = document.createRange();
-      range.selectNodeContents(roomNameLarge);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-    });
-
-    roomNameLarge.addEventListener('blur', () => {
-      const newName = roomNameLarge.textContent.trim();
-      if (newName && newName !== roomInfo.name) {
-        roomInfo.isLocalUpdate = true;
-        roomInfo.name = newName;
-        saveRoomInfo();
-        // Reset flag after a short delay
-        setTimeout(() => {
-          roomInfo.isLocalUpdate = false;
-        }, 500);
-      } else if (!newName) {
-        // Restore original content if empty
-        roomNameLarge.textContent = originalContent || roomInfo.name;
-      }
-    });
-
-    roomNameLarge.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        roomNameLarge.blur();
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        roomNameLarge.textContent = originalContent || roomInfo.name;
-        roomNameLarge.blur();
-      }
-    });
-
-    // Prevent line breaks in contenteditable
-    roomNameLarge.addEventListener('paste', (event) => {
-      event.preventDefault();
-      const text = (event.clipboardData || window.clipboardData).getData(
-        'text/plain',
-      );
-      // Remove line breaks and insert as plain text
-      const cleanText = text.replace(/[\r\n]+/g, ' ');
-      document.execCommand('insertText', false, cleanText);
-    });
-  }
 
   // Encryption Key Management
   const btnChangeEncryptionKey = document.querySelector(
