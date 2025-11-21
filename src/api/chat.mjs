@@ -724,6 +724,18 @@ export class ChatRoom {
         return;
       }
 
+      // Handle WebRTC Signaling
+      if (data.type === 'signal') {
+        const target = data.target;
+        const signalData = {
+          type: 'signal',
+          sender: session.name,
+          data: data.payload,
+        };
+        this.sendToUser(target, signalData);
+        return;
+      }
+
       // Construct message
       data = {
         name: session.name,
@@ -789,6 +801,30 @@ export class ChatRoom {
    */
   async webSocketError(webSocket, error) {
     this.closeOrErrorHandler(webSocket);
+  }
+
+  /**
+   * Send a message to a specific user
+   * @param {string} targetName - Username to send to
+   * @param {string | Object} message - Message to send
+   * @returns {boolean} - True if sent, false if user not found
+   */
+  sendToUser(targetName, message) {
+    if (typeof message !== 'string') {
+      message = JSON.stringify(message);
+    }
+    for (const [webSocket, session] of this.sessions.entries()) {
+      if (session.name === targetName) {
+        try {
+          webSocket.send(message);
+          return true;
+        } catch (err) {
+          session.quit = true;
+          this.sessions.delete(webSocket);
+        }
+      }
+    }
+    return false;
   }
 
   /**

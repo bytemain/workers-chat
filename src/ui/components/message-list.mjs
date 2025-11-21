@@ -243,21 +243,18 @@ export function initMessageList(
 
   const syncTinybaseToSignal = throttle(syncTinybaseToSignalInternal, 16);
 
-  tinybaseStore.addRowIdsListener(tableId, (store, id, getIdChanges) => {
-    const changedRows = getIdChanges();
-    Object.keys(changedRows).forEach((rowId) => {
-      const changeType = changedRows[rowId];
-      logger.debug(`🔄 Message row ${changeType}: ${rowId}`);
-      const cellData = tinybaseStore.getRow(tableId, rowId);
-      logger.debug(`📄 Message data:`, cellData);
-    });
-    // 索引变化说明有消息新增或删除，触发全量同步
-    // syncTinybaseToSignal();
-  });
-
   const mutableDisposable = new MutableDisposable();
   whenChannelChange((channel) => {
+    console.log(`🚀 ~ initMessageList ~ channel:`, channel);
     const disposable = mutableDisposable.create();
+    // Reset to scroll to bottom when switching channels
+    isInitialLoad = true;
+
+    if (channel.startsWith('dm-')) {
+      logger.debug(`🔄 Channel changed to DM: ${channel}, skipping listener`);
+      return;
+    }
+
     const id = tinybaseIndexes.addSliceRowIdsListener(
       IndexesIds.MessagesByChannel,
       channel,
@@ -275,8 +272,6 @@ export function initMessageList(
       },
     });
 
-    // Reset to scroll to bottom when switching channels
-    isInitialLoad = true;
     syncTinybaseToSignal();
   });
 
@@ -324,7 +319,9 @@ export function initMessageList(
     },
   );
 
-  syncTinybaseToSignal();
+  if (!getCurrentChannel().startsWith('dm-')) {
+    syncTinybaseToSignal();
+  }
 
   // 手动管理 message-element 的创建和更新（避免 outerHTML 导致失去响应性）
   function renderMessages() {
@@ -339,14 +336,10 @@ export function initMessageList(
     }
 
     // 过滤当前频道的消息
-    const channelMessages = messagesSignal.items.filter(
-      (msg) => msg.channel === currentChannel,
-    );
+    const channelMessages = messagesSignal.items;
 
     // 追加临时消息（仅本地，不同步）
-    const tempChannelMessages = messagesSignal.tempItems.filter(
-      (msg) => msg.channel === currentChannel,
-    );
+    const tempChannelMessages = messagesSignal.tempItems;
     const allMessages = [...channelMessages, ...tempChannelMessages];
 
     // 空状态

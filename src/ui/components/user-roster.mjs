@@ -9,6 +9,7 @@
 
 import { signal, component } from 'reefjs';
 import { userState } from '../utils/user-state.mjs';
+import { P2PChat } from './p2p-chat.mjs';
 import logger from '../../common/logger.mjs';
 
 const SignalName = 'userRosterSignal';
@@ -46,7 +47,8 @@ export function initUserRoster(containerSelector) {
 
         return `
         <div class="user-item ${userClass}" data-username="${username}">
-          <span>${displayName}</span>
+          <playful-avatar name="${username}" size="32" class="user-avatar"></playful-avatar>
+          <span class="user-name">${displayName}</span>
           ${
             isCurrentUser
               ? `<button class="logout-btn" data-action="logout" title="Logout and change username">×</button>`
@@ -83,6 +85,116 @@ export function initUserRoster(containerSelector) {
       container.dispatchEvent(logoutEvent);
     }
   });
+
+  // Event delegation - Handle user item click (for P2P actions)
+  container.addEventListener('click', (event) => {
+    const userItem = event.target.closest('.user-item');
+    console.log('User item clicked:1', userItem);
+
+    // Ignore if clicking logout button or if it's the current user
+    if (userItem && !event.target.closest('.logout-btn')) {
+      const username = userItem.dataset.username;
+      const currentUsername = userState.value.username;
+      console.log('Click details:', { username, currentUsername });
+
+      if (username && username !== currentUsername) {
+        console.log('Showing context menu for:', username);
+        showUserContextMenu(event, username);
+      } else if (username === currentUsername) {
+        console.log('Ignoring click: self');
+        // Optional: Show a small tooltip or feedback
+      } else {
+        console.log('Ignoring click: invalid username');
+      }
+    }
+  });
+
+  function showUserContextMenu(event, username) {
+    // Remove existing
+    const existing = document.querySelector('.user-context-menu');
+    if (existing) existing.remove();
+
+    const menu = document.createElement('div');
+    menu.className = 'user-context-menu';
+    menu.style.cssText = `
+        visibility: hidden; /* Hide initially to calculate size */
+    `;
+
+    const actions = [
+      {
+        label: 'P2P 私聊',
+        icon: 'ri-chat-private-line',
+        onClick: async () => {
+          if (window.webRTCManager) {
+            window.webRTCManager.connect(username);
+            await P2PChat.open(username);
+          } else {
+            alert('WebRTC Manager not initialized');
+          }
+        },
+      },
+      {
+        label: '屏幕共享',
+        icon: 'ri-computer-line',
+        onClick: () => {
+          if (window.webRTCManager) {
+            // Connect first if needed, then share
+            window.webRTCManager.connect(username).then(() => {
+              // Small delay to ensure connection is ready
+              setTimeout(
+                () => window.webRTCManager.startScreenShare(username),
+                1000,
+              );
+            });
+          } else {
+            alert('WebRTC Manager not initialized');
+          }
+        },
+      },
+    ];
+
+    actions.forEach((action) => {
+      const item = document.createElement('div');
+      item.className = 'user-context-menu-item';
+      item.innerHTML = `<i class="${action.icon}"></i> ${action.label}`;
+      item.onclick = () => {
+        action.onClick();
+        menu.remove();
+      };
+      menu.appendChild(item);
+    });
+
+    document.body.appendChild(menu);
+
+    // Position menu and handle overflow
+    const rect = menu.getBoundingClientRect();
+    let left = event.clientX;
+    let top = event.clientY;
+
+    // Adjust if off-screen
+    if (left + rect.width > window.innerWidth) {
+      left = window.innerWidth - rect.width - 10;
+    }
+    if (top + rect.height > window.innerHeight) {
+      top = window.innerHeight - rect.height - 10;
+    }
+
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+    menu.style.visibility = 'visible';
+
+    // Close on click outside
+    setTimeout(() => {
+      document.addEventListener(
+        'click',
+        function closeMenu() {
+          menu.remove();
+          document.removeEventListener('click', closeMenu);
+        },
+        { once: true },
+      );
+    }, 0);
+  }
 
   /**
    * Add user to roster

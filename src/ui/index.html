@@ -24,10 +24,10 @@
     <script type="importmap">
       {
         "imports": {
-          "_tinybase": "https://cdn.jsdelivr.net/npm/tinybase@6.7.2/+esm",
-          "_tinybase/persisters/persister-indexed-db": "https://cdn.jsdelivr.net/npm/tinybase@6.7.2/persisters/persister-indexed-db/+esm",
-          "_tinybase/synchronizers/synchronizer-ws-client": "https://cdn.jsdelivr.net/npm/tinybase@6.7.2/synchronizers/synchronizer-ws-client/+esm",
-          "_tinybase/persisters/persister-browser": "https://cdn.jsdelivr.net/npm/tinybase@6.7.2/persisters/persister-browser/+esm",
+          "tinybase": "https://cdn.jsdelivr.net/npm/tinybase@6.7.2/+esm",
+          "tinybase/persisters/persister-indexed-db": "https://cdn.jsdelivr.net/npm/tinybase@6.7.2/persisters/persister-indexed-db/+esm",
+          "tinybase/synchronizers/synchronizer-ws-client": "https://cdn.jsdelivr.net/npm/tinybase@6.7.2/synchronizers/synchronizer-ws-client/+esm",
+          "tinybase/persisters/persister-browser": "https://cdn.jsdelivr.net/npm/tinybase@6.7.2/persisters/persister-browser/+esm",
           "reefjs": "https://cdn.jsdelivr.net/npm/reefjs@13/+esm",
           "marked": "https://cdn.jsdelivr.net/npm/marked@17.0.0/+esm"
         }
@@ -566,13 +566,18 @@
         transition: var(--transition);
         gap: var(--spacing-xs);
         font-size: 0.9em;
+        cursor: pointer;
       }
 
       #roster .user-item:hover {
         background: var(--background-alt);
       }
 
-      #roster .user-item > span {
+      #roster .user-item .user-avatar {
+        flex-shrink: 0;
+      }
+
+      #roster .user-item .user-name {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -580,7 +585,7 @@
         min-width: 0;
       }
 
-      #roster .user-item.current-user > span {
+      #roster .user-item.current-user .user-name {
         font-weight: bold;
       }
 
@@ -600,6 +605,39 @@
       #roster .logout-btn:hover {
         background: var(--background-alt);
         color: var(--text-main);
+      }
+
+      /* User Context Menu Styles */
+      .user-context-menu {
+        position: fixed;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--border-radius);
+        padding: 4px 0;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+        z-index: 10000;
+        min-width: 160px;
+      }
+
+      .user-context-menu-item {
+        padding: 8px 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        color: var(--text-main);
+        transition: var(--transition);
+      }
+
+      .user-context-menu-item:hover {
+        background: var(--background-alt);
+      }
+
+      .user-context-menu-item i {
+        font-size: 16px;
+        width: 20px;
+        text-align: center;
       }
 
       #roster {
@@ -1442,11 +1480,11 @@
         overflow-y: auto;
         position: relative;
       }
-      
+
       #thread-original-message.expanded {
         max-height: 700px;
       }
-      
+
       #thread-expand-toggle {
         position: absolute;
         bottom: 8px;
@@ -1463,12 +1501,12 @@
         transition: var(--transition);
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       }
-      
+
       #thread-expand-toggle:hover {
         color: var(--text-main);
         background: var(--background-alt);
       }
-      
+
       #thread-original-message.has-overflow #thread-expand-toggle {
         display: block;
       }
@@ -2537,7 +2575,7 @@
       }
     </script>
     <!-- Main Container with Flex Layout -->
-    <div id="main-container">
+    <div id="main-container" class="chat-page">
       <!-- Channel Panel -->
       <div id="channel-panel">
         <!-- Room Info Header with Dropdown -->
@@ -2582,10 +2620,6 @@
             <div class="channel-section-list" id="dm-list">
               <!-- DM items will be added here -->
             </div>
-            <button class="section-add-btn" id="dm-add-btn">
-              <i class="ri-add-line"></i>
-              <span>Add Teammate</span>
-            </button>
           </div>
         </div>
 

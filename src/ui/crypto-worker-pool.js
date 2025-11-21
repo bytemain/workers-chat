@@ -3,6 +3,7 @@
  * Manages multiple worker threads for load balancing and task scheduling
  * Avoids main thread blocking and improves encryption performance
  */
+import Worker from './crypto.worker.js?worker';
 
 export class CryptoWorkerPool {
   /**
@@ -54,7 +55,7 @@ export class CryptoWorkerPool {
    * Create a new worker
    */
   createWorker() {
-    const worker = new Worker('./crypto.worker.js', { type: 'module' });
+    const worker = new Worker();
     this.workers.push(worker);
     this.activeTasksPerWorker.set(worker, 0);
     this.workerIdleTime.set(worker, Date.now());
