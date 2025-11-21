@@ -450,11 +450,6 @@
         button {
           font-size: max(16px, 1em) !important;
         }
-
-        /* Adjust room info display in mobile dropdown */
-        #right-sidebar #room-info {
-          border-bottom: 2px solid #ddd;
-        }
       }
 
       chat-message .username {
@@ -575,6 +570,10 @@
 
       #roster .user-item .user-avatar {
         flex-shrink: 0;
+      }
+
+      #roster .user-item .user-avatar::part(svg) {
+        border-radius: 50%;
       }
 
       #roster .user-item .user-name {
@@ -2322,16 +2321,6 @@
 
       .settings-btn:active {
         transform: rotate(90deg) scale(0.95);
-      }
-
-      #room-info h3 {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      #room-info h3 > span:first-child {
-        flex: 1;
       }
 
       /* Left Sidebar - Hidden, we use dropdown now */

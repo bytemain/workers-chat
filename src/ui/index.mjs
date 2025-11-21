@@ -2721,7 +2721,7 @@ function saveHiddenChannels(channels) {
 // Create a new channel (show prompt and switch to it)
 function createNewChannel() {
   const channelName = prompt(
-    'Enter channel name (2-32 characters, letters/numbers/underscore/hyphen only):',
+    'Enter channel name (1-32 characters, letters/numbers/underscore/hyphen only):',
   );
 
   if (!channelName) {
@@ -2731,8 +2731,8 @@ function createNewChannel() {
   // Validate channel name
   const trimmed = channelName.trim().toLowerCase();
 
-  if (trimmed.length < 2 || trimmed.length > 32) {
-    alert('Channel name must be between 2 and 32 characters');
+  if (trimmed.length < 1 || trimmed.length > 32) {
+    alert('Channel name must be between 1 and 32 characters');
     return;
   }
 
