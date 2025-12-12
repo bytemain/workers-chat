@@ -3,14 +3,6 @@
  */
 
 /**
- * Check if the current device is mobile (screen width <= 600px)
- * @returns {boolean}
- */
-export function isMobile() {
-  return window.innerWidth <= 600;
-}
-
-/**
  * Check if the current device is tablet (screen width between 601px and 1024px)
  * @returns {boolean}
  */
@@ -28,10 +20,9 @@ export function isDesktop() {
 
 /**
  * Get the current device type
- * @returns {'mobile' | 'tablet' | 'desktop'}
+ * @returns {'tablet' | 'desktop'}
  */
 export function getDeviceType() {
-  if (isMobile()) return 'mobile';
   if (isTablet()) return 'tablet';
   return 'desktop';
 }

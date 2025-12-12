@@ -812,33 +812,6 @@ function injectStyles() {
       margin: 0 var(--spacing);
     }
 
-    /* Mobile Responsive */
-    @media (max-width: 600px) {
-      #pinned-messages-container {
-        position: fixed;
-        top: var(--mobile-nav-bar-height);
-        right: 0;
-        left: 0;
-        bottom: 0;
-      }
-
-      .pinned-panel {
-        position: fixed;
-        top: var(--mobile-nav-bar-height);
-        right: 0;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        max-width: 100%;
-        max-height: none;
-        border-radius: 0;
-      }
-
-      .pinned-message-actions {
-        flex-direction: row;
-      }
-    }
-
     /* Remix Icon spin helper */
     .ri-spin {
       animation: spin 1s linear infinite;

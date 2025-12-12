@@ -121,13 +121,11 @@
 
 #### 技术实现
 
-- 完善 `src/ui/mobile/channel-info.mjs` 的 Threads tab
 - TinyBase Indexes: `threadsByActivity`
 - API: `/api/room/:name/threads` (GET)
 
 #### 相关文件
 
-- `src/ui/mobile/channel-info.mjs` ⚠️ Line 624: TODO
 - `src/ui/index.mjs` - 扩展现有 thread 功能
 - `src/api/chat.mjs` - 添加 threads 查询 API
 
@@ -504,13 +502,6 @@
 ---
 
 ## 🎨 UI/UX 改进清单
-
-### 移动端优化
-
-- [ ] 手势操作（滑动返回、长按菜单）
-- [ ] 触觉反馈
-- [ ] 移动端导航优化
-- [ ] 横屏布局支持
 
 ### 桌面端优化
 
