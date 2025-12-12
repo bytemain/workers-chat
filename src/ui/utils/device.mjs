@@ -3,7 +3,7 @@
  */
 
 /**
- * Check if the current device is tablet (screen width between 601px and 1024px)
+ * Check if the current device is tablet (screen width from 601px to 1024px inclusive)
  * @returns {boolean}
  */
 export function isTablet() {
