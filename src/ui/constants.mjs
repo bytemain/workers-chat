@@ -5,7 +5,6 @@
 // Header/Top bar heights
 export const HEADER_HEIGHT = 48; // px - for channel-info-bar, titlebar
 export const FOOTER_HEIGHT = 60; // px - for user-info-card, channel-add
-export const MOBILE_NAV_BAR_HEIGHT = 56; // px - mobile navigation bar (also used for room selector on channel list page)
 
 // Sidebar widths
 export const LEFT_SIDEBAR_WIDTH = 72; // px

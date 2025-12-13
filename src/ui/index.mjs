@@ -9,9 +9,7 @@ import { getCryptoPool } from './crypto-worker-pool.js';
 import { createReactiveState } from './react/state.mjs';
 import { api } from './api.mjs';
 import { generateRandomUsername } from './utils/random.mjs';
-import { isMobile } from './utils/device.mjs';
 import { updateRoomList } from './room-list.mjs';
-import * as MobileUI from './mobile.mjs';
 import { initCryptoCompatCheck } from '../common/crypto-compat.js';
 import {
   MAX_MESSAGE_LENGTH,
@@ -1918,16 +1916,13 @@ window.openThread = async function (messageId) {
   threadPanel.classList.add('visible');
   chatlog.classList.add('thread-open');
 
-  // Also hide main chat input on mobile
+  // Also hide main chat input when thread is open
   const mainInputContainer = document.getElementById(
     'main-chat-input-container',
   );
   if (mainInputContainer) {
     mainInputContainer.classList.add('thread-open');
   }
-
-  // Handle mobile thread panel
-  MobileUI.handleMobileThreadPanel(true);
 
   // Load and display root message using message-element
   const rootMessage = messagesCache.get(rootMessageId);
@@ -1996,9 +1991,6 @@ window.closeThread = function () {
   if (mainInputContainer) {
     mainInputContainer.classList.remove('thread-open');
   }
-
-  // Handle mobile thread panel
-  MobileUI.handleMobileThreadPanel(false);
 
   if (threadInputComponent) {
     threadInputComponent.clear();
@@ -2303,155 +2295,6 @@ function showMessageActionsMenu(
 }
 window.showMessageActionsMenu = showMessageActionsMenu;
 
-// Show mobile context menu for message actions
-function showMobileContextMenu(
-  messageWrapper,
-  data,
-  isInThread,
-  isThreadOriginal,
-) {
-  // Remove existing context menu if any
-  const existingMenu = document.querySelector('.mobile-context-menu');
-  if (existingMenu) {
-    existingMenu.remove();
-  }
-
-  // Create context menu container
-  const menu = document.createElement('div');
-  menu.className = 'mobile-context-menu';
-
-  // Create backdrop
-  const backdrop = document.createElement('div');
-  backdrop.className = 'mobile-context-menu-backdrop';
-
-  // Create menu content
-  const menuContent = document.createElement('div');
-  menuContent.className = 'mobile-context-menu-content';
-
-  // Add menu items based on message type
-  const menuItems = [];
-
-  // Copy button (always available)
-  if (!data.message.startsWith('FILE:')) {
-    menuItems.push({
-      icon: 'ri-file-copy-line',
-      text: 'Copy',
-      action: async () => {
-        await navigator.clipboard.writeText(data.message);
-        closeContextMenu();
-      },
-    });
-  }
-
-  // Reply button (in main chat)
-  if (!isInThread) {
-    menuItems.push({
-      icon: 'ri-reply-line',
-      text: 'Reply',
-      action: () => {
-        const preview = data.message.substring(0, 50);
-        setReplyTo(data.messageId, data.name, preview, data.messageId);
-        closeContextMenu();
-      },
-    });
-  }
-
-  // Pin button (only in main chat, not in thread)
-  if (!isInThread && !isThreadOriginal) {
-    menuItems.push({
-      icon: 'ri-pushpin-line',
-      text: 'Pin',
-      action: async () => {
-        try {
-          await pinMessage(data.messageId);
-          closeContextMenu();
-        } catch (error) {
-          console.error('Failed to pin message:', error);
-        }
-      },
-    });
-  }
-
-  // Edit button (if user owns the message)
-  if (
-    data.name === userState.value.username &&
-    !data.message.startsWith('FILE:')
-  ) {
-    menuItems.push({
-      icon: 'ri-edit-line',
-      text: 'Edit',
-      action: () => {
-        showEditDialog(data);
-        closeContextMenu();
-      },
-    });
-  }
-
-  // Delete button (if user owns the message)
-  if (data.name === userState.value.username) {
-    menuItems.push({
-      icon: 'ri-delete-bin-line',
-      text: 'Delete',
-      color: '#dc3545',
-      action: async () => {
-        if (confirm('Delete this message? This action cannot be undone.')) {
-          try {
-            if (window.messageList) {
-              window.messageList.deleteMessage(data.messageId);
-              showReEditBanner(data.message);
-              closeContextMenu();
-            }
-          } catch (err) {
-            console.error('Error deleting message:', err);
-            alert(err.message || 'Failed to delete message');
-          }
-        }
-      },
-    });
-  }
-
-  // Render menu items
-  menuItems.forEach((item) => {
-    const menuItem = document.createElement('button');
-    menuItem.className = 'mobile-context-menu-item';
-    menuItem.innerHTML = `
-      <i class="${item.icon}"></i>
-      <span>${item.text}</span>
-    `;
-    if (item.color) {
-      menuItem.style.color = item.color;
-    }
-    menuItem.onclick = item.action;
-    menuContent.appendChild(menuItem);
-  });
-
-  // Add cancel button
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'mobile-context-menu-cancel';
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.onclick = closeContextMenu;
-  menuContent.appendChild(cancelBtn);
-
-  menu.appendChild(backdrop);
-  menu.appendChild(menuContent);
-  document.body.appendChild(menu);
-
-  // Close on backdrop click
-  backdrop.onclick = closeContextMenu;
-
-  // Animate in
-  requestAnimationFrame(() => {
-    menu.classList.add('show');
-  });
-
-  function closeContextMenu() {
-    menu.classList.remove('show');
-    setTimeout(() => {
-      menu.remove();
-    }, 200);
-  }
-}
-
 // Locate and highlight a message in the main chat area
 function locateMessageInMainChat(messageId) {
   // Find the message in main chat
@@ -2625,23 +2468,6 @@ async function switchToChannel(channel) {
   if (isDM && window.P2PChat) {
     const dmUsername = normalizedChannel.replace('dm-', '');
     await window.P2PChat.init(dmUsername);
-  }
-
-  // Update mobile chat title if on mobile
-  if (isMobile()) {
-    const chatTitle = document.getElementById('mobile-chat-title');
-    if (chatTitle) {
-      const isDM = normalizedChannel.startsWith('dm-');
-      if (isDM) {
-        const dmUsername = normalizedChannel.substring(3);
-        chatTitle.textContent =
-          dmUsername === userState.value.username
-            ? `${userState.value.username} (you)`
-            : dmUsername;
-      } else {
-        chatTitle.textContent = '#' + normalizedChannel;
-      }
-    }
   }
 }
 
@@ -4308,20 +4134,8 @@ async function startChat() {
     }
   }
 
-  // Setup mobile keyboard handler - pass function to check if message list is at bottom
-  MobileUI.setupMobileKeyboardHandler(chatlog, () => {
-    // Check scroll position directly since message-list maintains the state internally
-    const container = chatlog;
-    return (
-      container.scrollTop + container.clientHeight >= container.scrollHeight - 1
-    );
-  });
-
   // Initialize left sidebar with room list and user info
   initializeLeftSidebar();
-
-  // Initialize mobile navigation if on mobile
-  initMobileNavigation();
 
   // Initialize pinned messages panel (Reef.js component)
   initPinnedMessages('body');
@@ -5112,249 +4926,6 @@ function getChannelsFromStore(store) {
 
 // Export for use in other modules
 window.getChannelsFromStore = getChannelsFromStore;
-
-// ============================================
-// Mobile Navigation System (Uses mobile.mjs module)
-// ============================================
-
-// Show mobile channel list page
-function showMobileChannelList() {
-  if (!isMobile()) return;
-
-  // Switch to channel list page
-  MobileUI.showMobileChannelList();
-
-  // Clear channel via chatState - URL sync happens automatically
-  if (chatState) {
-    chatState.clearChannel();
-  }
-
-  // Reset to general channel (don't set to null)
-  currentChannel = 'general';
-
-  // Update channel list display (data already in TinyBase)
-  updateMobileChannelList();
-}
-
-// Show mobile chat page
-function showMobileChatPage() {
-  if (!isMobile()) return;
-
-  MobileUI.showMobileChatPage();
-
-  // Update chat title
-  const chatTitle = document.getElementById('mobile-chat-title');
-  if (chatTitle && currentChannel) {
-    const isDM = currentChannel.startsWith('dm-');
-    if (isDM) {
-      const dmUsername = currentChannel.substring(3);
-      chatTitle.textContent =
-        dmUsername === userState.value.username
-          ? `${userState.value.username} (you)`
-          : dmUsername;
-    } else {
-      chatTitle.textContent = '#' + currentChannel;
-    }
-  }
-}
-
-// Update mobile channel list content
-function updateMobileChannelList() {
-  if (!isMobile()) return;
-
-  const channelsContainer = document.getElementById(
-    'mobile-channels-container',
-  );
-  const dmsContainer = document.getElementById('mobile-dms-container');
-
-  if (!channelsContainer || !dmsContainer) return;
-
-  // Get hidden channels
-  const hiddenChannels = getHiddenChannels();
-
-  // Clear containers
-  channelsContainer.innerHTML = '';
-  dmsContainer.innerHTML = '';
-
-  // Get channels from TinyBase
-  const channelsList = getChannelsFromStore(window.store);
-
-  // Render channels (filter out hidden and DM channels)
-  const visibleChannels = channelsList.filter(
-    (item) =>
-      !hiddenChannels.includes(item.channel) &&
-      !item.channel.toLowerCase().startsWith('dm-'),
-  );
-
-  // Sort channels: 'general' at the top, others by lastUsed descending
-  const sortedChannels = [...visibleChannels].sort((a, b) => {
-    const aIsGeneral = a.channel.toLowerCase() === 'general';
-    const bIsGeneral = b.channel.toLowerCase() === 'general';
-
-    // If one is 'general', it comes first
-    if (aIsGeneral && !bIsGeneral) return -1;
-    if (!aIsGeneral && bIsGeneral) return 1;
-
-    // Both are general or neither is general, sort by lastUsed
-    return (b.lastUsed || 0) - (a.lastUsed || 0);
-  });
-
-  if (sortedChannels.length === 0) {
-    channelsContainer.innerHTML = `
-      <div style="padding: var(--spacing); text-align: center; color: var(--text-muted);">
-        No channels yet
-      </div>
-    `;
-  } else {
-    sortedChannels.forEach((item) => {
-      const div = document.createElement('div');
-      div.className = 'mobile-channel-item';
-
-      const unreadCount = channelList
-        ? channelList.getChannelUnreadCount(item.channel)
-        : 0;
-      const unreadBadgeHTML =
-        unreadCount > 0
-          ? `<span class="channel-unread-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>`
-          : '';
-
-      div.innerHTML = `
-        <div class="mobile-channel-item-icon">
-          <i class="ri-hashtag"></i>
-        </div>
-        <div class="mobile-channel-item-content">
-          <div class="mobile-channel-item-name">${item.channel}${unreadBadgeHTML}</div>
-          <div class="mobile-channel-item-count">${item.count || 0} messages</div>
-        </div>
-        <div class="mobile-channel-item-arrow">
-          <i class="ri-arrow-right-s-line"></i>
-        </div>
-      `;
-
-      div.onclick = () => {
-        switchToChannel(item.channel);
-        showMobileChatPage();
-      };
-
-      channelsContainer.appendChild(div);
-    });
-  }
-
-  // Render DMs (self DM)
-  if (userState.value.username) {
-    const selfDM = document.createElement('div');
-    selfDM.className = 'mobile-channel-item';
-
-    selfDM.innerHTML = `
-      <div class="mobile-channel-item-icon">
-        <i class="ri-user-3-line"></i>
-      </div>
-      <div class="mobile-channel-item-content">
-        <div class="mobile-channel-item-name">${userState.value.username} (you)</div>
-        <div class="mobile-channel-item-count">Personal space</div>
-      </div>
-      <div class="mobile-channel-item-arrow">
-        <i class="ri-arrow-right-s-line"></i>
-      </div>
-    `;
-
-    selfDM.onclick = () => {
-      const selfChannelName = `dm-${userState.value.username}`;
-      switchToChannel(selfChannelName);
-      showMobileChatPage();
-    };
-
-    dmsContainer.appendChild(selfDM);
-  }
-}
-
-// Initialize mobile navigation
-function initMobileNavigation() {
-  if (!isMobile()) return;
-
-  // Back button from chat to channel list
-  const chatBackBtn = document.getElementById('mobile-chat-back');
-  if (chatBackBtn) {
-    chatBackBtn.addEventListener('click', () => {
-      showMobileChannelList();
-    });
-  }
-
-  // Initialize mobile room selector
-  initMobileRoomSelector();
-
-  // Initialize mobile channel info component
-  MobileUI.initMobileNavigation();
-
-  // If we have a current channel, show chat page, otherwise show channel list
-  if (currentChannel) {
-    showMobileChatPage();
-  } else {
-    showMobileChannelList();
-  }
-}
-
-// Initialize mobile room selector using room-list component
-function initMobileRoomSelector() {
-  const updateMobileRoomName = MobileUI.initMobileRoomSelector(
-    roomname,
-    populateMobileRoomDropdown,
-  );
-
-  if (updateMobileRoomName) {
-    // Listen for room changes (popstate handles pathname changes)
-    window.addEventListener('popstate', () => {
-      updateMobileRoomName();
-    });
-  }
-}
-
-function getRecentRooms() {
-  const history = getRoomHistory();
-
-  // Prepare room data for room-list component
-  const rooms = history.map((item) => {
-    const isPrivate = item.name.length === 64;
-    return {
-      name: item.name,
-      displayName: isPrivate ? 'Private Room' : item.name,
-      isPrivate: isPrivate,
-      unreadCount: getUnreadCount(item.name),
-    };
-  });
-
-  return rooms;
-}
-
-// Populate mobile room dropdown using room-list component
-function populateMobileRoomDropdown() {
-  const mobileRoomDropdown = document.getElementById('mobile-room-dropdown');
-  if (!mobileRoomDropdown) return;
-
-  const rooms = getRecentRooms();
-  // Callbacks for room-list component
-  const callbacks = {
-    onRoomClick: (roomName) => {
-      navigateToRoom(roomName);
-    },
-    onCreateRoom: () => {
-      navigateToRoom('');
-    },
-    onRoomContextMenu: (e, roomName) => {
-      // Can add context menu functionality later if needed
-      e.preventDefault();
-    },
-  };
-
-  // Use updateRoomList from room-list.mjs
-  updateRoomList(mobileRoomDropdown, rooms, roomname, callbacks);
-}
-
-// Export mobile functions
-window.showMobileChannelList = showMobileChannelList;
-window.showMobileChatPage = showMobileChatPage;
-window.updateMobileChannelList = updateMobileChannelList;
-window.initMobileNavigation = initMobileNavigation;
 
 // Cleanup TinyBase resources on page unload
 window.addEventListener('beforeunload', async () => {

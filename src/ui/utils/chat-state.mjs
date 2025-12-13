@@ -48,7 +48,7 @@ export const chatState = store(
       state.roomName = roomName;
     },
 
-    // Action: Clear channel (for mobile channel list)
+    // Action: Clear channel
     clearChannel(state) {
       state.channel = null;
       state.threadId = null;
@@ -119,14 +119,6 @@ export function initChatState() {
         );
         // Store will be updated by switchToChannel calling chatState.switchChannel
         window.switchToChannel(urlChannel);
-
-        // On mobile, ensure we're showing the chat page
-        if (window.isMobile && window.isMobile()) {
-          const MobileUI = window.MobileUI;
-          if (MobileUI && MobileUI.showMobileChatPage) {
-            MobileUI.showMobileChatPage();
-          }
-        }
       }
     },
   });
