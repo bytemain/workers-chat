@@ -4671,6 +4671,23 @@ function clearUnreadCount(roomName) {
   setUnreadCount(roomName, 0);
 }
 
+// Get recent rooms with metadata for room list component
+function getRecentRooms() {
+  const history = getRoomHistory();
+  return history.map((item) => {
+    const name = item.name;
+    // Private rooms are identified by 64-character hex strings
+    const isPrivate = /^[0-9a-f]{64}$/.test(name);
+    return {
+      name,
+      // Show first 8 chars of private room IDs (standard hex preview length)
+      displayName: isPrivate ? name.slice(0, 8) + '...' : name,
+      isPrivate,
+      unreadCount: getUnreadCount(name),
+    };
+  });
+}
+
 // Update room list UI - Now using isolated room-list component
 function updateRoomListUI() {
   const roomDropdown = document.querySelector('#room-dropdown');
