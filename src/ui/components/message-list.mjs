@@ -12,8 +12,6 @@ import { signal, component } from 'reefjs';
 import { throttle } from '../../common/utils.mjs';
 import { listenReefEvent } from '../utils/reef-helpers.mjs';
 import logger from '../../common/logger.mjs';
-import { tryDecryptMessage } from '../utils/message-crypto.mjs';
-import CryptoUtils from '../../common/crypto-utils.js';
 import { markChannelAsRead, getUnreadCount } from '../tinybase/read-status.mjs';
 import { forEach } from '../react/flow.mjs';
 import { IndexesIds } from '../tinybase/index.mjs';
@@ -25,12 +23,11 @@ import { Disposable, MutableDisposable } from '../../common/disposable.mjs';
  * @typedef {Object} RawMessage
  * @property {string} messageId - Unique message identifier
  * @property {string} name - Username of the message author
- * @property {string} message - Message text content (may be encrypted)
+ * @property {string} message - Message text content
  * @property {number} timestamp - Unix timestamp in milliseconds
  * @property {string} channel - Channel name where the message was sent
  * @property {string|null} replyToId - ID of the message being replied to, if any
  * @property {number|null} editedAt - Unix timestamp of last edit, if edited
- * @property {boolean} encrypted - Whether the message content is encrypted
  */
 
 const SignalName = 'messagesSignal';
@@ -41,7 +38,6 @@ const tableId = 'messages';
  * @param {import('tinybase').Store} tinybaseStore - TinyBase store instance
  * @param {import('tinybase').Indexes} tinybaseIndexes - TinyBase indexes instance for O(log n) filtering
  * @param {string} containerSelector - CSS selector for container element
- * @param {Object} encryptionContext - Encryption context { currentRoomKey, isRoomEncrypted }
  * @param {Map} messagesCache - Global messages cache for legacy features (threads, etc.)
  * @param {Object} readStatusStore - TinyBase store for read status tracking
  * @param {string} roomName - Current room name
@@ -52,7 +48,6 @@ export function initMessageList(
   tinybaseStore,
   tinybaseIndexes,
   containerSelector,
-  encryptionContext,
   messagesCache,
   readStatusStore,
   roomName,
@@ -100,7 +95,7 @@ export function initMessageList(
         `📇 Index query: found ${messageIds.length} messages in #${currentChannel}`,
       );
 
-      // Convert to message objects (原始加密数据)
+      // Convert to message objects
       /** @type {RawMessage[]} */
       const rawMessagesList = messageIds.map((messageId) => {
         const row = tinybaseStore.getRow('messages', messageId);
@@ -112,21 +107,13 @@ export function initMessageList(
           channel: row.channel || 'general',
           replyToId: row.replyToId || null,
           editedAt: row.editedAt || null,
-          encrypted: CryptoUtils.isEncrypted(row.text || ''),
         };
       });
       // Note: Already sorted by timestamp via index definition!
 
-      // 解密所有消息（并行处理）
-      const decryptionPromises = rawMessagesList.map(async (msg) => {
-        // 解密主消息
-        const decryptedMessage = await tryDecryptMessage(
-          { message: msg.message },
-          encryptionContext.currentRoomKey,
-          encryptionContext.isRoomEncrypted,
-        );
-
-        // 处理 replyTo - 需要从 TinyBase 获取父消息并解密
+      // Process replyTo previews
+      const messagePromises = rawMessagesList.map(async (msg) => {
+        // 处理 replyTo - 需要从 TinyBase 获取父消息
         let replyTo = null;
         if (msg.replyToId) {
           // 从 TinyBase 获取父消息
@@ -142,21 +129,14 @@ export function initMessageList(
           );
 
           if (parentData) {
-            // 解密父消息
-            const decryptedParent = await tryDecryptMessage(
-              { message: parentData },
-              encryptionContext.currentRoomKey,
-              encryptionContext.isRoomEncrypted,
-            );
-
             // 生成预览（前 50 个字符）
-            let preview = decryptedParent;
+            let preview = parentData;
             if (preview.startsWith('FILE:')) {
               const parts = preview.substring(5).split('|');
               preview = parts[1] || 'File'; // 使用文件名作为预览
             }
             preview = preview.substring(0, 50);
-            if (decryptedParent.length > 50) {
+            if (parentData.length > 50) {
               preview += '...';
             }
 
@@ -164,21 +144,19 @@ export function initMessageList(
               messageId: msg.replyToId,
               username: parentUsername || 'Anonymous',
               preview: preview,
-              message: decryptedParent, // 完整解密后的消息（用于某些 UI 场景）
+              message: parentData,
             };
           }
         }
 
-        // 返回完整的、解密后的消息数据
         return {
           ...msg,
-          message: decryptedMessage, // 覆盖：已解密的消息
-          replyTo: replyTo, // 覆盖：已处理预览的 replyTo
+          replyTo: replyTo,
         };
       });
 
-      // 等待所有解密完成
-      const messagesList = await Promise.all(decryptionPromises);
+      // 等待所有处理完成
+      const messagesList = await Promise.all(messagePromises);
 
       // 缓存消息到全局 messagesCache（用于线程等遗留功能）
       messagesList.forEach((msg) => {
@@ -232,7 +210,7 @@ export function initMessageList(
       messagesSignal.version++; // 增加版本号，强制重新渲染
 
       logger.log(
-        '📊 Messages synced to Signal (decrypted):',
+        '📊 Messages synced to Signal:',
         messagesList.length,
       );
     } catch (error) {
@@ -295,23 +273,15 @@ export function initMessageList(
         // 从 TinyBase 读取最新数据
         const row = store.getRow(tableId, rowId);
 
-        // 解密消息（如果需要）
-        const decryptedMessage = await tryDecryptMessage(
-          { message: row.text || '' },
-          encryptionContext.currentRoomKey,
-          encryptionContext.isRoomEncrypted,
-        );
-
         // 直接用 setData 更新，触发 message-element 内部的 Reef.js 重新渲染
         messageElement.setData({
           messageId: rowId,
           name: row.username || 'Anonymous',
-          message: decryptedMessage,
+          message: row.text || '',
           timestamp: row.timestamp || Date.now(),
           channel: row.channel || 'general',
           replyToId: row.replyToId || null,
           editedAt: row.editedAt || null,
-          encrypted: CryptoUtils.isEncrypted(row.text || ''),
         });
 
         logger.log(`✅ Updated message element for row: ${rowId}`);
@@ -473,10 +443,6 @@ export function initMessageList(
       channel: channel,
       timestamp: Date.now(),
     };
-
-    if (options.encrypted) {
-      messageData.encrypted = true;
-    }
 
     if (options.replyToId) {
       messageData.replyToId = options.replyToId;

@@ -1,4 +1,3 @@
-import { decryptPins } from './utils/pin-crypto.mjs';
 import { MultipartUploader } from './utils/multipart-uploader.mjs';
 
 // API Client class for server requests

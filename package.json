@@ -22,8 +22,7 @@
     "ruply": "^1.0.1",
     "rxdb": "^16.20.0",
     "rxjs": "^7.8.2",
-    "tinybase": "^6.7.2",
-    "webcrypto-liner": "^1.4.3"
+    "tinybase": "^6.7.2"
   },
   "devDependencies": {
     "ajv": "^8.17.1",
