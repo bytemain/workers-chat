@@ -21,8 +21,3 @@ export async function tryDecryptMessage(data) {
 export async function decryptMessageText(message) {
   return message;
 }
-
-/**
- * No-op (crypto removed)
- */
-export function clearDecryptionCache() {}

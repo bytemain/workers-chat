@@ -3453,9 +3453,7 @@ async function startChat() {
       });
 
       // 2. 上传文件到服务器
-      let fileToUpload = file;
-
-      const result = await api.uploadFileAuto(roomname, fileToUpload, {
+      const result = await api.uploadFileAuto(roomname, file, {
         onProgress: (progress) => {
           window.messageList.updateTempMessage(tempMessageId, {
             message: `FILE:${JSON.stringify({
