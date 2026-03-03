@@ -2659,10 +2659,14 @@ function startRoomChooser() {
 
 // Show room selector in chatlog
 function showRoomSelector() {
+  const mainContainer = document.getElementById('main-container');
   const roomSelector = document.getElementById('room-selector');
   const spacer = document.getElementById('spacer');
   const chatInput = document.getElementById('main-chat-input-container');
 
+  if (mainContainer) {
+    mainContainer.classList.add('home-mode');
+  }
   if (roomSelector) {
     roomSelector.classList.add('visible');
   }
@@ -2672,14 +2676,21 @@ function showRoomSelector() {
   if (chatInput) {
     chatInput.style.display = 'none';
   }
+
+  // Populate recent rooms
+  populateRecentRooms();
 }
 
 // Hide room selector when entering a room
 function hideRoomSelector() {
+  const mainContainer = document.getElementById('main-container');
   const roomSelector = document.getElementById('room-selector');
   const spacer = document.getElementById('spacer');
   const chatInput = document.getElementById('main-chat-input-container');
 
+  if (mainContainer) {
+    mainContainer.classList.remove('home-mode');
+  }
   if (roomSelector) {
     roomSelector.classList.remove('visible');
   }
@@ -2689,6 +2700,42 @@ function hideRoomSelector() {
   if (chatInput) {
     chatInput.style.display = 'block';
   }
+}
+
+// Populate recent rooms list on the home page
+function populateRecentRooms() {
+  const section = document.getElementById('recent-rooms-section');
+  const list = document.getElementById('recent-room-list');
+  if (!section || !list) return;
+
+  const rooms = getRecentRooms();
+  if (rooms.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = '';
+  list.innerHTML = '';
+
+  rooms.forEach((room) => {
+    const item = document.createElement('div');
+    item.className = 'recent-room-item';
+
+    const icon = document.createElement('i');
+    icon.className = room.isPrivate ? 'ri-lock-line' : 'ri-hashtag';
+    item.appendChild(icon);
+
+    const name = document.createElement('span');
+    name.className = 'recent-room-name';
+    name.textContent = room.displayName;
+    item.appendChild(name);
+
+    item.addEventListener('click', () => {
+      navigateToRoom(room.name);
+    });
+
+    list.appendChild(item);
+  });
 }
 
 // Room info state variables (declared at module level for WebSocket access)

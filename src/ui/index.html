@@ -301,6 +301,101 @@
         margin: 1em 0;
       }
 
+      /* Home mode - clean centered page without IM chrome */
+      #main-container.home-mode #channel-panel,
+      #main-container.home-mode #channel-info-bar,
+      #main-container.home-mode #main-chat-input-container,
+      #main-container.home-mode #reply-indicator,
+      #main-container.home-mode #thread-panel,
+      #main-container.home-mode #right-sidebar {
+        display: none;
+      }
+
+      #main-container.home-mode #chatroom {
+        align-items: center;
+        justify-content: center;
+      }
+
+      #main-container.home-mode #chatlog {
+        max-width: 480px;
+        width: 100%;
+        justify-content: center;
+        overflow-y: auto;
+      }
+
+      #main-container.home-mode #room-selector {
+        flex: unset;
+      }
+
+      .home-title {
+        text-align: center;
+        margin-bottom: 2em;
+      }
+
+      .home-title h1 {
+        font-size: 1.5em;
+        font-weight: 700;
+        margin: 0 0 0.25em;
+      }
+
+      .home-title p {
+        color: var(--text-muted);
+        font-size: 0.9em;
+      }
+
+      /* Recent rooms section */
+      .room-selector-recent {
+        margin-top: 1em;
+      }
+
+      .room-selector-recent-title {
+        font-size: 0.9em;
+        color: var(--text-muted);
+        font-weight: 500;
+        margin-bottom: 0.5em;
+      }
+
+      .recent-room-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .recent-room-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5em;
+        padding: 0.5em 0.75em;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+        font-size: 0.95em;
+        color: var(--text-main);
+      }
+
+      .recent-room-item:hover {
+        background-color: var(--background-alt);
+      }
+
+      .recent-room-item i {
+        color: var(--text-muted);
+        font-size: 1em;
+        flex-shrink: 0;
+      }
+
+      .recent-room-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .recent-room-time {
+        font-size: 0.8em;
+        color: var(--text-muted);
+        flex-shrink: 0;
+      }
+
       chat-message .username {
         font-weight: bold;
         color: var(--text-main);
@@ -1933,26 +2028,31 @@
           <!-- Room Selector (shown when no room is selected) -->
           <div id="room-selector">
             <div class="room-selector-content">
+              <div class="home-title">
+                <h1>Workers Chat</h1>
+                <p>Real-time chat powered by Cloudflare Workers</p>
+              </div>
+
               <div class="room-selector-section">
-                <label class="room-selector-label">Enter Your Name</label>
+                <label class="room-selector-label">Your Name</label>
                 <input
                   id="selector-name-input"
                   type="text"
                   class="room-selector-input"
-                  placeholder="Your name"
+                  placeholder="Enter your name"
                   autocomplete="name"
                   maxlength="50"
                 />
               </div>
 
               <div class="room-selector-section">
-                <label class="room-selector-label">Join a Public Room</label>
+                <label class="room-selector-label">Room Name</label>
                 <div class="room-selector-input-group">
                   <input
                     id="selector-room-input"
                     type="text"
                     class="room-selector-input"
-                    placeholder="Room name"
+                    placeholder="Enter room name"
                     autocomplete="off"
                     maxlength="100"
                   />
@@ -1972,6 +2072,11 @@
                 >
                   🔒 Create a Private Room
                 </button>
+              </div>
+
+              <div id="recent-rooms-section" class="room-selector-recent" style="display: none">
+                <div class="room-selector-recent-title">Recent Rooms</div>
+                <div id="recent-room-list" class="recent-room-list"></div>
               </div>
             </div>
           </div>
