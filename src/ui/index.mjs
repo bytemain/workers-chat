@@ -1865,28 +1865,6 @@ async function loadChannelMessages(channel) {
       console.error('Failed to sync messages from TinyBase:', error);
     }
   }
-
-  // Show welcome messages only on initial channel load
-  // Check if this is the first time showing messages
-  const isFirstLoad = !document.querySelector('.system-message');
-  if (isFirstLoad) {
-    addSystemMessage('* Hello ' + userState.value.username + '!');
-    addSystemMessage(
-      '* This is a app built with Cloudflare Workers Durable Objects. The source code ' +
-        'can be found at: https://github.com/bytemain/workers-chat',
-    );
-    addSystemMessage(
-      '* WARNING: Participants in this chat are random people on the internet. ' +
-        'Names are not authenticated; anyone can pretend to be anyone. Chat history is saved.',
-    );
-    if (roomname.length == 64) {
-      addSystemMessage(
-        '* This is a private room. You can invite someone to the room by sending them the URL.',
-      );
-    } else {
-      addSystemMessage('* Welcome to ' + documentTitlePrefix + '. Say hi!');
-    }
-  }
 }
 
 // Switch to a channel (sets it as current for sending messages)
@@ -2830,6 +2808,12 @@ async function startChat() {
       messagesCache, // 传入全局消息缓存
       window.readStatusStore, // 传入已读状态 store
       roomname, // 传入房间名
+      undefined, // channelList - set later
+      {
+        getCurrentUsername: () => userState.value.username,
+        getRoomDisplayName: () => documentTitlePrefix,
+        isPrivateRoom: roomname.length === 64,
+      },
     );
     console.log('✅ Message list component initialized');
 
