@@ -42,6 +42,10 @@ const tableId = 'messages';
  * @param {Object} readStatusStore - TinyBase store for read status tracking
  * @param {string} roomName - Current room name
  * @param {Object} channelList - Channel list component instance (for unread count updates)
+ * @param {Object} [welcomeConfig] - Welcome messages configuration for empty state
+ * @param {function} [welcomeConfig.getCurrentUsername] - Function that returns current username
+ * @param {function} [welcomeConfig.getRoomDisplayName] - Function that returns display name for the room
+ * @param {boolean} [welcomeConfig.isPrivateRoom] - Whether this is a private room
  * @returns {Object} Component instance and helper functions
  */
 export function initMessageList(
@@ -52,6 +56,7 @@ export function initMessageList(
   readStatusStore,
   roomName,
   channelList,
+  welcomeConfig,
 ) {
   // Reef.js Signal - 响应式消息数据
 
@@ -314,10 +319,35 @@ export function initMessageList(
 
     // 空状态
     if (allMessages.length === 0 && !messagesSignal.loading) {
+      let welcomeHtml = '';
+      if (welcomeConfig) {
+        const username = welcomeConfig.getCurrentUsername ? welcomeConfig.getCurrentUsername() : '';
+        const lines = [];
+        if (username) {
+          lines.push(`Hello ${username}!`);
+        }
+        lines.push(
+          'This is an app built with Cloudflare Workers Durable Objects. The source code ' +
+            'can be found at: <a href="https://github.com/bytemain/workers-chat" target="_blank" rel="noopener noreferrer">https://github.com/bytemain/workers-chat</a>',
+        );
+        lines.push(
+          'WARNING: Participants in this chat are random people on the internet. ' +
+            'Names are not authenticated; anyone can pretend to be anyone. Chat history is saved.',
+        );
+        if (welcomeConfig.isPrivateRoom) {
+          lines.push('This is a private room. You can invite someone to the room by sending them the URL.');
+        } else {
+          const roomDisplayName = welcomeConfig.getRoomDisplayName ? welcomeConfig.getRoomDisplayName() : '';
+          if (roomDisplayName) {
+            lines.push(`Welcome to ${roomDisplayName}. Say hi!`);
+          }
+        }
+        welcomeHtml = lines.map((line) => `<p class="system-message" style="color: #888; font-style: italic;">* ${line}</p>`).join('');
+      }
       container.innerHTML = `
         <div class="message-empty">
-          <p>No messages in #${currentChannel} yet.</p>
-          <p>Start the conversation!</p>
+          ${welcomeHtml}
+          <p>No messages in #${currentChannel} yet. Start the conversation!</p>
         </div>
       `;
       return;
