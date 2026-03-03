@@ -122,15 +122,6 @@ export class WebRTCManager {
       console.log(`WebRTC: Data channel open with ${targetUser}`);
       this.dataChannels.set(targetUser, dc);
 
-      // Add contact to DM list (RxDB)
-      try {
-        const { addContact } = await import('../utils/p2p-database.mjs');
-        await addContact(targetUser);
-        console.log(`✅ Added ${targetUser} to DM contacts`);
-      } catch (err) {
-        console.error('Failed to add contact to DM list:', err);
-      }
-
       // Send a hello message
       dc.send(
         JSON.stringify({
@@ -141,16 +132,7 @@ export class WebRTCManager {
     };
 
     dc.onmessage = async (event) => {
-      // Check if this is an RxDB replication message
-      const { handleDataChannelMessage } = await import(
-        '../utils/p2p-database.mjs'
-      );
-      const handled = handleDataChannelMessage(dc, event.data);
-
-      // If not handled by RxDB, pass to app message handler
-      if (!handled) {
-        this.onDataChannelMessage(targetUser, event.data);
-      }
+      this.onDataChannelMessage(targetUser, event.data);
     };
   }
 

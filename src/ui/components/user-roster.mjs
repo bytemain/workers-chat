@@ -9,7 +9,6 @@
 
 import { signal, component } from 'reefjs';
 import { userState } from '../utils/user-state.mjs';
-import { P2PChat } from './p2p-chat.mjs';
 import logger from '../../common/logger.mjs';
 
 const SignalName = 'userRosterSignal';
@@ -121,18 +120,6 @@ export function initUserRoster(containerSelector) {
     `;
 
     const actions = [
-      {
-        label: 'P2P 私聊',
-        icon: 'ri-chat-private-line',
-        onClick: async () => {
-          if (window.webRTCManager) {
-            window.webRTCManager.connect(username);
-            await P2PChat.open(username);
-          } else {
-            alert('WebRTC Manager not initialized');
-          }
-        },
-      },
       {
         label: '屏幕共享',
         icon: 'ri-computer-line',
