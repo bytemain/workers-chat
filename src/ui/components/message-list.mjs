@@ -18,6 +18,7 @@ import { IndexesIds } from '../tinybase/index.mjs';
 import { getCurrentChannel } from '../utils/chat-state.mjs';
 import { whenChannelChange } from './channel-list.mjs';
 import { Disposable, MutableDisposable } from '../../common/disposable.mjs';
+import { VirtualMessageList } from './virtual-message-list.mjs';
 
 /**
  * @typedef {Object} RawMessage
@@ -60,13 +61,15 @@ export function initMessageList(
       /** @type {RawMessage[]} */
       items: [], // 消息列表（来自 TinyBase）
       tempItems: [], // 临时消息列表（仅本地，不同步）
-      systemItems: [], // 系统消息列表（仅本地，join/quit/welcome等）
       loading: false, // 加载状态
       error: null, // 错误信息
       version: 0, // 版本号，用于强制重新渲染
     },
     SignalName,
   );
+
+  // VirtualMessageList - unified sorted collection for all message types
+  const virtualList = new VirtualMessageList();
 
   // Track if user is at bottom of scroll (for auto-scroll behavior)
   let isAtBottom = true;
@@ -208,6 +211,10 @@ export function initMessageList(
       // 更新 Signal（触发 Reef.js 重新渲染）
       messagesSignal.items = messagesList;
       messagesSignal.error = null;
+
+      // Sync regular items into VirtualMessageList
+      virtualList.setRegularItems(messagesList);
+
       messagesSignal.version++; // 增加版本号，强制重新渲染
 
       logger.log(
@@ -306,24 +313,8 @@ export function initMessageList(
       return;
     }
 
-    // 过滤当前频道的消息
-    const channelMessages = messagesSignal.items;
-
-    // 追加临时消息（仅本地，不同步）
-    const tempChannelMessages = messagesSignal.tempItems;
-
-    // Filter system messages for current channel
-    const channelSystemMessages = messagesSignal.systemItems.filter(
-      (msg) =>
-        msg.channel?.toLowerCase() === currentChannel.toLowerCase(),
-    );
-
-    // Merge all message types and sort by timestamp
-    const allMessages = [
-      ...channelMessages,
-      ...tempChannelMessages,
-      ...channelSystemMessages,
-    ].sort((a, b) => a.timestamp - b.timestamp);
+    // Get all messages for current channel from VirtualMessageList (already sorted)
+    const allMessages = virtualList.getItemsByChannel(currentChannel);
 
     // 空状态
     if (allMessages.length === 0 && !messagesSignal.loading) {
@@ -423,7 +414,7 @@ export function initMessageList(
     messagesContainer.appendChild(fragment);
 
     logger.log(
-      `✅ Rendered ${channelMessages.length} messages in #${currentChannel}`,
+      `✅ Rendered ${allMessages.length} messages in #${currentChannel}`,
     );
 
     // Scroll to bottom if this is initial load or user was at bottom
@@ -526,6 +517,7 @@ export function initMessageList(
       _isTemp: true, // 标记为临时消息
     };
 
+    virtualList.addTempItem(tempMessage);
     messagesSignal.tempItems = [...messagesSignal.tempItems, tempMessage];
     return tempId;
   }
@@ -544,6 +536,7 @@ export function initMessageList(
       return;
     }
 
+    virtualList.updateTempItem(tempId, updates);
     const updatedItems = [...messagesSignal.tempItems];
     updatedItems[index] = {
       ...updatedItems[index],
@@ -557,6 +550,7 @@ export function initMessageList(
    * @param {string} tempId - 临时消息 ID
    */
   function removeTempMessage(tempId) {
+    virtualList.removeItem(tempId);
     messagesSignal.tempItems = messagesSignal.tempItems.filter(
       (msg) => msg.messageId !== tempId,
     );
@@ -582,21 +576,14 @@ export function initMessageList(
    * @param {string} text - System message text
    */
   function addSystemMessage(text) {
-    const sysId = `sys-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    messagesSignal.systemItems = [
-      ...messagesSignal.systemItems,
-      {
-        messageId: sysId,
-        message: text,
-        timestamp: Date.now(),
-        channel: getCurrentChannel(),
-        _isSystem: true,
-      },
-    ];
+    virtualList.addSystemMessage(text, getCurrentChannel());
+    // Bump version to trigger re-render
+    messagesSignal.version++;
   }
 
   return {
     signal: messagesSignal,
+    virtualList,
     sendMessage,
     deleteMessage,
     editMessage,
