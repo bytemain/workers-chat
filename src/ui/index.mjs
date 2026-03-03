@@ -34,8 +34,6 @@ import {
   showReactionPicker,
 } from './reactions/ui.mjs';
 import { REACTION_TYPES } from './reactions/config.mjs';
-import { WebRTCManager } from './webrtc/manager.mjs';
-import { SignalingService } from './webrtc/signaling.mjs';
 
 
 // Configure marked.js for Markdown rendering (one-time setup)
@@ -1199,8 +1197,6 @@ class ChatMessage extends HTMLElement {
 customElements.define('chat-message', ChatMessage);
 
 let currentWebSocket = null;
-let webRTCManager = null;
-let signalingService = null;
 
 let chatroom = document.querySelector('#chatroom');
 let chatlog = document.querySelector('#chatlog');
@@ -3483,91 +3479,12 @@ function join() {
   ws.addEventListener('open', async () => {
     currentWebSocket = ws;
 
-    // Initialize WebRTC
-    signalingService = new SignalingService((data) => {
-      ws.send(JSON.stringify(data));
-    });
-
-    webRTCManager = new WebRTCManager(
-      (target, payload) => signalingService.send(target, payload),
-      async (sender, message) => {
-        // Handle P2P message
-        console.log(`P2P Message from ${sender}:`, message);
-        try {
-          // Try to parse as JSON first
-          let msg;
-          if (typeof message === 'string') {
-            try {
-              msg = JSON.parse(message);
-            } catch (e) {
-              msg = { type: 'chat', text: message };
-            }
-          } else {
-            msg = message;
-          }
-
-          if (msg.type === 'system') {
-            addSystemMessage(`* P2P [${sender}]: ${msg.message}`);
-          } else {
-            // Fallback for unknown types or raw strings
-            addSystemMessage(`* P2P [${sender}]: ${msg.text || message}`);
-          }
-        } catch (e) {
-          console.error('Error handling P2P message:', e);
-          addSystemMessage(`* P2P [${sender}]: ${message}`);
-        }
-      },
-      (sender, stream) => {
-        // Handle remote stream (screen share)
-        console.log(`Remote stream from ${sender}`);
-        addSystemMessage(`* Incoming screen share from ${sender}`);
-
-        // Create a video element container
-        const container = document.createElement('div');
-        container.className = 'screen-share-container';
-        container.style.cssText =
-          'margin: 10px 0; border: 2px solid #0d6efd; border-radius: 8px; overflow: hidden; background: #000;';
-
-        const header = document.createElement('div');
-        header.style.cssText =
-          'padding: 8px; background: #0d6efd; color: white; font-weight: bold; display: flex; justify-content: space-between; align-items: center;';
-        header.innerHTML = `<span>Screen Share: ${sender}</span>`;
-
-        const closeBtn = document.createElement('button');
-        closeBtn.innerHTML = '<i class="ri-close-line"></i>';
-        closeBtn.style.cssText =
-          'background: none; border: none; color: white; cursor: pointer; font-size: 20px;';
-        closeBtn.onclick = () => container.remove();
-        header.appendChild(closeBtn);
-
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        video.autoplay = true;
-        video.controls = true;
-        video.style.cssText = 'width: 100%; display: block;';
-
-        container.appendChild(header);
-        container.appendChild(video);
-        chatlog.appendChild(container);
-        chatlog.scrollTop = chatlog.scrollHeight;
-      },
-    );
-    window.webRTCManager = webRTCManager;
-
     // Send user info message.
     ws.send(JSON.stringify({ name: userState.value.username }));
   });
 
   ws.addEventListener('message', async (event) => {
     let data = JSON.parse(event.data);
-
-    // Handle WebRTC Signaling
-    if (data.type === 'signal') {
-      if (webRTCManager) {
-        webRTCManager.handleSignal(data.sender, data.data);
-      }
-      return;
-    }
 
     // NOTE: Regular chat messages are now handled by TinyBase WsSynchronizer
     // This WebSocket only handles system events
