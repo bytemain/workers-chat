@@ -18,6 +18,7 @@ import { IndexesIds } from '../tinybase/index.mjs';
 import { getCurrentChannel } from '../utils/chat-state.mjs';
 import { whenChannelChange } from './channel-list.mjs';
 import { Disposable, MutableDisposable } from '../../common/disposable.mjs';
+import { VirtualMessageList } from './virtual-message-list.mjs';
 
 /**
  * @typedef {Object} RawMessage
@@ -71,6 +72,9 @@ export function initMessageList(
     },
     SignalName,
   );
+
+  // VirtualMessageList - unified sorted collection for all message types
+  const virtualList = new VirtualMessageList();
 
   // Track if user is at bottom of scroll (for auto-scroll behavior)
   let isAtBottom = true;
@@ -212,6 +216,10 @@ export function initMessageList(
       // 更新 Signal（触发 Reef.js 重新渲染）
       messagesSignal.items = messagesList;
       messagesSignal.error = null;
+
+      // Sync regular items into VirtualMessageList
+      virtualList.setRegularItems(messagesList);
+
       messagesSignal.version++; // 增加版本号，强制重新渲染
 
       logger.log(
@@ -310,12 +318,8 @@ export function initMessageList(
       return;
     }
 
-    // 过滤当前频道的消息
-    const channelMessages = messagesSignal.items;
-
-    // 追加临时消息（仅本地，不同步）
-    const tempChannelMessages = messagesSignal.tempItems;
-    const allMessages = [...channelMessages, ...tempChannelMessages];
+    // Get all messages for current channel from VirtualMessageList (already sorted)
+    const allMessages = virtualList.getItemsByChannel(currentChannel);
 
     // 空状态
     if (allMessages.length === 0 && !messagesSignal.loading) {
@@ -378,6 +382,18 @@ export function initMessageList(
 
     // 遍历消息，创建或复用 message-element
     allMessages.forEach((item, index) => {
+      // Render system messages as <system-message> elements
+      if (item._isSystem) {
+        const p = document.createElement('p');
+        p.className = 'system-message';
+        p.setAttribute('data-message-id', item.messageId);
+        const sysMsg = document.createElement('system-message');
+        sysMsg.setAttribute('message', item.message);
+        p.appendChild(sysMsg);
+        fragment.appendChild(p);
+        return;
+      }
+
       let msgEl = existingElements.get(item.messageId);
 
       // 检查是否是同一用户组的第一条消息（用于头像显示）
@@ -385,7 +401,7 @@ export function initMessageList(
       if (index > 0) {
         const prevItem = allMessages[index - 1];
         // 如果同一用户且时间间隔小于 5 分钟，则不是第一条
-        if (prevItem.name === item.name) {
+        if (prevItem.name === item.name && !prevItem._isSystem) {
           const timeDiff = item.timestamp - prevItem.timestamp;
           if (timeDiff < 5 * 60 * 1000) {
             // 5 minutes
@@ -428,7 +444,7 @@ export function initMessageList(
     messagesContainer.appendChild(fragment);
 
     logger.log(
-      `✅ Rendered ${channelMessages.length} messages in #${currentChannel}`,
+      `✅ Rendered ${allMessages.length} messages in #${currentChannel}`,
     );
 
     // Scroll to bottom if this is initial load or user was at bottom
@@ -531,6 +547,7 @@ export function initMessageList(
       _isTemp: true, // 标记为临时消息
     };
 
+    virtualList.addTempItem(tempMessage);
     messagesSignal.tempItems = [...messagesSignal.tempItems, tempMessage];
     return tempId;
   }
@@ -549,6 +566,7 @@ export function initMessageList(
       return;
     }
 
+    virtualList.updateTempItem(tempId, updates);
     const updatedItems = [...messagesSignal.tempItems];
     updatedItems[index] = {
       ...updatedItems[index],
@@ -562,6 +580,7 @@ export function initMessageList(
    * @param {string} tempId - 临时消息 ID
    */
   function removeTempMessage(tempId) {
+    virtualList.removeItem(tempId);
     messagesSignal.tempItems = messagesSignal.tempItems.filter(
       (msg) => msg.messageId !== tempId,
     );
@@ -582,14 +601,26 @@ export function initMessageList(
     return isAtBottom;
   }
 
+  /**
+   * Add a system message (join/quit/welcome) that renders inline with chat messages
+   * @param {string} text - System message text
+   */
+  function addSystemMessage(text) {
+    virtualList.addSystemMessage(text, getCurrentChannel());
+    // Bump version to trigger re-render
+    messagesSignal.version++;
+  }
+
   return {
     signal: messagesSignal,
+    virtualList,
     sendMessage,
     deleteMessage,
     editMessage,
     addTempMessage,
     updateTempMessage,
     removeTempMessage,
+    addSystemMessage,
     syncNow: syncTinybaseToSignal,
     render: renderMessages, // 暴露渲染函数供外部使用
     scrollToBottom, // 强制滚动到底部
