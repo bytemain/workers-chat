@@ -17,11 +17,8 @@
   "dependencies": {
     "@opensumi/reconnecting-websocket": "^4.4.0",
     "@schummar/runp": "^2.2.4",
-    "ajv-keywords": "^5.1.0",
     "hono": "^4.10.5",
     "ruply": "^1.0.1",
-    "rxdb": "^16.20.0",
-    "rxjs": "^7.8.2",
     "tinybase": "^6.7.2"
   },
   "devDependencies": {

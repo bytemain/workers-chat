@@ -34,11 +34,7 @@ import {
   showReactionPicker,
 } from './reactions/ui.mjs';
 import { REACTION_TYPES } from './reactions/config.mjs';
-import { WebRTCManager } from './webrtc/manager.mjs';
-import { SignalingService } from './webrtc/signaling.mjs';
-import { P2PChat } from './components/p2p-chat.mjs';
-import { initDMList } from './components/dm-list.mjs';
-import { initDatabase } from './utils/p2p-database.mjs';
+
 
 // Configure marked.js for Markdown rendering (one-time setup)
 if (typeof marked !== 'undefined') {
@@ -552,21 +548,6 @@ class ChatMessage extends HTMLElement {
       avatar.setAttribute('name', username);
       avatar.setAttribute('variant', 'beam');
       avatar.className = 'msg-avatar';
-      avatar.style.cursor = 'pointer';
-      avatar.title = `Click to chat with ${username}`;
-
-      // Add click handler to open P2P chat (only if not current user)
-      if (username !== userState.value.username) {
-        avatar.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (window.webRTCManager) {
-            window.webRTCManager.connect(username);
-            await P2PChat.open(username);
-          } else {
-            alert('WebRTC not initialized');
-          }
-        });
-      }
 
       messageContainer.appendChild(avatar);
 
@@ -1216,8 +1197,6 @@ class ChatMessage extends HTMLElement {
 customElements.define('chat-message', ChatMessage);
 
 let currentWebSocket = null;
-let webRTCManager = null;
-let signalingService = null;
 
 let chatroom = document.querySelector('#chatroom');
 let chatlog = document.querySelector('#chatlog');
@@ -1372,18 +1351,6 @@ class UserMessageAPI {
       return false;
     }
 
-    // Check if in P2P chat mode
-    if (window.P2PChat && window.P2PChat.isActive()) {
-      try {
-        await window.P2PChat.sendMessage(message);
-        return true;
-      } catch (error) {
-        console.error('Failed to send P2P message:', error);
-        return false;
-      }
-    }
-
-    // Normal group chat logic below
     // Wait for TinyBase store to be ready
     if (isStoreReady && isStoreReady.promise) {
       await isStoreReady.promise;
@@ -1914,25 +1881,7 @@ async function loadChannelMessages(channel) {
 
 // Switch to a channel (sets it as current for sending messages)
 async function switchToChannel(channel) {
-  // Normalize DM channel names: if it's a DM, ensure username case matches
-  let normalizedChannel = channel;
-  const lowerChannel = channel.toLowerCase();
-
-  if (lowerChannel.startsWith('dm-')) {
-    const dmUsernameFromChannel = channel.substring(3); // Remove 'dm-' prefix
-
-    // Check if this matches current user (case-insensitive)
-    if (
-      userState.value.username &&
-      dmUsernameFromChannel.toLowerCase() ===
-        userState.value.username.toLowerCase()
-    ) {
-      // Normalize to use actual username case
-      normalizedChannel = `dm-${userState.value.username}`;
-    }
-    // Note: For DMs with other users, we'd need to look up their actual username
-    // For now, this handles the self-DM case which is the reported bug
-  }
+  const normalizedChannel = channel;
 
   currentChannel = normalizedChannel;
   window.currentChannel = normalizedChannel; // Update global for pinned-messages
@@ -1955,28 +1904,13 @@ async function switchToChannel(channel) {
   // Update channel info bar
   const channelNameDisplay = document.getElementById('channel-name-display');
   const channelHash = document.querySelector('.channel-hash');
-  const isDM = normalizedChannel.startsWith('dm-');
 
   if (channelNameDisplay) {
-    // Check if it's a DM channel
-    if (isDM) {
-      const dmUsername = normalizedChannel.replace('dm-', '');
-      channelNameDisplay.textContent =
-        dmUsername === userState.value.username
-          ? `${dmUsername} (you)`
-          : dmUsername;
-    } else {
-      channelNameDisplay.textContent = normalizedChannel;
-    }
+    channelNameDisplay.textContent = normalizedChannel;
   }
 
-  // Update icon for DM vs Channel
   if (channelHash) {
-    if (isDM) {
-      channelHash.innerHTML = '<i class="ri-user-3-line"></i>';
-    } else {
-      channelHash.textContent = '#';
-    }
+    channelHash.textContent = '#';
   }
 
   // Check if this channel exists in the current channel list
@@ -1988,26 +1922,19 @@ async function switchToChannel(channel) {
 
   // If channel doesn't exist in the list, add it temporarily (frontend only)
   // It will be created on backend when first message is sent
-  if (!channelExists && !normalizedChannel.startsWith('dm-')) {
+  if (!channelExists) {
     // Add to TinyBase (will trigger Reef.js re-render)
     if (window.channelList) {
       window.channelList.upsertChannel(normalizedChannel, 0);
     }
   }
 
-  // Update visual state for both channels and DMs
+  // Update visual state for channels
   document.querySelectorAll('.channel-item').forEach((item) => {
     const itemChannel = item.dataset.channel;
-    const itemUser = item.dataset.user;
-
-    // For DM items, compare usernames case-insensitively
-    const isDMItem = itemUser !== undefined;
     let isMatch = false;
 
-    if (isDMItem && isDM) {
-      const dmUser = normalizedChannel.replace('dm-', '');
-      isMatch = itemUser.toLowerCase() === dmUser.toLowerCase();
-    } else if (itemChannel) {
+    if (itemChannel) {
       isMatch = itemChannel.toLowerCase() === normalizedChannel.toLowerCase();
     }
 
@@ -2020,12 +1947,6 @@ async function switchToChannel(channel) {
 
   // Load channel messages from backend instead of just filtering
   await loadChannelMessages(normalizedChannel);
-
-  // If switching to DM channel, initialize P2P chat
-  if (isDM && window.P2PChat) {
-    const dmUsername = normalizedChannel.replace('dm-', '');
-    await window.P2PChat.init(dmUsername);
-  }
 }
 
 // Expose switchToChannel to window for use in click handlers
@@ -2545,8 +2466,6 @@ function initChannelPanel() {
       roomNameLarge.textContent = documentTitlePrefix;
     }
   }
-
-  // DM list will be initialized after RxDB database is ready (in WebSocket open handler)
 }
 
 // Room history management
@@ -2624,15 +2543,6 @@ function removeFromRoomHistory(roomName) {
 export async function main() {
   // Initialize user state (replaces direct localStorage access)
   initUserState();
-
-  // Initialize P2P database early (before WebSocket connection)
-  try {
-    initDatabase(userState.value.username).catch((error) => {
-      console.error('Failed to initialize P2P database early:', error);
-    });
-  } catch (error) {
-    console.error('Failed to start P2P database initialization:', error);
-  }
 
   // Go directly to room chooser
   startRoomChooser();
@@ -2916,7 +2826,6 @@ async function startChat() {
 
     // Expose to window for testing
     window.channelList = channelListComponent;
-    // Expose channelsSignal for DM list integration
     window.channelsSignal = channelListComponent.signal;
   } catch (error) {
     console.error('❌ Failed to initialize channel list:', error);
@@ -3570,113 +3479,12 @@ function join() {
   ws.addEventListener('open', async () => {
     currentWebSocket = ws;
 
-    // Initialize WebRTC
-    signalingService = new SignalingService((data) => {
-      ws.send(JSON.stringify(data));
-    });
-
-    webRTCManager = new WebRTCManager(
-      (target, payload) => signalingService.send(target, payload),
-      async (sender, message) => {
-        // Handle P2P message
-        console.log(`P2P Message from ${sender}:`, message);
-        try {
-          // Try to parse as JSON first
-          let msg;
-          if (typeof message === 'string') {
-            try {
-              msg = JSON.parse(message);
-            } catch (e) {
-              msg = { type: 'chat', text: message };
-            }
-          } else {
-            msg = message;
-          }
-
-          if (msg.type === 'p2p-message') {
-            // Route to P2P Chat UI (stored in RxDB)
-            const { addMessage } = await import('./utils/p2p-database.mjs');
-            await addMessage(sender, msg.text, false);
-          } else if (msg.type === 'system') {
-            addSystemMessage(`* P2P [${sender}]: ${msg.message}`);
-          } else if (msg.type === 'chat') {
-            // Legacy chat type
-            const { addMessage } = await import('./utils/p2p-database.mjs');
-            await addMessage(sender, msg.text, false);
-          } else {
-            // Fallback for unknown types or raw strings
-            addSystemMessage(`* P2P [${sender}]: ${msg.text || message}`);
-          }
-        } catch (e) {
-          console.error('Error handling P2P message:', e);
-          addSystemMessage(`* P2P [${sender}]: ${message}`);
-        }
-      },
-      (sender, stream) => {
-        // Handle remote stream (screen share)
-        console.log(`Remote stream from ${sender}`);
-        addSystemMessage(`* Incoming screen share from ${sender}`);
-
-        // Create a video element container
-        const container = document.createElement('div');
-        container.className = 'screen-share-container';
-        container.style.cssText =
-          'margin: 10px 0; border: 2px solid #0d6efd; border-radius: 8px; overflow: hidden; background: #000;';
-
-        const header = document.createElement('div');
-        header.style.cssText =
-          'padding: 8px; background: #0d6efd; color: white; font-weight: bold; display: flex; justify-content: space-between; align-items: center;';
-        header.innerHTML = `<span>Screen Share: ${sender}</span>`;
-
-        const closeBtn = document.createElement('button');
-        closeBtn.innerHTML = '<i class="ri-close-line"></i>';
-        closeBtn.style.cssText =
-          'background: none; border: none; color: white; cursor: pointer; font-size: 20px;';
-        closeBtn.onclick = () => container.remove();
-        header.appendChild(closeBtn);
-
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        video.autoplay = true;
-        video.controls = true;
-        video.style.cssText = 'width: 100%; display: block;';
-
-        container.appendChild(header);
-        container.appendChild(video);
-        chatlog.appendChild(container);
-        chatlog.scrollTop = chatlog.scrollHeight;
-      },
-    );
-    window.webRTCManager = webRTCManager;
-
-    // Initialize RxDB P2P Database
-    try {
-      await initDatabase(userState.value.username);
-      console.log('✅ RxDB P2P Database ready');
-
-      // Initialize DM list after database is ready
-      const dmList = document.getElementById('dm-list');
-      if (dmList) {
-        initDMList(dmList);
-      }
-    } catch (error) {
-      console.error('Failed to initialize P2P database:', error);
-    }
-
     // Send user info message.
     ws.send(JSON.stringify({ name: userState.value.username }));
   });
 
   ws.addEventListener('message', async (event) => {
     let data = JSON.parse(event.data);
-
-    // Handle WebRTC Signaling
-    if (data.type === 'signal') {
-      if (webRTCManager) {
-        webRTCManager.handleSignal(data.sender, data.data);
-      }
-      return;
-    }
 
     // NOTE: Regular chat messages are now handled by TinyBase WsSynchronizer
     // This WebSocket only handles system events
