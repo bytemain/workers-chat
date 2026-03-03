@@ -1,16 +1,11 @@
 import './web-components/index.mjs';
 
 import { marked } from 'marked';
-import CryptoUtils from '../common/crypto-utils.js';
-import { keyManager } from '../common/key-manager.js';
-import FileCrypto from '../common/file-crypto.js';
 import { formatFileSize } from '../common/format-utils.js';
-import { getCryptoPool } from './crypto-worker-pool.js';
 import { createReactiveState } from './react/state.mjs';
 import { api } from './api.mjs';
 import { generateRandomUsername } from './utils/random.mjs';
 import { updateRoomList } from './room-list.mjs';
-import { initCryptoCompatCheck } from '../common/crypto-compat.js';
 import {
   MAX_MESSAGE_LENGTH,
   MAX_FILE_SIZE_BYTES,
@@ -23,7 +18,6 @@ import {
   getPinnedCount,
   initPinListener,
 } from './pinned-messages.mjs';
-import { tryDecryptMessage } from './utils/message-crypto.mjs';
 import { chatState, initChatState } from './utils/chat-state.mjs';
 import { userState, initUserState } from './utils/user-state.mjs';
 import { createTinybaseStorage } from './tinybase/index.mjs';
@@ -46,11 +40,6 @@ import { P2PChat } from './components/p2p-chat.mjs';
 import { initDMList } from './components/dm-list.mjs';
 import { initDatabase } from './utils/p2p-database.mjs';
 
-// Check Crypto API compatibility early (async - may load polyfill)
-let cryptoSupported = false;
-
-const cryptoPool = getCryptoPool();
-
 // Configure marked.js for Markdown rendering (one-time setup)
 if (typeof marked !== 'undefined') {
   marked.setOptions({
@@ -68,7 +57,6 @@ class LazyImg extends HTMLElement {
     super();
     this.observer = null;
     this.loaded = false;
-    this._decryptedObjectUrl = null; // Store decrypted blob URL for cleanup
   }
 
   connectedCallback() {
@@ -77,12 +65,10 @@ class LazyImg extends HTMLElement {
     const alt = this.getAttribute('alt') || '';
     const maxWidth = this.getAttribute('max-width') || '300px';
     const maxHeight = this.getAttribute('max-height') || '300px';
-    const isEncrypted = this.getAttribute('encrypted') === 'true';
     const fileName = this.getAttribute('file-name') || 'image';
 
     // Store attributes
     this._realSrc = src;
-    this._isEncrypted = isEncrypted;
     this._fileName = fileName;
     this._maxWidth = maxWidth;
     this._maxHeight = maxHeight;
@@ -94,44 +80,25 @@ class LazyImg extends HTMLElement {
       max-width: ${maxWidth};
       height: 200px;
       max-height: ${maxHeight};
-      background: ${isEncrypted ? '#f5f5f5' : '#f0f0f0'};
-      border: 2px dashed ${isEncrypted ? '#999' : '#ccc'};
+      background: #f0f0f0;
+      border: 2px dashed #ccc;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-direction: column;
       margin-top: 5px;
-      cursor: ${isEncrypted && !isRoomEncrypted ? 'default' : 'pointer'};
+      cursor: pointer;
     `;
 
-    if (isEncrypted && !isRoomEncrypted) {
-      // Encrypted but no key available
-      placeholder.innerHTML = `
-        <div style="font-size: 48px;">🔒</div>
-        <div style="margin-top: 8px; color: #999;">Encrypted Image</div>
-        <div style="margin-top: 4px; font-size: 12px; color: #999;">No decryption key available</div>
-      `;
-    } else if (isEncrypted) {
-      // Encrypted with key - will decrypt on load
-      placeholder.innerHTML = `
-        <div style="font-size: 48px;">🔓</div>
-        <div style="margin-top: 8px; color: #666;">Loading...</div>
-      `;
-    } else {
-      // Not encrypted
-      placeholder.innerHTML = `
-        <div style="font-size: 48px; color: #999;">📷</div>
-        <div style="margin-top: 8px; color: #999;">Loading...</div>
-      `;
-    }
+    placeholder.innerHTML = `
+      <div style="font-size: 48px; color: #999;">📷</div>
+      <div style="margin-top: 8px; color: #999;">Loading...</div>
+    `;
 
     this._placeholder = placeholder;
     this.appendChild(placeholder);
 
-    // Only setup lazy loading if we can display the image
-    if (!isEncrypted || (isEncrypted && isRoomEncrypted && currentRoomKey)) {
-      this.setupLazyLoading();
-    }
+    this.setupLazyLoading();
   }
 
   setupLazyLoading() {
@@ -171,92 +138,48 @@ class LazyImg extends HTMLElement {
     const placeholder = this._placeholder;
 
     try {
-      if (this._isEncrypted && isRoomEncrypted && currentRoomKey) {
-        // Decrypt encrypted image
-        console.log('🔓 Lazy-decrypting image...');
+      const tempImg = new Image();
 
-        placeholder.innerHTML = `
-          <div style="font-size: 48px;">🔓</div>
-          <div style="margin-top: 8px; color: #666;">Decrypting...</div>
-        `;
-
-        const result = await FileCrypto.downloadAndDecrypt(
-          this._realSrc,
-          currentRoomKey,
-          (progress, stage) => {
-            placeholder.innerHTML = `
-              <div style="font-size: 32px;">🔓</div>
-              <div style="margin-top: 8px; color: #666;">${stage}: ${Math.round(progress)}%</div>
-            `;
-          },
-        );
-
-        // Create object URL from decrypted blob
-        const objectUrl = URL.createObjectURL(result.blob);
-        this._decryptedObjectUrl = objectUrl;
-
-        // Create and display the image
+      tempImg.onload = () => {
         const img = document.createElement('img');
-        img.src = objectUrl;
+        img.src = this._realSrc;
         img.alt = this._fileName;
         img.style.maxWidth = this._maxWidth;
         img.style.maxHeight = this._maxHeight;
         img.style.display = 'block';
         img.style.marginTop = '5px';
         img.style.cursor = 'pointer';
-        img.onclick = () => window.open(objectUrl, '_blank');
+        img.onclick = () => window.open(this._realSrc, '_blank');
 
         this.replaceChild(img, placeholder);
         this.loaded = true;
-        console.log('✅ Image lazy-decrypted and displayed');
 
         // Handle scroll position maintenance
         this._handleScrollMaintenance(img);
-      } else {
-        // Load non-encrypted image normally
-        const tempImg = new Image();
 
-        tempImg.onload = () => {
-          const img = document.createElement('img');
-          img.src = this._realSrc;
-          img.alt = this._fileName;
-          img.style.maxWidth = this._maxWidth;
-          img.style.maxHeight = this._maxHeight;
-          img.style.display = 'block';
-          img.style.marginTop = '5px';
-          img.style.cursor = 'pointer';
-          img.onclick = () => window.open(this._realSrc, '_blank');
+        // Dispatch loaded event
+        this.dispatchEvent(
+          new CustomEvent('lazy-loaded', { detail: { src: this._realSrc } }),
+        );
+      };
 
-          this.replaceChild(img, placeholder);
-          this.loaded = true;
+      tempImg.onerror = () => {
+        console.warn('Failed to load lazy image:', this._realSrc);
+        placeholder.innerHTML = `
+          <div style="font-size: 32px; color: #cc0000;">❌</div>
+          <div style="margin-top: 8px; color: #cc0000;">Load Failed</div>
+        `;
+        placeholder.style.background = '#ffeeee';
+        placeholder.style.cursor = 'default';
+      };
 
-          // Handle scroll position maintenance
-          this._handleScrollMaintenance(img);
-
-          // Dispatch loaded event
-          this.dispatchEvent(
-            new CustomEvent('lazy-loaded', { detail: { src: this._realSrc } }),
-          );
-        };
-
-        tempImg.onerror = () => {
-          console.warn('Failed to load lazy image:', this._realSrc);
-          placeholder.innerHTML = `
-            <div style="font-size: 32px; color: #cc0000;">❌</div>
-            <div style="margin-top: 8px; color: #cc0000;">Load Failed</div>
-          `;
-          placeholder.style.background = '#ffeeee';
-          placeholder.style.cursor = 'default';
-        };
-
-        // Start loading
-        tempImg.src = this._realSrc;
-      }
+      // Start loading
+      tempImg.src = this._realSrc;
     } catch (error) {
-      console.error('❌ Failed to load/decrypt image:', error);
+      console.error('❌ Failed to load image:', error);
       placeholder.innerHTML = `
         <div style="font-size: 32px; color: #cc0000;">❌</div>
-        <div style="margin-top: 8px; color: #cc0000;">Failed to decrypt</div>
+        <div style="margin-top: 8px; color: #cc0000;">Failed to load</div>
       `;
       placeholder.style.background = '#ffeeee';
     }
@@ -307,12 +230,6 @@ class LazyImg extends HTMLElement {
     if (this.observer) {
       this.observer.disconnect();
     }
-
-    // Clean up decrypted blob URL to prevent memory leaks
-    if (this._decryptedObjectUrl) {
-      URL.revokeObjectURL(this._decryptedObjectUrl);
-      this._decryptedObjectUrl = null;
-    }
   }
 }
 customElements.define('lazy-img', LazyImg);
@@ -333,7 +250,6 @@ class FileMessage extends HTMLElement {
     const fileUrl = this.getAttribute('file-url');
     const fileName = this.getAttribute('file-name') || 'file';
     const fileSize = this.getAttribute('file-size');
-    const isEncrypted = this.getAttribute('encrypted') === 'true';
     const uploadProgress = this.getAttribute('upload-progress');
     const uploadStatus = this.getAttribute('upload-status'); // 'uploading', 'success', 'error', or null/undefined
 
@@ -407,11 +323,6 @@ class FileMessage extends HTMLElement {
       white-space: nowrap;
     `;
     nameElement.textContent = fileName;
-    if (isEncrypted && isNormalFile) {
-      nameElement.innerHTML =
-        '<i class="ri-lock-line" style="font-size: 14px; margin-right: 4px;"></i>' +
-        fileName;
-    }
 
     // Status/size info
     const statusElement = document.createElement('div');
@@ -519,7 +430,7 @@ class FileMessage extends HTMLElement {
         line-height: 1;
       `;
       downloadBtn.onclick = () =>
-        this.handleDownload(fileUrl, fileName, isEncrypted, statusElement);
+        this.handleDownload(fileUrl, fileName, statusElement);
       actionsContainer.appendChild(downloadBtn);
     }
 
@@ -529,7 +440,7 @@ class FileMessage extends HTMLElement {
     this.appendChild(container);
   }
 
-  async handleDownload(fileUrl, fileName, isEncrypted, statusElement) {
+  async handleDownload(fileUrl, fileName, statusElement) {
     if (this.isDownloading) return;
 
     this.isDownloading = true;
@@ -537,89 +448,56 @@ class FileMessage extends HTMLElement {
     const originalStatus = statusElement.textContent;
 
     try {
-      if (isEncrypted && isRoomEncrypted && currentRoomKey) {
-        // Encrypted file - decrypt with progress
-        statusElement.textContent = 'Decrypting...';
-        this.progressBarContainer.style.display = 'block';
+      statusElement.textContent = 'Downloading...';
+      this.progressBarContainer.style.display = 'block';
 
-        const result = await FileCrypto.downloadAndDecrypt(
-          fileUrl,
-          currentRoomKey,
-          (progress, stage) => {
-            this.progressBarFill.style.width = `${progress}%`;
-            statusElement.textContent = `${stage}: ${Math.round(progress)}%`;
-          },
-        );
+      const response = await fetch(fileUrl, {
+        signal: this.downloadAbortController.signal,
+      });
 
-        // Create download
-        const objectUrl = URL.createObjectURL(result.blob);
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = result.metadata.fileName || fileName;
-        a.click();
-        URL.revokeObjectURL(objectUrl);
+      if (!response.ok) throw new Error('Download failed');
 
-        statusElement.textContent = originalStatus;
-        this.progressBarContainer.style.display = 'none';
-        this.progressBarFill.style.width = '0%';
-      } else if (isEncrypted && !isRoomEncrypted) {
-        // Encrypted file but no key
-        alert(
-          'This file is encrypted. You need the correct encryption key to download it.',
-        );
-      } else {
-        // Non-encrypted file - download with progress
-        statusElement.textContent = 'Downloading...';
-        this.progressBarContainer.style.display = 'block';
+      const contentLength = response.headers.get('content-length');
+      const total = parseInt(contentLength, 10);
+      let loaded = 0;
 
-        const response = await fetch(fileUrl, {
-          signal: this.downloadAbortController.signal,
-        });
+      const reader = response.body.getReader();
+      const chunks = [];
 
-        if (!response.ok) throw new Error('Download failed');
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-        const contentLength = response.headers.get('content-length');
-        const total = parseInt(contentLength, 10);
-        let loaded = 0;
+        chunks.push(value);
+        loaded += value.length;
 
-        const reader = response.body.getReader();
-        const chunks = [];
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          chunks.push(value);
-          loaded += value.length;
-
-          if (total && total > 0) {
-            const progress = Math.min((loaded / total) * 100, 100);
-            // Use requestAnimationFrame to ensure UI updates
-            requestAnimationFrame(() => {
-              this.progressBarFill.style.width = `${progress}%`;
-              statusElement.textContent = `Downloading: ${Math.round(progress)}%`;
-            });
-          }
-        }
-
-        // Ensure 100% is shown before creating blob
         if (total && total > 0) {
-          this.progressBarFill.style.width = '100%';
-          statusElement.textContent = 'Downloading: 100%';
+          const progress = Math.min((loaded / total) * 100, 100);
+          // Use requestAnimationFrame to ensure UI updates
+          requestAnimationFrame(() => {
+            this.progressBarFill.style.width = `${progress}%`;
+            statusElement.textContent = `Downloading: ${Math.round(progress)}%`;
+          });
         }
-
-        const blob = new Blob(chunks);
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = fileName;
-        a.click();
-        URL.revokeObjectURL(objectUrl);
-
-        statusElement.textContent = originalStatus;
-        this.progressBarContainer.style.display = 'none';
-        this.progressBarFill.style.width = '0%';
       }
+
+      // Ensure 100% is shown before creating blob
+      if (total && total > 0) {
+        this.progressBarFill.style.width = '100%';
+        statusElement.textContent = 'Downloading: 100%';
+      }
+
+      const blob = new Blob(chunks);
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+
+      statusElement.textContent = originalStatus;
+      this.progressBarContainer.style.display = 'none';
+      this.progressBarFill.style.width = '0%';
     } catch (error) {
       if (error.name === 'AbortError') {
         statusElement.textContent = 'Download cancelled';
@@ -867,7 +745,6 @@ class ChatMessage extends HTMLElement {
       name: fileName,
       type: fileType,
       size: fileSize,
-      encrypted: isEncrypted,
       uploadProgress,
       uploading,
       error,
@@ -885,10 +762,6 @@ class ChatMessage extends HTMLElement {
       lazyImg.setAttribute('max-width', '300px');
       lazyImg.setAttribute('max-height', '300px');
 
-      if (isEncrypted) {
-        lazyImg.setAttribute('encrypted', 'true');
-      }
-
       container.appendChild(lazyImg);
     } else {
       // For other files, use file-message component
@@ -899,10 +772,6 @@ class ChatMessage extends HTMLElement {
       // Always set file-size if it's a valid number (including 0 for empty files)
       if (fileSize !== undefined && fileSize !== null && !isNaN(fileSize)) {
         fileMessage.setAttribute('file-size', String(fileSize));
-      }
-
-      if (isEncrypted) {
-        fileMessage.setAttribute('encrypted', 'true');
       }
 
       // Only pass upload attributes if they exist (for temporary uploading messages)
@@ -1406,31 +1275,6 @@ Object.defineProperty(window, 'currentThreadId', {
 window.currentRoomName = null;
 window.currentUsername = null;
 
-// E2EE state variables
-const { state: encryptionState, subscribe: subscribeEncryption } =
-  createReactiveState({
-    roomKey: null, // Current room encryption key
-    isEncrypted: false, // Whether current room is encrypted
-    initialized: false, // Whether encryption has been initialized for this session
-    dialogOpen: false, // Prevent multiple password dialogs
-  });
-
-// Export encryption state to window for use by other modules
-window.encryptionState = encryptionState;
-
-// Backward compatibility getters (temporary during migration)
-let currentRoomKey = null;
-let isRoomEncrypted = false;
-
-// Setup encryption state listener - auto update UI when encryption state changes
-subscribeEncryption((property, newValue, oldValue) => {
-  console.log(`🔐 Encryption state changed: ${property} = ${newValue}`);
-
-  // Sync backward compatibility variables
-  currentRoomKey = encryptionState.roomKey;
-  isRoomEncrypted = encryptionState.isEncrypted;
-});
-
 // Helper function to setup image load handlers for maintaining scroll position
 function setupImageScrollHandler(img, scrollContainer, shouldScrollToBottom) {
   img.addEventListener('load', () => {
@@ -1516,253 +1360,6 @@ function generateLegacyMessageId(timestamp, username) {
   return `${timestamp}-${username}`;
 }
 
-// ===== E2EE Helper Functions =====
-
-/**
- * Verify room password by attempting to decrypt verification data
- * @param {string} roomId - Room ID
- * @param {string} password - Password to verify
- * @param {string} verificationData - Encrypted verification data
- * @returns {Promise<Object>} {success: boolean, key?: CryptoKey, error?: string}
- */
-/**
- * Show encryption key input dialog
- * @param {Object} roomData - Room information (only uses name)
- * @returns {Promise<string|null>} Entered key or null if cancelled
- */
-function showPasswordDialog(roomData, currentPassword = null) {
-  // Prevent multiple dialogs from opening
-  if (encryptionState.dialogOpen) {
-    console.log('⚠️ Password dialog already open, ignoring request');
-    return Promise.resolve(null);
-  }
-
-  encryptionState.dialogOpen = true;
-
-  return new Promise((resolve) => {
-    const dialog = document.createElement('div');
-    dialog.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 10000;
-    `;
-
-    // Show current key section if exists
-    const currentKeySection = currentPassword
-      ? `
-      <div style="
-        margin: 0 0 16px 0;
-        padding: 12px;
-        background: #f5f5f5;
-        border-radius: 4px;
-        border: 1px solid #ddd;
-      ">
-        <p style="margin: 0 0 4px 0; font-size: 12px; color: #666; font-weight: 600;">Current Key:</p>
-        <div style="
-          font-family: monospace;
-          font-size: 13px;
-          color: #333;
-          word-break: break-all;
-          background: white;
-          padding: 8px;
-          border-radius: 3px;
-          border: 1px solid #e0e0e0;
-        ">${currentPassword}</div>
-      </div>
-    `
-      : '';
-
-    dialog.innerHTML = `
-      <div style="
-        background: white;
-        border-radius: 8px;
-        padding: 24px;
-        max-width: 400px;
-        width: 90%;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      ">
-        <h3 style="margin: 0 0 16px 0;">🔐 Encryption Key</h3>
-        ${currentKeySection}
-        <p style="margin: 0 0 16px 0; color: #666;">
-          Enter your encryption key. If you don't have one yet, create one now. 
-          Share the same key with others to communicate.<br>
-          <small style="color: #999;">Leave empty to clear the key and disable encryption.</small>
-        </p>
-        <input
-          type="text"
-          id="room-password-input"
-          placeholder="Enter or create encryption key (or leave empty to clear)"
-          style="
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-            font-family: monospace;
-            box-sizing: border-box;
-          "
-        />
-        <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
-          <button id="password-cancel-btn" style="
-            padding: 8px 16px;
-            border: 1px solid #ddd;
-            background: white;
-            border-radius: 4px;
-            cursor: pointer;
-          ">Cancel</button>
-          <button id="password-submit-btn" style="
-            padding: 8px 16px;
-            border: none;
-            background: #0066cc;
-            color: white;
-            border-radius: 4px;
-            cursor: pointer;
-          ">Save Key</button>
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(dialog);
-
-    const input = dialog.querySelector('#room-password-input');
-    const submitBtn = dialog.querySelector('#password-submit-btn');
-    const cancelBtn = dialog.querySelector('#password-cancel-btn');
-
-    input.focus();
-
-    const cleanup = () => {
-      document.body.removeChild(dialog);
-      document.removeEventListener('keydown', handleEscape);
-      encryptionState.dialogOpen = false; // Reset flag when dialog closes
-    };
-
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') {
-        cleanup();
-        resolve(null);
-      }
-    };
-
-    // Add escape key listener
-    document.addEventListener('keydown', handleEscape);
-
-    submitBtn.onclick = () => {
-      const password = input.value.trim();
-      // Allow empty string (to clear key) or non-empty string (to set key)
-      cleanup();
-      resolve(password);
-    };
-
-    cancelBtn.onclick = () => {
-      cleanup();
-      resolve(null);
-    };
-
-    input.onkeypress = (e) => {
-      if (e.key === 'Enter') {
-        submitBtn.onclick();
-      }
-    };
-  });
-}
-
-/**
- * Initialize room encryption (called when joining a room)
- * @param {string} roomId - Room ID or name
- * @returns {Promise<boolean>} Whether initialization succeeded
- */
-async function initializeRoomEncryption(roomId) {
-  // Check if Crypto API is supported first
-  if (!cryptoSupported) {
-    console.warn(
-      '⚠️ Crypto API not supported, skipping encryption initialization',
-    );
-    encryptionState.roomKey = null;
-    encryptionState.isEncrypted = false;
-    encryptionState.initialized = true;
-    return true;
-  }
-
-  // If already initialized in this session, reuse the current state
-  if (encryptionState.initialized) {
-    console.log('🔐 Encryption already initialized, reusing current state');
-    return true;
-  }
-
-  console.log('🔐 Checking for saved encryption key...');
-
-  // Check if we already have a password saved locally
-  let key = await keyManager.getRoomKey(roomId);
-
-  if (key) {
-    console.log('✅ Using saved key from IndexedDB');
-    encryptionState.roomKey = key;
-    encryptionState.isEncrypted = true;
-    encryptionState.initialized = true;
-    return true;
-  }
-
-  // No saved key found
-  console.log('ℹ️ No saved key found');
-
-  // Prompt user to enter a key or continue without encryption
-  const password = await showPasswordDialog({ name: roomId });
-
-  if (password) {
-    // User entered a key - save it locally
-    console.log('🔑 Saving user-provided key');
-    await keyManager.saveRoomPassword(roomId, password);
-    encryptionState.roomKey = await keyManager.getRoomKey(roomId);
-    encryptionState.isEncrypted = true;
-    encryptionState.initialized = true;
-    return true;
-  } else {
-    // User cancelled or skipped - enter without encryption
-    console.log('⚠️ User entered without encryption key');
-    addSystemMessage(
-      '* You entered the room without an encryption key. You can set one in the room settings.',
-    );
-    encryptionState.roomKey = null;
-    encryptionState.isEncrypted = false;
-    encryptionState.initialized = true; // Mark as initialized even if user skipped
-    return true;
-  }
-}
-
-/**
- * Setup room encryption when creating/joining a room
- * E2EE: All encryption state is managed client-side in IndexedDB
- * @param {string} roomId - Room ID or name
- * @param {string} password - Encryption password
- * @returns {Promise<boolean>}
- */
-async function setupRoomEncryption(roomId, password) {
-  try {
-    console.log('🔐 Setting up encryption locally...');
-
-    // Save password to key manager (IndexedDB)
-    await keyManager.saveRoomPassword(roomId, password);
-
-    // Get the derived key
-    encryptionState.roomKey = await keyManager.getRoomKey(roomId);
-    encryptionState.isEncrypted = true;
-
-    console.log('✅ Room encryption key saved locally');
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to setup room encryption:', error);
-    alert('Failed to setup encryption: ' + error.message);
-    return false;
-  }
-}
-
 // User message API - handles sending messages through TinyBase
 class UserMessageAPI {
   /**
@@ -1798,55 +1395,15 @@ class UserMessageAPI {
       return false;
     }
 
-    // Check if room is encrypted but user doesn't have the key
-    if (isRoomEncrypted && !currentRoomKey) {
-      alert(
-        '⚠️ Cannot send message: You need the correct encryption key to send messages in this room.\n\nClick "🔑 Change Local Key" in the room info panel to enter the key.',
-      );
-      return false;
-    }
-
     let messageToSend = message;
-
-    // Encrypt message if room is encrypted AND crypto is supported
-    if (isRoomEncrypted && currentRoomKey && cryptoSupported) {
-      try {
-        console.log('🔒 Encrypting message via worker pool...');
-
-        // Export key for worker
-        const keyData = Array.from(
-          new Uint8Array(await crypto.subtle.exportKey('raw', currentRoomKey)),
-        );
-
-        // Encrypt via worker pool
-        const encrypted = await cryptoPool.submitTask('encrypt', {
-          plaintext: message,
-          keyData: keyData,
-        });
-
-        messageToSend = CryptoUtils.formatEncryptedMessage(encrypted);
-        console.log('✅ Message encrypted');
-      } catch (error) {
-        console.error('❌ Failed to encrypt message:', error);
-        alert('Failed to encrypt message. Please check your connection.');
-        return false;
-      }
-    } else if (isRoomEncrypted && currentRoomKey && !cryptoSupported) {
-      // Crypto not supported but room is encrypted
-      alert(
-        '⚠️ Cannot send encrypted message: Your browser does not support encryption.\n\nPlease use a modern browser like Chrome, Firefox, or Safari.',
-      );
-      return false;
-    }
 
     // Write message to TinyBase (will auto-sync via WsSynchronizer to other clients)
     try {
       const messageId = window.messageList.sendMessage(
-        messageToSend, // Use encrypted message if encryption is enabled
+        messageToSend,
         userState.value.username,
         currentChannel,
         {
-          encrypted: isRoomEncrypted,
           replyToId: replyTo?.messageId || null,
         },
       );
@@ -2823,9 +2380,8 @@ function initChannelInfoBar() {
           });
         }
 
-        // Note: Text search will be done after decryption for encrypted messages
-        // So we don't apply text filter here if room is encrypted
-        if (filters.text && !isRoomEncrypted) {
+        // Apply text filter
+        if (filters.text) {
           where((getCell) => {
             const text = getCell('text') || '';
             return text.toLowerCase().includes(filters.text.toLowerCase());
@@ -2850,35 +2406,18 @@ function initChannelInfoBar() {
       return;
     }
 
-    // Decrypt messages if room is encrypted
-    const matchingMessages = await Promise.all(
-      resultIds.map(async (msgId) => {
-        const result = queries.getResultRow('searchMessages', msgId);
+    const matchingMessages = resultIds.map((msgId) => {
+      const result = queries.getResultRow('searchMessages', msgId);
+      return {
+        messageId: msgId,
+        username: result.username,
+        text: result.text,
+        timestamp: result.timestamp,
+        channel: result.channel,
+      };
+    });
 
-        // Use shared decryption utility (with cache!)
-        const decryptedText = await tryDecryptMessage(
-          { message: result.text },
-          currentRoomKey,
-          isRoomEncrypted,
-        );
-
-        return {
-          messageId: msgId,
-          username: result.username,
-          text: decryptedText,
-          timestamp: result.timestamp,
-          channel: result.channel,
-        };
-      }),
-    );
-
-    // Filter by text after decryption (if encrypted room)
     let finalResults = matchingMessages;
-    if (filters.text && isRoomEncrypted) {
-      finalResults = matchingMessages.filter((msg) =>
-        msg.text.toLowerCase().includes(filters.text.toLowerCase()),
-      );
-    }
 
     if (finalResults.length === 0) {
       resultsContainer.innerHTML =
@@ -3083,13 +2622,6 @@ function removeFromRoomHistory(roomName) {
 }
 
 export async function main() {
-  cryptoSupported = await initCryptoCompatCheck();
-  if (!cryptoSupported) {
-    console.warn(
-      '⚠️ Crypto API not supported, encryption features will be disabled',
-    );
-  }
-
   // Initialize user state (replaces direct localStorage access)
   initUserState();
 
@@ -3266,11 +2798,6 @@ async function startChat() {
   // Create new deferred promise for store ready
   isStoreReady = createPromiseResolvers();
 
-  // Reset state for new room
-  encryptionState.initialized = false;
-  encryptionState.roomKey = null;
-  encryptionState.isEncrypted = false;
-
   currentChannel = 'general';
 
   // Normalize the room name a bit.
@@ -3292,24 +2819,6 @@ async function startChat() {
 
   // No longer set hash, navigation is handled by pathname
   // document.location.hash = '#' + roomname;
-
-  // Setup encryption with room name as default password if not already set
-  // This handles all entry paths (form submit, buttons, URL hash)
-  try {
-    const existingPassword = await keyManager.getRoomPassword(roomname);
-    if (!existingPassword) {
-      // No password saved yet - use room name as default
-      console.log('🔐 Setting up default encryption key (room name)');
-      const defaultPassword = roomname;
-      await setupRoomEncryption(roomname, defaultPassword);
-    } else {
-      console.log('🔐 Using existing saved encryption key');
-    }
-    await initializeRoomEncryption(roomname);
-  } catch (error) {
-    console.error('❌ Failed to setup encryption:', error);
-    addSystemMessage('❌: Failed to setup encryption: ' + error.message);
-  }
 
   // Initialize TinyBase store and indexes
   const { store, indexes, relationships, destroy } =
@@ -3346,15 +2855,6 @@ async function startChat() {
       window.store,
       window.indexes, // Pass indexes for efficient querying
       '#chatlog',
-      {
-        // 加密上下文
-        get currentRoomKey() {
-          return currentRoomKey;
-        },
-        get isRoomEncrypted() {
-          return isRoomEncrypted;
-        },
-      },
       messagesCache, // 传入全局消息缓存
       window.readStatusStore, // 传入已读状态 store
       roomname, // 传入房间名
@@ -3496,63 +2996,6 @@ async function startChat() {
   }
 
   initRoomInfo();
-
-  // Encryption Key Management
-  const btnChangeEncryptionKey = document.querySelector(
-    '#btn-change-encryption-key',
-  );
-  if (btnChangeEncryptionKey) {
-    btnChangeEncryptionKey.addEventListener('click', async (e) => {
-      e.preventDefault();
-
-      // Get current password to display
-      let currentPassword = null;
-      try {
-        currentPassword = await keyManager.getRoomPassword(roomname);
-      } catch (error) {
-        console.log('No current password found');
-      }
-
-      // Show dialog to enter new key with current key displayed
-      const result = await showPasswordDialog(
-        { name: roomname },
-        currentPassword,
-      );
-
-      if (result === null) {
-        // User cancelled (clicked cancel or ESC)
-        return;
-      }
-
-      try {
-        if (result === '') {
-          // Empty string means clear the key
-          await keyManager.deleteRoomPassword(roomname);
-          encryptionState.roomKey = null;
-          encryptionState.isEncrypted = false;
-
-          alert(
-            '✅ Encryption key cleared!\n\nThe room is now unencrypted for you.',
-          );
-        } else {
-          // Save the new key locally (no server verification)
-          await keyManager.saveRoomPassword(roomname, result);
-          encryptionState.roomKey = await keyManager.getRoomKey(roomname);
-          encryptionState.isEncrypted = true;
-
-          alert(
-            '✅ Encryption key saved locally!\n\nYou can now try to decrypt messages with this key.',
-          );
-        }
-
-        // Reload the page to re-decrypt all messages with the new key
-        window.location.reload();
-      } catch (error) {
-        console.error('Failed to update encryption key:', error);
-        alert('Failed to update key: ' + error.message);
-      }
-    });
-  }
 
   // Initialize user roster component
   userRoster = initUserRoster('#roster');
@@ -4001,7 +3444,6 @@ async function startChat() {
           name: uploadFileName,
           type: file.type,
           size: file.size,
-          encrypted: isRoomEncrypted && currentRoomKey && cryptoSupported,
           uploading: true,
           uploadProgress: 0,
         })}`,
@@ -4010,81 +3452,17 @@ async function startChat() {
         replyToId: replyTo?.messageId || null,
       });
 
-      // 2. 加密文件（如果需要）
-      let fileToUpload = file;
-      if (isRoomEncrypted && currentRoomKey && cryptoSupported) {
-        try {
-          console.log('🔒 Encrypting file...');
-
-          const encryptedBlob = await FileCrypto.encryptFileV2(
-            file,
-            currentRoomKey,
-            (progress, stage) => {
-              console.log(`File encryption ${stage}: ${progress}%`);
-              // 更新临时消息的进度（加密是 0-30%）
-              const uploadProgress = Math.round(progress * 0.3);
-              window.messageList.updateTempMessage(tempMessageId, {
-                message: `FILE:${JSON.stringify({
-                  url: '',
-                  name: uploadFileName,
-                  type: file.type,
-                  size: file.size,
-                  encrypted: true,
-                  uploading: true,
-                  uploadProgress: uploadProgress,
-                })}`,
-              });
-            },
-          );
-
-          console.log('✅ File encrypted');
-          fileToUpload = new File([encryptedBlob], uploadFileName + '.enc', {
-            type: 'application/x-encrypted-v2',
-          });
-        } catch (error) {
-          console.error('❌ Failed to encrypt file:', error);
-          // 更新临时消息为错误状态
-          window.messageList.updateTempMessage(tempMessageId, {
-            message: `FILE:${JSON.stringify({
-              url: '',
-              name: uploadFileName,
-              type: file.type,
-              size: file.size,
-              encrypted: true,
-              uploading: false,
-              error: 'Encryption failed: ' + error.message,
-            })}`,
-          });
-          return false;
-        }
-      } else if (isRoomEncrypted && currentRoomKey && !cryptoSupported) {
-        // 删除临时消息
-        window.messageList.removeTempMessage(tempMessageId);
-        addSystemMessage(
-          '* Cannot upload encrypted file: Your browser does not support encryption. Please use a modern browser.',
-        );
-        return false;
-      }
-
-      // 3. 上传文件到服务器
-      const baseProgress = isRoomEncrypted && currentRoomKey ? 30 : 0;
-      const progressRange = 100 - baseProgress;
-
-      const result = await api.uploadFileAuto(roomname, fileToUpload, {
+      // 2. 上传文件到服务器
+      const result = await api.uploadFileAuto(roomname, file, {
         onProgress: (progress) => {
-          // 更新临时消息的进度（上传是 30-100% 或 0-100%）
-          const totalProgress = Math.round(
-            baseProgress + (progress.percentage / 100) * progressRange,
-          );
           window.messageList.updateTempMessage(tempMessageId, {
             message: `FILE:${JSON.stringify({
               url: '',
               name: uploadFileName,
               type: file.type,
               size: file.size,
-              encrypted: isRoomEncrypted && currentRoomKey && cryptoSupported,
               uploading: true,
-              uploadProgress: totalProgress,
+              uploadProgress: Math.round(progress.percentage),
             })}`,
           });
         },
@@ -4098,7 +3476,7 @@ async function startChat() {
         },
       });
 
-      // 4. 上传成功 - 删除临时消息，通过 WebSocket 发送真实消息
+      // 3. 上传成功 - 删除临时消息，通过 WebSocket 发送真实消息
       window.messageList.removeTempMessage(tempMessageId);
 
       const fileMessage = `FILE:${JSON.stringify({
@@ -4106,7 +3484,6 @@ async function startChat() {
         name: uploadFileName,
         type: file.type,
         size: file.size,
-        encrypted: isRoomEncrypted && currentRoomKey && cryptoSupported,
       })}`;
 
       await userApi.sendMessage(fileMessage, replyTo);
@@ -4123,7 +3500,6 @@ async function startChat() {
             name: uploadFileName,
             type: file.type,
             size: file.size,
-            encrypted: isRoomEncrypted && currentRoomKey && cryptoSupported,
             uploading: false,
             error: err.message,
           })}`,

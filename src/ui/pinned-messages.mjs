@@ -4,8 +4,6 @@
  */
 
 import { store, component } from 'reefjs';
-import { decryptMessageText } from './utils/message-crypto.mjs';
-
 const SignalName = 'pinnedState';
 
 // Pinned messages state with actions
@@ -413,20 +411,11 @@ export async function loadPinnedMessages(roomName, channelName) {
     // Sort by pin timestamp (most recent first)
     pins.sort((a, b) => b.pinnedAt - a.pinnedAt);
 
-    // Decrypt messages
-    const roomKey = window.encryptionState?.roomKey;
-    const decryptedPins = await Promise.all(
-      pins.map(async (pin) => {
-        const decryptedMessage = await decryptMessageText(pin.message, roomKey);
-        return {
-          ...pin,
-          message: decryptedMessage, // Replace with decrypted message for display
-          name: pin.username, // Map username to name for display
-        };
-      }),
-    );
-
-    return decryptedPins;
+    // Return pins with display names
+    return pins.map((pin) => ({
+      ...pin,
+      name: pin.username, // Map username to name for display
+    }));
   } catch (error) {
     console.error('Failed to load pinned messages:', error);
     throw error;
