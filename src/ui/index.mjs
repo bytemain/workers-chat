@@ -4173,7 +4173,9 @@ function getChannelsFromStore(store) {
       count: data.count || 0,
       lastUsed: data.lastUsed || Date.now(),
     }))
-    .sort((a, b) => b.lastUsed - a.lastUsed);
+    .sort((a, b) =>
+      a.channel.localeCompare(b.channel, undefined, { sensitivity: 'base' }),
+    );
 
   // Ensure general channel exists
   if (!channelsList.some((ch) => ch.channel === 'general')) {

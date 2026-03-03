@@ -104,7 +104,7 @@ export function initChannelList(
       return '<div style="color:var(--text-muted);font-size:0.85em;padding:8px;text-align:center;">No channels yet</div>';
     }
 
-    // Sort channels: 'general' at the top, others by lastUsed descending
+    // Sort channels: 'general' at the top, others alphabetically (case-insensitive)
     const sortedChannels = [...visibleChannels].sort((a, b) => {
       const aIsGeneral = a.channel.toLowerCase() === 'general';
       const bIsGeneral = b.channel.toLowerCase() === 'general';
@@ -113,8 +113,10 @@ export function initChannelList(
       if (aIsGeneral && !bIsGeneral) return -1;
       if (!aIsGeneral && bIsGeneral) return 1;
 
-      // Both are general or neither is general, sort by lastUsed
-      return (b.lastUsed || 0) - (a.lastUsed || 0);
+      // Both are general or neither is general, sort alphabetically
+      return a.channel.localeCompare(b.channel, undefined, {
+        sensitivity: 'base',
+      });
     });
 
     const currentChannel = channelsSignal.currentChannel;
@@ -228,7 +230,6 @@ export function initChannelList(
    */
   function setCurrentChannel(channelName) {
     channelsSignal.currentChannel = channelName;
-    touchChannel(channelName);
   }
 
   /**
