@@ -2059,7 +2059,7 @@ function createNewChannel() {
 
   // Check if channel already exists in TinyBase
   const channelExists =
-    window.store && window.store.getRow('channels', trimmed);
+    window.store && window.store.hasRow('channels', trimmed);
   if (channelExists) {
     alert(`Channel #${trimmed} already exists`);
     // Switch to it anyway
