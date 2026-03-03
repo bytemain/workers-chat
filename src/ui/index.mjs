@@ -3545,6 +3545,8 @@ function join() {
     ws.send(JSON.stringify({ name: userState.value.username }));
   });
 
+  let connectionReady = false;
+
   ws.addEventListener('message', async (event) => {
     let data = JSON.parse(event.data);
 
@@ -3558,8 +3560,9 @@ function join() {
       if (userRoster && !userRoster.hasUser(data.joined)) {
         userRoster.addUser(data.joined);
 
-        // Show system message only for other users
-        if (data.joined !== userState.value.username) {
+        // Only show join system message after connection is ready
+        // (suppresses the initial batch of existing users on connect)
+        if (connectionReady && data.joined !== userState.value.username) {
           addSystemMessage(`* ${data.joined} has joined the room`);
         }
       }
@@ -3567,9 +3570,13 @@ function join() {
       // Remove user from roster (Reef.js component handles rendering)
       if (userRoster && userRoster.hasUser(data.quit)) {
         userRoster.removeUser(data.quit);
-        addSystemMessage(`* ${data.quit} has left the room`);
+        if (connectionReady) {
+          addSystemMessage(`* ${data.quit} has left the room`);
+        }
       }
     } else if (data.ready) {
+      connectionReady = true;
+
       if (isReconnecting) {
         updateConnectionStatus('connected');
         isReconnecting = false;
