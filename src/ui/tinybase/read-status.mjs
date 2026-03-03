@@ -1,6 +1,5 @@
 import { createStore } from 'tinybase';
 import { createLocalPersister } from 'tinybase/persisters/persister-browser';
-import { run } from 'ruply';
 
 /**
  * Create a local-only TinyBase store to track read message status
@@ -13,13 +12,12 @@ export async function createReadStatusStore() {
   const store = createStore();
 
   // Local persistence only (no sync to server)
-  await run(
-    createLocalPersister(store, 'local://tinybase/read-status'),
-    async (persister) => {
-      await persister.startAutoLoad();
-      await persister.startAutoSave();
-    },
+  const persister = createLocalPersister(
+    store,
+    'local://tinybase/read-status',
   );
+  await persister.startAutoLoad();
+  await persister.startAutoSave();
 
   return store;
 }

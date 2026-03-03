@@ -18,7 +18,6 @@
     "@opensumi/reconnecting-websocket": "^4.4.0",
     "@schummar/runp": "^2.2.4",
     "hono": "^4.10.5",
-    "ruply": "^1.0.1",
     "tinybase": "^6.7.2"
   },
   "devDependencies": {
