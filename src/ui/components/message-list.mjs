@@ -60,6 +60,7 @@ export function initMessageList(
       /** @type {RawMessage[]} */
       items: [], // 消息列表（来自 TinyBase）
       tempItems: [], // 临时消息列表（仅本地，不同步）
+      systemItems: [], // 系统消息列表（仅本地，join/quit/welcome等）
       loading: false, // 加载状态
       error: null, // 错误信息
       version: 0, // 版本号，用于强制重新渲染
@@ -310,7 +311,19 @@ export function initMessageList(
 
     // 追加临时消息（仅本地，不同步）
     const tempChannelMessages = messagesSignal.tempItems;
-    const allMessages = [...channelMessages, ...tempChannelMessages];
+
+    // Filter system messages for current channel
+    const channelSystemMessages = messagesSignal.systemItems.filter(
+      (msg) =>
+        msg.channel?.toLowerCase() === currentChannel.toLowerCase(),
+    );
+
+    // Merge all message types and sort by timestamp
+    const allMessages = [
+      ...channelMessages,
+      ...tempChannelMessages,
+      ...channelSystemMessages,
+    ].sort((a, b) => a.timestamp - b.timestamp);
 
     // 空状态
     if (allMessages.length === 0 && !messagesSignal.loading) {
@@ -348,6 +361,18 @@ export function initMessageList(
 
     // 遍历消息，创建或复用 message-element
     allMessages.forEach((item, index) => {
+      // Render system messages as <system-message> elements
+      if (item._isSystem) {
+        const p = document.createElement('p');
+        p.className = 'system-message';
+        p.setAttribute('data-message-id', item.messageId);
+        const sysMsg = document.createElement('system-message');
+        sysMsg.setAttribute('message', item.message);
+        p.appendChild(sysMsg);
+        fragment.appendChild(p);
+        return;
+      }
+
       let msgEl = existingElements.get(item.messageId);
 
       // 检查是否是同一用户组的第一条消息（用于头像显示）
@@ -355,7 +380,7 @@ export function initMessageList(
       if (index > 0) {
         const prevItem = allMessages[index - 1];
         // 如果同一用户且时间间隔小于 5 分钟，则不是第一条
-        if (prevItem.name === item.name) {
+        if (prevItem.name === item.name && !prevItem._isSystem) {
           const timeDiff = item.timestamp - prevItem.timestamp;
           if (timeDiff < 5 * 60 * 1000) {
             // 5 minutes
@@ -552,6 +577,24 @@ export function initMessageList(
     return isAtBottom;
   }
 
+  /**
+   * Add a system message (join/quit/welcome) that renders inline with chat messages
+   * @param {string} text - System message text
+   */
+  function addSystemMessage(text) {
+    const sysId = `sys-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    messagesSignal.systemItems = [
+      ...messagesSignal.systemItems,
+      {
+        messageId: sysId,
+        message: text,
+        timestamp: Date.now(),
+        channel: getCurrentChannel(),
+        _isSystem: true,
+      },
+    ];
+  }
+
   return {
     signal: messagesSignal,
     sendMessage,
@@ -560,6 +603,7 @@ export function initMessageList(
     addTempMessage,
     updateTempMessage,
     removeTempMessage,
+    addSystemMessage,
     syncNow: syncTinybaseToSignal,
     render: renderMessages, // 暴露渲染函数供外部使用
     scrollToBottom, // 强制滚动到底部

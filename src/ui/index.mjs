@@ -3644,13 +3644,18 @@ function join() {
 }
 
 function addSystemMessage(text) {
+  // Use message list component to render system messages inline with chat messages
+  if (window.messageList && window.messageList.addSystemMessage) {
+    window.messageList.addSystemMessage(text);
+    return;
+  }
+  // Fallback: append directly to chatlog (before message list is initialized)
   let p = document.createElement('p');
   p.className = 'system-message';
   const sysMsg = document.createElement('system-message');
   sysMsg.setAttribute('message', text);
   p.appendChild(sysMsg);
   chatlog.appendChild(p);
-  // Message list component handles scrolling automatically
 }
 
 // Show re-edit button after deleting a message
