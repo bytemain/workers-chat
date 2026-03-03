@@ -346,6 +346,11 @@
       /* Recent rooms section */
       .room-selector-recent {
         margin-top: 1em;
+        display: none;
+      }
+
+      .room-selector-recent.has-rooms {
+        display: block;
       }
 
       .room-selector-recent-title {
@@ -2074,7 +2079,7 @@
                 </button>
               </div>
 
-              <div id="recent-rooms-section" class="room-selector-recent" style="display: none">
+              <div id="recent-rooms-section" class="room-selector-recent">
                 <div class="room-selector-recent-title">Recent Rooms</div>
                 <div id="recent-room-list" class="recent-room-list"></div>
               </div>

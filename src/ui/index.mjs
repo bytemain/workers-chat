@@ -2710,16 +2710,25 @@ function populateRecentRooms() {
 
   const rooms = getRecentRooms();
   if (rooms.length === 0) {
-    section.style.display = 'none';
+    section.classList.remove('has-rooms');
     return;
   }
 
-  section.style.display = '';
+  section.classList.add('has-rooms');
   list.innerHTML = '';
+
+  // Use event delegation on the list container
+  list.onclick = (e) => {
+    const item = e.target.closest('.recent-room-item');
+    if (item && item.dataset.room) {
+      navigateToRoom(item.dataset.room);
+    }
+  };
 
   rooms.forEach((room) => {
     const item = document.createElement('div');
     item.className = 'recent-room-item';
+    item.dataset.room = room.name;
 
     const icon = document.createElement('i');
     icon.className = room.isPrivate ? 'ri-lock-line' : 'ri-hashtag';
@@ -2729,10 +2738,6 @@ function populateRecentRooms() {
     name.className = 'recent-room-name';
     name.textContent = room.displayName;
     item.appendChild(name);
-
-    item.addEventListener('click', () => {
-      navigateToRoom(room.name);
-    });
 
     list.appendChild(item);
   });
