@@ -147,6 +147,21 @@ class ChatAPI {
     }
     return await response.json();
   }
+
+  // Clear all messages for a room (deletes server-side DB data)
+  async clearRoomMessages(roomName) {
+    const response = await fetch(
+      `${this.baseUrl}/room/${roomName}/messages`,
+      {
+        method: 'DELETE',
+      },
+    );
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || 'Failed to clear room messages');
+    }
+    return await response.json();
+  }
 }
 
 // Initialize API client
