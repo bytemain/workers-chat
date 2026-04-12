@@ -1,4 +1,4 @@
-name = "edge-chat"
+name = "workers-chat"
 compatibility_date = "2025-09-15"
 
 main = "src/api/chat.mjs"
