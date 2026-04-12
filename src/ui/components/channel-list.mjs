@@ -1,8 +1,8 @@
 /**
- * Channel List Component - TinyBase + Reef.js
+ * Channel List Component - RxDB + Reef.js
  *
  * Architecture:
- * TinyBase channels 表 → Signal → Reef Component → 渲染频道列表
+ * RxDB channels collection → Signal → Reef Component → 渲染频道列表
  */
 
 import { signal, component } from 'reefjs';
@@ -14,7 +14,7 @@ const SignalName = 'channelsSignal';
 
 /**
  * Initialize channel list component
- * @param {Object} tinybaseStore - TinyBase store instance
+ * @param {Object} tinybaseStore - RxDB compat store instance
  * @param {string} containerSelector - CSS selector for container element
  * @param {Function} onChannelClick - Callback when channel is clicked (channelName) => void
  * @returns {Object} Component instance and helper functions
@@ -50,11 +50,11 @@ export function initChannelList(
   }
 
   /**
-   * Sync TinyBase channels 表 → Signal
+   * Sync RxDB channels → Signal
    */
   function syncTinybaseToSignal() {
     try {
-      // Get channels from TinyBase using shared utility
+      // Get channels from RxDB using shared utility
       const channelsList = window.getChannelsFromStore
         ? window.getChannelsFromStore(tinybaseStore)
         : [];
@@ -69,9 +69,9 @@ export function initChannelList(
     }
   }
 
-  // 监听 TinyBase channels 表变化
+  // 监听 RxDB channels 表变化
   tinybaseStore.addTableListener('channels', () => {
-    logger.debug('🔄 TinyBase channels table changed, syncing...');
+    logger.debug('🔄 RxDB channels table changed, syncing...');
     syncTinybaseToSignal();
   });
 

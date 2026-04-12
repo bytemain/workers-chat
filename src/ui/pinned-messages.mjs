@@ -324,7 +324,7 @@ export function openPinnedPanel(roomName, channelName) {
   // Update button icon to filled
   updatePinButtonIcon(true);
 
-  // Load pinned messages from TinyBase (silent reload if we have cache)
+  // Load pinned messages from RxDB (silent reload if we have cache)
   loadPinnedMessages(roomName, channelName)
     .then((pins) => {
       pinnedState.setMessages(pins);
@@ -368,12 +368,12 @@ export function togglePinnedPanel(roomName, channelName) {
   }
 }
 
-// Load pinned messages from TinyBase
+// Load pinned messages from RxDB
 // Returns decrypted pins array for use by other components
 export async function loadPinnedMessages(roomName, channelName) {
   try {
     if (!window.store) {
-      console.error('[PinnedMessages] TinyBase store not initialized');
+      console.error('[PinnedMessages] RxDB store not initialized');
       return [];
     }
 
@@ -429,10 +429,10 @@ export async function pinMessage(messageId, messageData) {
     const channelName = window.currentChannel;
 
     if (!window.store) {
-      throw new Error('TinyBase store not initialized');
+      throw new Error('RxDB store not initialized');
     }
 
-    // Add to TinyBase pins table - only store messageId and metadata
+    // Add to RxDB pins collection
     window.store.setRow('pins', messageId, {
       channelName,
       pinnedAt: Date.now(),
@@ -452,10 +452,10 @@ export async function pinMessage(messageId, messageData) {
 export async function unpinMessage(messageId) {
   try {
     if (!window.store) {
-      throw new Error('TinyBase store not initialized');
+      throw new Error('RxDB store not initialized');
     }
 
-    // Remove from TinyBase pins table
+    // Remove from RxDB pins collection
     window.store.delRow('pins', messageId);
 
     console.log('[PinnedMessages] Message unpinned:', messageId);
@@ -497,8 +497,8 @@ export function getPinnedCount() {
 }
 
 /**
- * Initialize listener for TinyBase pin changes
- * This should be called after TinyBase store is initialized
+ * Initialize listener for RxDB pin changes
+ * This should be called after RxDB store is initialized
  */
 export async function initPinListener() {
   if (!window.store) {
@@ -522,7 +522,7 @@ export async function initPinListener() {
     }
   });
 
-  console.log('[PinnedMessages] TinyBase listener initialized');
+  console.log('[PinnedMessages] RxDB listener initialized');
 }
 
 // Inject CSS styles

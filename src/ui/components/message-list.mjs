@@ -1,8 +1,8 @@
 /**
- * Message List Component - TinyBase + Reef.js
+ * Message List Component - RxDB + Reef.js
  *
  * Architecture:
- * TinyBase (数据源) → Signal (响应式) → Reef Component (自动渲染)
+ * RxDB (数据源) → Signal (响应式) → Reef Component (自动渲染)
  *
  * NOTE: 使用 message-element Web Component 通过 setData() 方法传递数据
  * 避免了属性编码/解码和双数据源同步的复杂性
@@ -12,9 +12,8 @@ import { signal, component } from 'reefjs';
 import { throttle } from '../../common/utils.mjs';
 import { listenReefEvent } from '../utils/reef-helpers.mjs';
 import logger from '../../common/logger.mjs';
-import { markChannelAsRead, getUnreadCount } from '../tinybase/read-status.mjs';
+import { markChannelAsRead, getUnreadCount } from '../rxdb/read-status.mjs';
 import { forEach } from '../react/flow.mjs';
-import { IndexesIds } from '../tinybase/index.mjs';
 import { getCurrentChannel } from '../utils/chat-state.mjs';
 import { whenChannelChange } from './channel-list.mjs';
 import { Disposable, MutableDisposable } from '../../common/disposable.mjs';
@@ -36,11 +35,11 @@ const tableId = 'messages';
 
 /**
  * Initialize message list component
- * @param {import('tinybase').Store} tinybaseStore - TinyBase store instance
- * @param {import('tinybase').Indexes} tinybaseIndexes - TinyBase indexes instance for O(log n) filtering
+ * @param {Object} tinybaseStore - RxDB compat store instance
+ * @param {Object} tinybaseIndexes - Unused (kept for API compat)
  * @param {string} containerSelector - CSS selector for container element
  * @param {Map} messagesCache - Global messages cache for legacy features (threads, etc.)
- * @param {Object} readStatusStore - TinyBase store for read status tracking
+ * @param {Object} readStatusStore - Store for read status tracking
  * @param {string} roomName - Current room name
  * @param {Object} channelList - Channel list component instance (for unread count updates)
  * @param {Object} [welcomeConfig] - Welcome messages configuration for empty state
@@ -64,7 +63,7 @@ export function initMessageList(
   const messagesSignal = signal(
     {
       /** @type {RawMessage[]} */
-      items: [], // 消息列表（来自 TinyBase）
+      items: [], // 消息列表（来自 RxDB）
       tempItems: [], // 临时消息列表（仅本地，不同步）
       loading: false, // 加载状态
       error: null, // 错误信息
@@ -81,9 +80,8 @@ export function initMessageList(
   let isInitialLoad = true;
 
   /**
-   * Sync TinyBase → Signal
-   * 监听 TinyBase 的 messages 表变化，自动更新 Signal
-   * 包含解密、replyTo 预览生成等完整逻辑
+   * Sync RxDB → Signal
+   * 读取 RxDB 的 messages 表，按 channel 过滤，自动更新 Signal
    */
   async function syncTinybaseToSignalInternal() {
     try {
@@ -93,22 +91,25 @@ export function initMessageList(
         currentChannel,
       );
 
-      // ✅ Use index for O(log n) query - much faster than O(n) filter!
-      // Get message IDs for current channel from pre-built index
-      const messageIds = tinybaseIndexes.getSliceRowIds(
-        IndexesIds.MessagesByChannel,
-        currentChannel,
+      // Get all messages for this channel from compat store
+      const messagesTable = tinybaseStore.getTable('messages');
+      const messageEntries = Object.entries(messagesTable || {});
+
+      // Filter by channel
+      const channelMessages = messageEntries.filter(
+        ([, data]) =>
+          (data.channel || 'general').toLowerCase() ===
+          currentChannel.toLowerCase(),
       );
 
       logger.log(
-        `📇 Index query: found ${messageIds.length} messages in #${currentChannel}`,
+        `📇 Query: found ${channelMessages.length} messages in #${currentChannel}`,
       );
 
-      // Convert to message objects
+      // Convert to message objects and sort by timestamp
       /** @type {RawMessage[]} */
-      const rawMessagesList = messageIds.map((messageId) => {
-        const row = tinybaseStore.getRow('messages', messageId);
-        return {
+      const rawMessagesList = channelMessages
+        .map(([messageId, row]) => ({
           messageId: messageId,
           name: row.username || 'Anonymous',
           message: row.text || '',
@@ -116,26 +117,18 @@ export function initMessageList(
           channel: row.channel || 'general',
           replyToId: row.replyToId || null,
           editedAt: row.editedAt || null,
-        };
-      });
-      // Note: Already sorted by timestamp via index definition!
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
 
       // Process replyTo previews
       const messagePromises = rawMessagesList.map(async (msg) => {
-        // 处理 replyTo - 需要从 TinyBase 获取父消息
+        // 处理 replyTo - 需要从 RxDB 获取父消息
         let replyTo = null;
         if (msg.replyToId) {
-          // 从 TinyBase 获取父消息
-          const parentData = tinybaseStore.getCell(
-            tableId,
-            msg.replyToId,
-            'text',
-          );
-          const parentUsername = tinybaseStore.getCell(
-            tableId,
-            msg.replyToId,
-            'username',
-          );
+          // 从 store 获取父消息
+          const parentRow = tinybaseStore.getRow(tableId, msg.replyToId);
+          const parentData = parentRow?.text;
+          const parentUsername = parentRow?.username;
 
           if (parentData) {
             // 生成预览（前 50 个字符）
@@ -174,7 +167,7 @@ export function initMessageList(
 
       // Update unread counts using read status store
       if (readStatusStore && roomName && channelList) {
-        // Get all messages from TinyBase
+        // Get all messages from RxDB
         const allMessages = Object.entries(
           tinybaseStore.getTable('messages') || {},
         ).map(([id, data]) => ({
@@ -227,12 +220,12 @@ export function initMessageList(
         messagesList.length,
       );
     } catch (error) {
-      logger.error('Failed to sync TinyBase to Signal:', error);
+      logger.error('Failed to sync RxDB to Signal:', error);
       messagesSignal.error = error.message;
     }
   }
 
-  const syncTinybaseToSignal = throttle(syncTinybaseToSignalInternal, 16);
+  const syncRxdbToSignal = throttle(syncTinybaseToSignalInternal, 16);
 
   const mutableDisposable = new MutableDisposable();
   whenChannelChange((channel) => {
@@ -246,24 +239,21 @@ export function initMessageList(
       return;
     }
 
-    const id = tinybaseIndexes.addSliceRowIdsListener(
-      IndexesIds.MessagesByChannel,
-      channel,
-      (indexes, indexId, sliceId) => {
-        logger.debug(
-          `🔄 MessagesByChannel index changed for slice: ${sliceId}`,
-        );
-        syncTinybaseToSignal();
-      },
-    );
+    // Listen to messages table changes via compat store
+    const id = tinybaseStore.addTableListener('messages', () => {
+      logger.debug(
+        `🔄 Messages table changed, syncing for channel: ${channel}`,
+      );
+      syncRxdbToSignal();
+    });
 
     disposable.add({
       dispose: () => {
-        tinybaseIndexes.delListener(id);
+        tinybaseStore.delListener(id);
       },
     });
 
-    syncTinybaseToSignal();
+    syncRxdbToSignal();
   });
 
   // 监听单个 row 的变化
@@ -273,7 +263,7 @@ export function initMessageList(
     async (store, tableId, rowId, getCellChange) => {
       const cellChange = getCellChange();
       logger.debug(
-        `🔄 TinyBase message row changed: ${rowId}, changes:`,
+        `🔄 RxDB message row changed: ${rowId}, changes:`,
         cellChange,
       );
 
@@ -283,7 +273,7 @@ export function initMessageList(
       );
 
       if (messageElement) {
-        // 从 TinyBase 读取最新数据
+        // 从 RxDB 读取最新数据
         const row = store.getRow(tableId, rowId);
 
         // 直接用 setData 更新，触发 message-element 内部的 Reef.js 重新渲染
@@ -303,7 +293,7 @@ export function initMessageList(
   );
 
   if (!getCurrentChannel().startsWith('dm-')) {
-    syncTinybaseToSignal();
+    syncRxdbToSignal();
   }
 
   // 手动管理 message-element 的创建和更新（避免 outerHTML 导致失去响应性）
@@ -496,7 +486,7 @@ export function initMessageList(
 
     tinybaseStore.setRow('messages', messageId, messageData);
 
-    logger.log('📤 Message sent to TinyBase:', messageId);
+    logger.log('📤 Message sent to RxDB:', messageId);
     return messageId;
   }
 
@@ -505,7 +495,7 @@ export function initMessageList(
    */
   function deleteMessage(messageId) {
     tinybaseStore.delRow('messages', messageId);
-    logger.log('🗑️ Message deleted from TinyBase:', messageId);
+    logger.log('🗑️ Message deleted from RxDB:', messageId);
   }
 
   /**
@@ -525,11 +515,11 @@ export function initMessageList(
   function editMessage(messageId, newText) {
     tinybaseStore.setCell('messages', messageId, 'text', newText);
     tinybaseStore.setCell('messages', messageId, 'editedAt', Date.now());
-    logger.log('✏️ Message edited in TinyBase:', messageId);
+    logger.log('✏️ Message edited in RxDB:', messageId);
   }
 
   /**
-   * 添加临时消息（仅本地，不同步到 TinyBase）
+   * 添加临时消息（仅本地，不同步到 RxDB）
    * 用于显示正在上传的文件等临时状态
    * @param {RawMessage} message - 临时消息对象
    * @returns {string} 临时消息 ID
@@ -621,7 +611,7 @@ export function initMessageList(
     updateTempMessage,
     removeTempMessage,
     addSystemMessage,
-    syncNow: syncTinybaseToSignal,
+    syncNow: syncRxdbToSignal,
     render: renderMessages, // 暴露渲染函数供外部使用
     scrollToBottom, // 强制滚动到底部
     setAtBottom, // 设置 isAtBottom 状态

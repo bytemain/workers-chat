@@ -100,9 +100,9 @@ class ChatAPI {
     return `${wss}${this.hostname}/api/room/${roomName}/websocket`;
   }
 
-  getTinybaseSyncUrl(storeName) {
+  getRxdbSyncUrl(roomName) {
     const wss = window.location.protocol === 'http:' ? 'ws://' : 'wss://';
-    return `${wss}${this.hostname}/api/tinybase/${storeName}`;
+    return `${wss}${this.hostname}/api/rxdb/${roomName}`;
   }
 
   // Delete message

@@ -69,7 +69,7 @@ export class VirtualMessageList {
   }
 
   /**
-   * Add a regular message (from TinyBase).
+   * Add a regular message (from RxDB).
    * @param {Object} msg - RawMessage-like object
    */
   addItem(msg) {
@@ -104,7 +104,7 @@ export class VirtualMessageList {
   }
 
   /**
-   * Bulk-replace all regular messages (e.g. after TinyBase sync).
+   * Bulk-replace all regular messages (e.g. after RxDB sync).
    * Keeps temp and system items, merges in new regular items using
    * linear merge (O(n)) since both arrays are already sorted.
    * @param {Object[]} regularItems - Array of regular messages (already sorted by timestamp)
