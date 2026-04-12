@@ -215,7 +215,7 @@ export async function createRxDBStorage(roomName) {
     storage: getRxStorageDexie(),
     multiInstance: true,
     eventReduce: true,
-    ignoreDuplicate: true,
+    closeDuplicates: true,
   });
 
   // Add collections
