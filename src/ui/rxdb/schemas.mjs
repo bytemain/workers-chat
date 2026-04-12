@@ -14,7 +14,12 @@ export const messagesSchema = {
     text: { type: 'string' },
     username: { type: 'string' },
     channel: { type: 'string' },
-    timestamp: { type: 'number' },
+    timestamp: {
+      type: 'number',
+      minimum: 0,
+      maximum: 1000000000000000,
+      multipleOf: 1,
+    },
     replyToId: { type: ['string', 'null'] },
     editedAt: { type: ['number', 'null'] },
     _deleted: { type: 'boolean' },
@@ -46,7 +51,12 @@ export const channelsSchema = {
   properties: {
     channel: { type: 'string', maxLength: 100 },
     count: { type: 'number' },
-    lastUsed: { type: 'number' },
+    lastUsed: {
+      type: 'number',
+      minimum: 0,
+      maximum: 1000000000000000,
+      multipleOf: 1,
+    },
     _deleted: { type: 'boolean' },
   },
   required: ['channel'],
