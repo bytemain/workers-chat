@@ -2058,11 +2058,92 @@ function initChannelAddButton() {
 // Track if channel info bar has been initialized (prevent duplicate listeners)
 let channelInfoBarInitialized = false;
 
+// Mobile sidebar and touch interaction support
+function initMobileSidebar() {
+  const channelPanel = document.getElementById('channel-panel');
+  const overlay = document.getElementById('sidebar-overlay');
+  const menuBtn = document.getElementById('mobile-menu-btn');
+
+  function openSidebar() {
+    if (channelPanel) channelPanel.classList.add('mobile-open');
+    if (overlay) overlay.classList.add('visible');
+  }
+
+  function closeSidebar() {
+    if (channelPanel) channelPanel.classList.remove('mobile-open');
+    if (overlay) {
+      overlay.classList.remove('visible');
+      // Wait for CSS transition to complete then reset display
+      const TRANSITION_MS = 300; // matches CSS transition: 0.3s
+      setTimeout(() => {
+        if (!overlay.classList.contains('visible')) {
+          overlay.style.display = '';
+        }
+      }, TRANSITION_MS);
+    }
+  }
+
+  if (menuBtn) {
+    menuBtn.addEventListener('click', openSidebar);
+  }
+
+  if (overlay) {
+    overlay.addEventListener('click', closeSidebar);
+  }
+
+  // Close sidebar when a channel is selected (on mobile)
+  // Listen for clicks on channel items within the channel panel
+  if (channelPanel) {
+    channelPanel.addEventListener('click', (e) => {
+      if (e.target.closest('.channel-item')) {
+        closeSidebar();
+      }
+    });
+  }
+
+  // Also close sidebar when room is selected from dropdown
+  const roomDropdown = document.getElementById('room-dropdown');
+  if (roomDropdown) {
+    roomDropdown.addEventListener('click', (e) => {
+      if (e.target.closest('.room-list-item')) {
+        closeSidebar();
+      }
+    });
+  }
+
+  // Touch support: tap a message to show actions (instead of hover)
+  const chatlogEl = document.getElementById('chatlog');
+  const isTouchDevice = matchMedia('(hover: none)');
+  if (chatlogEl) {
+    chatlogEl.addEventListener('click', (e) => {
+      // Only on touch devices (no hover support)
+      if (!isTouchDevice.matches) return;
+
+      const wrapper = e.target.closest('.message-wrapper');
+      // If clicking an interactive element inside message, don't toggle
+      if (e.target.closest('a, button, .reaction-btn, .message-action-btn, .quick-reaction-btn')) return;
+
+      // Remove touch-active from all other messages
+      document.querySelectorAll('.message-wrapper.touch-active').forEach((el) => {
+        if (el !== wrapper) el.classList.remove('touch-active');
+      });
+
+      // Toggle on the clicked message
+      if (wrapper) {
+        wrapper.classList.toggle('touch-active');
+      }
+    });
+  }
+}
+
 // Initialize channel info bar buttons
 function initChannelInfoBar() {
   // Prevent duplicate event listeners
   if (channelInfoBarInitialized) return;
   channelInfoBarInitialized = true;
+
+  // Mobile sidebar toggle
+  initMobileSidebar();
 
   // Toggle members panel
   const btnToggleMembers = document.getElementById('btn-toggle-members');
@@ -2072,6 +2153,18 @@ function initChannelInfoBar() {
       if (rightSidebar) {
         rightSidebar.classList.toggle('visible');
         btnToggleMembers.classList.toggle('active');
+      }
+    });
+  }
+
+  // Close right sidebar (mobile close button)
+  const rightSidebarClose = document.getElementById('right-sidebar-close');
+  if (rightSidebarClose) {
+    rightSidebarClose.addEventListener('click', () => {
+      const rightSidebar = document.getElementById('right-sidebar');
+      if (rightSidebar) {
+        rightSidebar.classList.remove('visible');
+        if (btnToggleMembers) btnToggleMembers.classList.remove('active');
       }
     });
   }

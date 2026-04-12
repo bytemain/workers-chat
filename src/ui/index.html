@@ -1921,6 +1921,215 @@
         transition: transform 0.3s ease;
         display: block;
       }
+
+      /* Panel close button - hidden on desktop, shown on mobile */
+      .panel-close-btn {
+        display: none;
+        width: 28px;
+        height: 28px;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        font-size: 1em;
+        color: var(--text-muted);
+        margin-left: auto;
+        transition: var(--transition);
+      }
+
+      .panel-close-btn:hover {
+        background: var(--background-alt);
+        color: var(--text-main);
+      }
+
+      /* Mobile menu button - hidden on desktop */
+      .mobile-menu-btn {
+        display: none;
+        width: 32px;
+        height: 32px;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        font-size: 1.2em;
+        color: var(--text-muted);
+        flex-shrink: 0;
+        transition: var(--transition);
+      }
+
+      .mobile-menu-btn:hover {
+        background: var(--background-alt);
+        color: var(--text-main);
+      }
+
+      /* Sidebar overlay backdrop - hidden on desktop */
+      .sidebar-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 99;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      .sidebar-overlay.visible {
+        opacity: 1;
+      }
+
+      /* ========== Mobile Responsive ========== */
+      @media (max-width: 768px) {
+        /* Show mobile menu button */
+        .mobile-menu-btn {
+          display: flex;
+        }
+
+        /* Show close buttons on panels */
+        .panel-close-btn {
+          display: flex;
+        }
+
+        /* Channel panel becomes a slide-out drawer */
+        #channel-panel {
+          position: fixed;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          width: 280px;
+          z-index: 100;
+          transform: translateX(-100%);
+          transition: transform 0.3s ease;
+          box-shadow: none;
+        }
+
+        #channel-panel.mobile-open {
+          transform: translateX(0);
+          box-shadow: 4px 0 20px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Show overlay when sidebar is open */
+        .sidebar-overlay.visible {
+          display: block;
+        }
+
+        /* Thread panel becomes full-screen overlay */
+        #thread-panel {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: 100%;
+          z-index: 50;
+        }
+
+        /* Right sidebar becomes full-screen overlay */
+        #right-sidebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: 100%;
+          z-index: 50;
+        }
+
+        /* Hide channel topic on mobile to save space */
+        #channel-topic {
+          display: none;
+        }
+
+        /* Home page adjustments */
+        #main-container.home-mode #chatlog {
+          max-width: 100%;
+          padding: var(--spacing);
+        }
+
+        .home-title h1 {
+          font-size: 1.3em;
+        }
+
+        .room-selector-content {
+          padding: 0 var(--spacing-sm);
+        }
+
+        /* Compact channel info bar on mobile */
+        #channel-info-bar {
+          padding: 0 var(--spacing-sm);
+          gap: var(--spacing-xs);
+        }
+
+        /* Make message actions always visible on touch (no hover) */
+        .message-wrapper .message-actions-sticky {
+          display: none;
+        }
+
+        .message-wrapper.touch-active {
+          background: var(--background-alt);
+        }
+
+        .message-wrapper.touch-active .message-actions-sticky {
+          display: flex;
+        }
+
+        .message-wrapper.touch-active .message-actions {
+          display: flex;
+        }
+
+        /* Reduce message padding on mobile */
+        #chatlog {
+          padding: var(--spacing-sm);
+        }
+
+        /* Make reaction picker responsive */
+        .reaction-picker {
+          flex-wrap: wrap;
+          max-width: calc(100vw - 2rem);
+        }
+
+        /* Compact buttons on mobile */
+        .channel-action-btn {
+          width: 28px;
+          height: 28px;
+          font-size: 1.1em;
+        }
+
+        /* Modal adjustments */
+        .modal-content {
+          margin: var(--spacing-sm);
+          max-width: calc(100vw - 2 * var(--spacing-sm));
+          max-height: calc(100vh - 2 * var(--spacing-sm));
+        }
+
+        /* Code block horizontal scroll */
+        .message-markdown pre {
+          max-width: calc(100vw - 3rem);
+        }
+      }
+
+      /* Small phones */
+      @media (max-width: 400px) {
+        #channel-panel {
+          width: 260px;
+        }
+
+        .channel-action-btn {
+          width: 26px;
+          height: 26px;
+          font-size: 1em;
+        }
+
+        #channel-info-actions {
+          gap: 2px;
+        }
+      }
     </style>
   </head>
 
@@ -1946,6 +2155,9 @@
         });
       }
     </script>
+    <!-- Sidebar overlay for mobile -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
     <!-- Main Container with Flex Layout -->
     <div id="main-container" class="chat-page">
       <!-- Channel Panel -->
@@ -1998,6 +2210,9 @@
         <!-- Channel Info Bar -->
         <div id="channel-info-bar">
           <div id="channel-info-left">
+            <button class="mobile-menu-btn" id="mobile-menu-btn" title="Open menu">
+              <i class="ri-menu-line"></i>
+            </button>
             <span class="channel-hash">#</span>
             <span id="channel-name-display">general</span>
             <span
@@ -2171,7 +2386,11 @@
       <!-- Right Sidebar -->
       <div id="right-sidebar">
         <div id="roster-container">
-          <h3><span><i class="ri-group-line"></i></span><span>Online Members</span></h3>
+          <h3>
+            <span><i class="ri-group-line"></i></span>
+            <span>Online Members</span>
+            <button class="panel-close-btn" id="right-sidebar-close" title="Close"><i class="ri-close-line"></i></button>
+          </h3>
           <div id="roster"></div>
         </div>
       </div>
