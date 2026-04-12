@@ -2450,35 +2450,25 @@ function initChannelInfoBar() {
   // Clear all messages button
   const btnClearMessages = document.getElementById('btn-clear-room-messages');
   if (btnClearMessages) {
-    btnClearMessages.addEventListener('click', async () => {
+    btnClearMessages.addEventListener('click', () => {
       const confirmed = window.confirm(
         `Are you sure you want to clear ALL messages in "${roomname}"?\nThis action cannot be undone.`,
       );
       if (!confirmed) return;
 
-      btnClearMessages.disabled = true;
-      btnClearMessages.innerHTML =
-        '<i class="ri-loader-4-line"></i> Clearing…';
-
-      try {
-        await api.clearRoomMessages(roomname);
-
-        // Clear local TinyBase IndexedDB so stale data isn't pushed back to server
-        try {
-          await indexedDB.deleteDatabase(`tinybase-messages-${roomname}`);
-        } catch (dbErr) {
-          console.warn('Could not delete local IndexedDB cache:', dbErr);
-        }
-
-        roomSettingsModal.classList.remove('visible');
-        window.location.reload();
-      } catch (err) {
-        console.error('Failed to clear messages:', err);
-        alert(`Failed to clear messages: ${err.message}`);
-        btnClearMessages.disabled = false;
-        btnClearMessages.innerHTML =
-          '<i class="ri-delete-bin-line"></i> Clear All Messages';
+      const store = window.store;
+      if (!store) {
+        alert('TinyBase store is not initialized yet.');
+        return;
       }
+
+      // Use TinyBase MergeableStore API to delete tables.
+      // This creates proper CRDT delete operations that sync to all
+      // connected clients and the server via the synchronizer.
+      store.delTable('messages');
+      store.delTable('reaction_instances');
+
+      roomSettingsModal.classList.remove('visible');
     });
   }
 }
