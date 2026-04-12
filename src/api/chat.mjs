@@ -86,6 +86,16 @@ const app = ignite((app) => {
       await next();
     });
 
+    // Clear all messages for a room by wiping the TinyBase DO for that room
+    api.delete('/room/:name/messages', async (c) => {
+      const name = c.req.param('name');
+      const pathId = `/api/tinybase/messages/${name}`;
+      const id = c.env.tinybase.idFromName(pathId);
+      const stub = c.env.tinybase.get(id);
+      const clearUrl = new URL('http://tinybase-sync.local/clear');
+      return stub.fetch(clearUrl.toString(), { method: 'DELETE' });
+    });
+
     api.all('/room/*', async (c) => {
       // OK, the request is for `/api/room/<name>/...{path}`. It's time to route to the Durable Object
       // for the specific room.
