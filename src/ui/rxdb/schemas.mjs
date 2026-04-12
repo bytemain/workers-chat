@@ -5,6 +5,9 @@
  * These schemas replace the TinyBase table definitions.
  */
 
+// Maximum timestamp value for indexed number fields (matches RxDB internal _meta.lwt max)
+const MAX_TIMESTAMP = 1000000000000000;
+
 export const messagesSchema = {
   version: 0,
   primaryKey: 'messageId',
@@ -14,7 +17,12 @@ export const messagesSchema = {
     text: { type: 'string' },
     username: { type: 'string' },
     channel: { type: 'string' },
-    timestamp: { type: 'number' },
+    timestamp: {
+      type: 'number',
+      minimum: 0,
+      maximum: MAX_TIMESTAMP,
+      multipleOf: 1,
+    },
     replyToId: { type: ['string', 'null'] },
     editedAt: { type: ['number', 'null'] },
     _deleted: { type: 'boolean' },
@@ -46,10 +54,15 @@ export const channelsSchema = {
   properties: {
     channel: { type: 'string', maxLength: 100 },
     count: { type: 'number' },
-    lastUsed: { type: 'number' },
+    lastUsed: {
+      type: 'number',
+      minimum: 0,
+      maximum: MAX_TIMESTAMP,
+      multipleOf: 1,
+    },
     _deleted: { type: 'boolean' },
   },
-  required: ['channel'],
+  required: ['channel', 'lastUsed'],
   indexes: ['lastUsed'],
 };
 
