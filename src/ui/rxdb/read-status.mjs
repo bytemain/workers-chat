@@ -48,26 +48,29 @@ export async function createReadStatusStore() {
 }
 
 function createReadStatusCompat(database) {
+  // In-memory cache populated by reactive subscription
+  const cache = new Map(); // rowId -> { channel, readAt }
+
+  // Subscribe to changes and keep cache in sync
+  database.read_messages.find().$.subscribe((docs) => {
+    cache.clear();
+    docs.forEach((doc) => {
+      cache.set(doc.id, {
+        channel: doc.channel,
+        readAt: doc.readAt,
+      });
+    });
+  });
+
   return {
     hasRow(tableId, rowId) {
-      const data =
-        database.read_messages._docCache?.getLatestDocumentDataIfExists(rowId);
-      return !!data && !data._deleted;
+      return cache.has(rowId);
     },
 
     getTable(tableId) {
       const result = {};
-      const docs = database.read_messages._docCache?._cacheItemByDocId;
-      if (docs) {
-        for (const [id, cacheItems] of docs.entries()) {
-          const latest = cacheItems[cacheItems.length - 1];
-          if (latest?.document && !latest.document._deleted) {
-            result[id] = {
-              channel: latest.document.channel,
-              readAt: latest.document.readAt,
-            };
-          }
-        }
+      for (const [id, data] of cache.entries()) {
+        result[id] = { ...data };
       }
       return result;
     },

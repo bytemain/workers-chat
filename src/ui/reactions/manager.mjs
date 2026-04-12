@@ -113,8 +113,10 @@ export class ReactionManager {
    * @param {string} username - Username
    * @returns {string|null} - Reaction instance ID or null
    */
+  /**
+   * Find a user's specific reaction instance ID (sync via cache)
+   */
   findUserReaction(messageId, reactionId, username) {
-    // Scan reactions table for matching row
     const table = this.store.getTable('reactions');
     for (const [rowId, data] of Object.entries(table)) {
       if (
@@ -135,20 +137,35 @@ export class ReactionManager {
    * @param {string} username - Username (optional)
    * @returns {boolean}
    */
+  /**
+   * Check if user has reacted with a specific reaction type (sync via cache)
+   * Uses the compat store's in-memory cache for synchronous access in templates.
+   * @param {string} messageId - Message ID
+   * @param {string} reactionId - Reaction type ID
+   * @param {string} username - Username (optional)
+   * @returns {boolean}
+   */
   hasUserReacted(messageId, reactionId, username = null) {
     const user = username || this.getCurrentUsername();
-    return !!this.findUserReaction(messageId, reactionId, user);
+    const table = this.store.getTable('reactions');
+    return Object.values(table).some(
+      (r) =>
+        r.messageId === messageId &&
+        r.reactionId === reactionId &&
+        r.username === user,
+    );
   }
 
   /**
    * Get all reactions for a message (grouped by reaction type)
+   * Uses the compat store's in-memory cache for synchronous access in templates.
    * @param {string} messageId - Message ID
    * @returns {Array} - Array of reaction groups with counts and users
    */
   getReactions(messageId) {
     const currentUser = this.getCurrentUsername();
 
-    // Get all reactions for this message from the reactions table
+    // Use compat store's in-memory cache (sync)
     const table = this.store.getTable('reactions');
     const reactions = Object.values(table).filter(
       (r) => r.messageId === messageId,

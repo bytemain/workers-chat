@@ -2424,7 +2424,7 @@ function initChannelInfoBar() {
   // Clear all messages button
   const btnClearMessages = document.getElementById('btn-clear-room-messages');
   if (btnClearMessages) {
-    btnClearMessages.addEventListener('click', () => {
+    btnClearMessages.addEventListener('click', async () => {
       const confirmed = window.confirm(
         `Are you sure you want to clear ALL messages in "${roomname}"?\nThis action cannot be undone.`,
       );
@@ -2437,14 +2437,17 @@ function initChannelInfoBar() {
       }
 
       try {
-        // Delete all rows individually
-        const messageIds = store.getRowIds('messages');
-        const reactionIds = store.getRowIds('reactions');
-        for (const rowId of messageIds) {
-          store.delRow('messages', rowId);
-        }
-        for (const rowId of reactionIds) {
-          store.delRow('reactions', rowId);
+        // Use RxDB bulk operations for efficient deletion
+        const db = window.rxdb;
+        if (db) {
+          const messageDocs = await db.messages.find().exec();
+          if (messageDocs.length > 0) {
+            await db.messages.bulkRemove(messageDocs.map((d) => d.messageId));
+          }
+          const reactionDocs = await db.reactions.find().exec();
+          if (reactionDocs.length > 0) {
+            await db.reactions.bulkRemove(reactionDocs.map((d) => d.id));
+          }
         }
       } catch (err) {
         console.error('Failed to clear messages:', err);

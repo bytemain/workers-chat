@@ -295,17 +295,46 @@ export async function createRxDBStorage(roomName) {
  * (like pinned-messages, channel-list, etc.) can work without
  * major rewrites.
  *
+ * Uses an in-memory cache populated by RxDB reactive queries
+ * for synchronous access (matching TinyBase's sync API).
+ *
  * @param {RxDatabase} database - The RxDB database instance
- * @returns {Object} A store-like object with TinyBase-compatible methods
+ * @returns {Object} A store-like object with compatible methods
  */
 function createStoreCompat(database) {
   const tableListeners = new Map(); // tableId -> Set<callback>
   const valueListeners = new Map(); // valueId -> Set<callback>
   let listenerCounter = 0;
 
+  // In-memory cache for synchronous access
+  // Populated by reactive subscriptions to RxDB collections
+  const tableCache = new Map(); // collectionName -> Map<docId, docData>
+  const subscriptions = [];
+
   // In-memory values store (for room settings like roomName)
-  // These are backed by the room_settings collection
   const valuesCache = {};
+
+  // Initialize cache and subscriptions for each collection
+  for (const [name, collection] of Object.entries(database.collections)) {
+    tableCache.set(name, new Map());
+
+    // Subscribe to collection changes and keep cache in sync
+    const sub = collection.find().$.subscribe((docs) => {
+      const cache = tableCache.get(name);
+      cache.clear();
+      docs.forEach((doc) => {
+        const data = doc.toJSON();
+        delete data._rev;
+        delete data._attachments;
+        delete data._meta;
+        delete data._deleted;
+        const pk = collection.schema.primaryPath;
+        cache.set(data[pk], data);
+      });
+      notifyTableListeners(name);
+    });
+    subscriptions.push(sub);
+  }
 
   // Load initial values from room_settings collection
   async function loadValues() {
@@ -317,15 +346,17 @@ function createStoreCompat(database) {
   loadValues();
 
   // Subscribe to room_settings changes
-  database.room_settings.find().$.subscribe((docs) => {
+  const settingsSub = database.room_settings.find().$.subscribe((docs) => {
     docs.forEach((doc) => {
       const oldValue = valuesCache[doc.key];
-      valuesCache[doc.key] = doc.value;
-      if (oldValue !== doc.value) {
-        notifyValueListeners(doc.key, doc.value);
+      const newValue = doc.toJSON().value;
+      valuesCache[doc.key] = newValue;
+      if (oldValue !== newValue) {
+        notifyValueListeners(doc.key, newValue);
       }
     });
   });
+  subscriptions.push(settingsSub);
 
   function notifyTableListeners(tableId) {
     const listeners = tableListeners.get(tableId);
@@ -353,41 +384,23 @@ function createStoreCompat(database) {
     }
   }
 
-  // Subscribe to collection changes and notify table listeners
-  for (const [name, collection] of Object.entries(database.collections)) {
-    collection.find().$.subscribe(() => {
-      notifyTableListeners(name);
-    });
-  }
-
   const compat = {
     /**
-     * Check if a row exists in a collection
+     * Check if a row exists in a collection (sync via cache)
      */
     hasRow(tableId, rowId) {
-      // Sync check - we look in the internal storage
-      // For async-correct check, use findOne
-      const collection = database[tableId];
-      if (!collection) return false;
-      // We'll use a cached approach - subscribe to changes
-      return !!collection._docCache?.getLatestDocumentDataIfExists(rowId);
+      const cache = tableCache.get(tableId);
+      return cache ? cache.has(rowId) : false;
     },
 
     /**
-     * Get a row from a collection (sync-ish via cache)
+     * Get a row from a collection (sync via cache)
      */
     getRow(tableId, rowId) {
-      const collection = database[tableId];
-      if (!collection) return {};
-      const docData =
-        collection._docCache?.getLatestDocumentDataIfExists(rowId);
-      if (!docData) return {};
-      const result = { ...docData };
-      delete result._rev;
-      delete result._attachments;
-      delete result._meta;
-      delete result._deleted;
-      return result;
+      const cache = tableCache.get(tableId);
+      if (!cache) return {};
+      const data = cache.get(rowId);
+      return data ? { ...data } : {};
     },
 
     /**
@@ -443,26 +456,14 @@ function createStoreCompat(database) {
     },
 
     /**
-     * Get all rows in a collection as an object { rowId: rowData }
+     * Get all rows in a collection as an object { rowId: rowData } (sync via cache)
      */
     getTable(tableId) {
-      const collection = database[tableId];
-      if (!collection) return {};
+      const cache = tableCache.get(tableId);
+      if (!cache) return {};
       const result = {};
-      // Use the doc cache for sync access
-      const docs = collection._docCache?._cacheItemByDocId;
-      if (docs) {
-        for (const [id, cacheItems] of docs.entries()) {
-          const latest = cacheItems[cacheItems.length - 1];
-          if (latest?.document && !latest.document._deleted) {
-            const data = { ...latest.document };
-            delete data._rev;
-            delete data._attachments;
-            delete data._meta;
-            delete data._deleted;
-            result[id] = data;
-          }
-        }
+      for (const [id, data] of cache.entries()) {
+        result[id] = { ...data };
       }
       return result;
     },
@@ -471,8 +472,8 @@ function createStoreCompat(database) {
      * Get all row IDs in a collection
      */
     getRowIds(tableId) {
-      const table = this.getTable(tableId);
-      return Object.keys(table);
+      const cache = tableCache.get(tableId);
+      return cache ? Array.from(cache.keys()) : [];
     },
 
     /**
@@ -595,6 +596,17 @@ function createStoreCompat(database) {
       // RxDB doesn't have explicit transactions in the same way,
       // but we can batch operations
       await fn();
+    },
+
+    /**
+     * Clean up all subscriptions
+     */
+    destroy() {
+      subscriptions.forEach((sub) => sub.unsubscribe());
+      subscriptions.length = 0;
+      tableCache.clear();
+      tableListeners.clear();
+      valueListeners.clear();
     },
   };
 
