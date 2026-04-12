@@ -35,7 +35,6 @@ import {
 } from './reactions/ui.mjs';
 import { REACTION_TYPES } from './reactions/config.mjs';
 
-
 // Configure marked.js for Markdown rendering (one-time setup)
 if (typeof marked !== 'undefined') {
   marked.setOptions({
@@ -2463,11 +2462,21 @@ function initChannelInfoBar() {
       }
 
       try {
-        // Use TinyBase MergeableStore API to delete tables.
-        // This creates proper CRDT delete operations that sync to all
-        // connected clients and the server via the synchronizer.
-        store.delTable('messages');
-        store.delTable('reaction_instances');
+        // Delete all rows individually instead of deleting the table.
+        // delTable() removes the table from the CRDT stamp maps entirely,
+        // so the sync protocol treats the table as "never existed" rather
+        // than "was deleted". Cached clients then re-push their stale data
+        // as "new" tables, resurrecting deleted content.
+        // delRow() generates per-cell tombstones with HLC timestamps that
+        // propagate correctly through CRDT sync and win over stale data.
+        store.transaction(() => {
+          for (const rowId of store.getRowIds('messages')) {
+            store.delRow('messages', rowId);
+          }
+          for (const rowId of store.getRowIds('reaction_instances')) {
+            store.delRow('reaction_instances', rowId);
+          }
+        });
       } catch (err) {
         console.error('Failed to clear messages:', err);
         alert(`Failed to clear messages: ${err.message}`);
