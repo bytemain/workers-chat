@@ -2462,11 +2462,17 @@ function initChannelInfoBar() {
         return;
       }
 
-      // Use TinyBase MergeableStore API to delete tables.
-      // This creates proper CRDT delete operations that sync to all
-      // connected clients and the server via the synchronizer.
-      store.delTable('messages');
-      store.delTable('reaction_instances');
+      try {
+        // Use TinyBase MergeableStore API to delete tables.
+        // This creates proper CRDT delete operations that sync to all
+        // connected clients and the server via the synchronizer.
+        store.delTable('messages');
+        store.delTable('reaction_instances');
+      } catch (err) {
+        console.error('Failed to clear messages:', err);
+        alert(`Failed to clear messages: ${err.message}`);
+        return;
+      }
 
       roomSettingsModal.classList.remove('visible');
     });
