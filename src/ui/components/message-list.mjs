@@ -63,7 +63,7 @@ export function initMessageList(
   const messagesSignal = signal(
     {
       /** @type {RawMessage[]} */
-      items: [], // 消息列表（来自 TinyBase）
+      items: [], // 消息列表（来自 RxDB）
       tempItems: [], // 临时消息列表（仅本地，不同步）
       loading: false, // 加载状态
       error: null, // 错误信息

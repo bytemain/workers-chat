@@ -623,7 +623,7 @@ export class ChatRoom {
         }
       });
 
-      // Room info (name, note) is now stored in TinyBase Values for automatic sync
+      // Room info (name, note) is now stored in RxDB Values for automatic sync
 
       app.post('/shutdown', async (c) => {
         try {
@@ -685,7 +685,7 @@ export class ChatRoom {
   /**
    * Handle incoming WebSocket message
    * Processes user registration, rate limiting, and broadcasts messages
-   * Note: Messages are stored in TinyBase, not in Durable Object
+   * Note: Messages are stored in RxDB, not in Durable Object
    * @param {WebSocket} webSocket - WebSocket connection
    * @param {string} msg - Raw message string
    * @returns {Promise<void>}
@@ -757,7 +757,7 @@ export class ChatRoom {
       data.timestamp = Math.max(Date.now(), this.lastTimestamp + 1);
       this.lastTimestamp = data.timestamp;
 
-      // Broadcast to all clients (TinyBase will handle persistence)
+      // Broadcast to all clients (RxDB will handle persistence)
       let dataStr = JSON.stringify(data);
       this.broadcast(dataStr);
     } catch (err) {
@@ -836,7 +836,7 @@ export class ChatRoom {
   /**
    * Shutdown room immediately
    * Closes all WebSockets and notifies clients
-   * Note: Messages and files are managed by TinyBase and R2, not by this DO
+   * Note: Messages and files are managed by RxDB and R2, not by this DO
    * @returns {Promise<void>}
    */
   async shutdown() {

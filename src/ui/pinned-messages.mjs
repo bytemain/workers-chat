@@ -324,7 +324,7 @@ export function openPinnedPanel(roomName, channelName) {
   // Update button icon to filled
   updatePinButtonIcon(true);
 
-  // Load pinned messages from TinyBase (silent reload if we have cache)
+  // Load pinned messages from RxDB (silent reload if we have cache)
   loadPinnedMessages(roomName, channelName)
     .then((pins) => {
       pinnedState.setMessages(pins);
@@ -522,7 +522,7 @@ export async function initPinListener() {
     }
   });
 
-  console.log('[PinnedMessages] TinyBase listener initialized');
+  console.log('[PinnedMessages] RxDB listener initialized');
 }
 
 // Inject CSS styles
