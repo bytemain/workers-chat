@@ -20,13 +20,12 @@ import {
 } from './pinned-messages.mjs';
 import { chatState, initChatState } from './utils/chat-state.mjs';
 import { userState, initUserState } from './utils/user-state.mjs';
-import { createTinybaseStorage } from './tinybase/index.mjs';
+import { createRxDBStorage } from './rxdb/index.mjs';
 import { initMessageList } from './components/message-list.mjs';
 import { initChannelList } from './components/channel-list.mjs';
 import { initUserRoster } from './components/user-roster.mjs';
 import { listenReefEvent } from './utils/reef-helpers.mjs';
-import { createReadStatusStore } from './tinybase/read-status.mjs';
-import { createQueries } from 'tinybase';
+import { createReadStatusStore } from './rxdb/read-status.mjs';
 import { ReactionManager } from './reactions/manager.mjs';
 import {
   initReactionEvents,
@@ -1348,7 +1347,7 @@ function generateLegacyMessageId(timestamp, username) {
   return `${timestamp}-${username}`;
 }
 
-// User message API - handles sending messages through TinyBase
+// User message API - handles sending messages through RxDB
 class UserMessageAPI {
   /**
    * Send a text message
@@ -1360,20 +1359,20 @@ class UserMessageAPI {
       return false;
     }
 
-    // Wait for TinyBase store to be ready
+    // Wait for RxDB store to be ready
     if (isStoreReady && isStoreReady.promise) {
       await isStoreReady.promise;
     }
 
-    // Check if TinyBase store is ready
+    // Check if RxDB store is ready
     if (!window.store || !window.messageList) {
-      console.error('TinyBase store not ready');
+      console.error('RxDB store not ready');
       return false;
     }
 
     let messageToSend = message;
 
-    // Write message to TinyBase (will auto-sync via WsSynchronizer to other clients)
+    // Write message to RxDB (will auto-sync via WebSocket replication to other clients)
     try {
       const messageId = window.messageList.sendMessage(
         messageToSend,
@@ -1383,9 +1382,9 @@ class UserMessageAPI {
           replyToId: replyTo?.messageId || null,
         },
       );
-      console.log('📝 Message sent via TinyBase (will auto-sync):', messageId);
+      console.log('📝 Message sent via RxDB (will auto-sync):', messageId);
     } catch (error) {
-      console.error('Failed to send message via TinyBase:', error);
+      console.error('Failed to send message via RxDB:', error);
       alert('Failed to send message. Please try again.');
       return false;
     }
@@ -1852,16 +1851,16 @@ function locateMessageInMainChat(messageId) {
 }
 window.locateMessageInMainChat = locateMessageInMainChat;
 
-// Load messages for a specific channel from TinyBase (no server request needed)
+// Load messages for a specific channel from RxDB (no server request needed)
 async function loadChannelMessages(channel) {
-  console.log('📂 Switching to channel (TinyBase auto-synced):', channel);
+  console.log('📂 Switching to channel (RxDB auto-synced):', channel);
 
   if (window.messageList && window.messageList.syncNow) {
     try {
       window.messageList.syncNow();
-      console.log('✅ Channel view updated from TinyBase');
+      console.log('✅ Channel view updated from RxDB');
     } catch (error) {
-      console.error('Failed to sync messages from TinyBase:', error);
+      console.error('Failed to sync messages from RxDB:', error);
     }
   }
 }
@@ -1910,7 +1909,7 @@ async function switchToChannel(channel) {
   // If channel doesn't exist in the list, add it temporarily (frontend only)
   // It will be created on backend when first message is sent
   if (!channelExists) {
-    // Add to TinyBase (will trigger Reef.js re-render)
+    // Add to RxDB (will trigger Reef.js re-render)
     if (window.channelList) {
       window.channelList.upsertChannel(normalizedChannel, 0);
     }
@@ -2034,7 +2033,7 @@ function createNewChannel() {
     return;
   }
 
-  // Check if channel already exists in TinyBase
+  // Check if channel already exists in RxDB
   const channelExists =
     window.store && window.store.hasRow('channels', trimmed);
   if (channelExists) {
@@ -2238,7 +2237,7 @@ function initChannelInfoBar() {
     return filters;
   }
 
-  // Perform search using TinyBase Queries
+  // Perform search using RxDB queries
   async function performSearch(query, resultsContainer) {
     if (!query.trim()) {
       resultsContainer.innerHTML =
@@ -2247,86 +2246,62 @@ function initChannelInfoBar() {
     }
 
     const filters = parseSearchQuery(query);
-    const queries = createQueries(window.store);
 
     // Show loading state
     resultsContainer.innerHTML =
       '<p style="color: #999; text-align: center;">Searching...</p>';
 
-    // ✅ Use TinyBase Queries with dynamic WHERE conditions!
-    // Re-define the query with current search filters
-    queries.setQueryDefinition(
-      'searchMessages',
-      'messages',
-      ({ select, where }) => {
-        select('messageId');
-        select('username');
-        select('text');
-        select('timestamp');
-        select('channel');
-
-        // Dynamic WHERE filters using callback functions
-        if (filters.from) {
-          where('username', filters.from); // Exact match
-        }
-
-        if (filters.in) {
-          where('channel', filters.in); // Exact match
-        }
-
-        if (filters.has === 'link') {
-          where((getCell) => {
-            const text = getCell('text') || '';
-            return text.includes('http');
-          });
-        }
-
-        if (filters.has === 'file') {
-          where((getCell) => {
-            const text = getCell('text') || '';
-            return text.startsWith('FILE:');
-          });
-        }
-
-        // Apply text filter
-        if (filters.text) {
-          where((getCell) => {
-            const text = getCell('text') || '';
-            return text.toLowerCase().includes(filters.text.toLowerCase());
-          });
-        }
-      },
+    // Use the compat store to get all messages and filter client-side
+    const messagesTable = window.store.getTable('messages');
+    const allMessages = Object.entries(messagesTable || {}).map(
+      ([msgId, data]) => ({
+        messageId: msgId,
+        username: data.username || '',
+        text: data.text || '',
+        timestamp: data.timestamp || 0,
+        channel: data.channel || 'general',
+      }),
     );
 
-    // Get results sorted by timestamp (newest first)
-    const resultIds = queries.getResultSortedRowIds(
-      'searchMessages',
-      'timestamp',
-      true, // descending
-      0, // offset
-      50, // limit to 50 results
-    );
+    // Apply filters
+    let filteredMessages = allMessages;
 
-    // Render results
-    if (resultIds.length === 0) {
-      resultsContainer.innerHTML =
-        '<p style="color: #999; text-align: center;">No messages found</p>';
-      return;
+    if (filters.from) {
+      filteredMessages = filteredMessages.filter(
+        (m) => m.username === filters.from,
+      );
     }
 
-    const matchingMessages = resultIds.map((msgId) => {
-      const result = queries.getResultRow('searchMessages', msgId);
-      return {
-        messageId: msgId,
-        username: result.username,
-        text: result.text,
-        timestamp: result.timestamp,
-        channel: result.channel,
-      };
-    });
+    if (filters.in) {
+      filteredMessages = filteredMessages.filter(
+        (m) => m.channel === filters.in,
+      );
+    }
 
-    let finalResults = matchingMessages;
+    if (filters.has === 'link') {
+      filteredMessages = filteredMessages.filter((m) =>
+        m.text.includes('http'),
+      );
+    }
 
+    if (filters.has === 'file') {
+      filteredMessages = filteredMessages.filter((m) =>
+        m.text.startsWith('FILE:'),
+      );
+    }
+
+    if (filters.text) {
+      const searchLower = filters.text.toLowerCase();
+      filteredMessages = filteredMessages.filter((m) =>
+        m.text.toLowerCase().includes(searchLower),
+      );
+    }
+
+    // Sort by timestamp descending and limit
+    filteredMessages.sort((a, b) => b.timestamp - a.timestamp);
+    const finalResults = filteredMessages.slice(0, 50);
+
+    // Render results
     if (finalResults.length === 0) {
       resultsContainer.innerHTML =
         '<p style="color: #999; text-align: center;">No messages found</p>';
@@ -2457,26 +2432,20 @@ function initChannelInfoBar() {
 
       const store = window.store;
       if (!store) {
-        alert('TinyBase store is not initialized yet.');
+        alert('RxDB store is not initialized yet.');
         return;
       }
 
       try {
-        // Delete all rows individually instead of deleting the table.
-        // delTable() removes the table from the CRDT stamp maps entirely,
-        // so the sync protocol treats the table as "never existed" rather
-        // than "was deleted". Cached clients then re-push their stale data
-        // as "new" tables, resurrecting deleted content.
-        // delRow() generates per-cell tombstones with HLC timestamps that
-        // propagate correctly through CRDT sync and win over stale data.
-        store.transaction(() => {
-          for (const rowId of store.getRowIds('messages')) {
-            store.delRow('messages', rowId);
-          }
-          for (const rowId of store.getRowIds('reaction_instances')) {
-            store.delRow('reaction_instances', rowId);
-          }
-        });
+        // Delete all rows individually
+        const messageIds = store.getRowIds('messages');
+        const reactionIds = store.getRowIds('reactions');
+        for (const rowId of messageIds) {
+          store.delRow('messages', rowId);
+        }
+        for (const rowId of reactionIds) {
+          store.delRow('reactions', rowId);
+        }
       } catch (err) {
         console.error('Failed to clear messages:', err);
         alert(`Failed to clear messages: ${err.message}`);
@@ -2823,24 +2792,25 @@ async function startChat() {
   // No longer set hash, navigation is handled by pathname
   // document.location.hash = '#' + roomname;
 
-  // Initialize TinyBase store and indexes
-  const { store, indexes, relationships, destroy } =
-    await createTinybaseStorage(roomname);
+  // Initialize RxDB store and collections
+  const { db, destroy } =
+    await createRxDBStorage(roomname);
+  const store = window.store; // compat store set by createRxDBStorage
 
-  console.log('✅ TinyBase store, indexes, and relationships initialized');
+  console.log('✅ RxDB database, collections, and replication initialized');
 
-  // Initialize reaction manager
+  // Initialize reaction manager (using RxDB compat store)
   window.reactionManager = new ReactionManager(
     store,
-    relationships,
-    indexes,
+    null, // relationships not needed with RxDB
+    null, // indexes not needed with RxDB
     () => userState.value.username, // getCurrentUsername
   );
 
   // Initialize reaction events
   initReactionEvents('#chatlog', window.reactionManager);
 
-  // Initialize pin listener after TinyBase is ready
+  // Initialize pin listener after RxDB is ready
   initPinListener();
 
   // Initialize read status store (local only)
@@ -2851,12 +2821,12 @@ async function startChat() {
     isStoreReady.resolve();
   }
 
-  // Initialize message list component (TinyBase + Reef.js)
+  // Initialize message list component (RxDB + Reef.js)
   let messageListComponent = null;
   try {
     messageListComponent = initMessageList(
       window.store,
-      window.indexes, // Pass indexes for efficient querying
+      null, // indexes handled internally by RxDB
       '#chatlog',
       messagesCache, // 传入全局消息缓存
       window.readStatusStore, // 传入已读状态 store
@@ -2910,7 +2880,7 @@ async function startChat() {
     console.error('❌ Failed to initialize message list:', error);
   }
 
-  // Initialize channel list component (TinyBase + Reef.js)
+  // Initialize channel list component (RxDB + Reef.js)
   let channelListComponent = null;
   try {
     channelListComponent = initChannelList(
@@ -2962,7 +2932,7 @@ async function startChat() {
   documentTitlePrefix = roomInfo.name;
   document.title = documentTitlePrefix + ' - Workers Chat';
 
-  // Load room info from TinyBase Values
+  // Load room info from RxDB Values
   function loadRoomInfo() {
     const store = window.store;
     if (!store) return;
@@ -2974,7 +2944,7 @@ async function startChat() {
     }
   }
 
-  // Save room info to TinyBase Values (auto-syncs to all clients)
+  // Save room info to RxDB Values (auto-syncs to all clients)
   function saveRoomInfo() {
     const store = window.store;
     if (!store) return;
@@ -2995,7 +2965,7 @@ async function startChat() {
     });
   }
 
-  // Initialize room info after TinyBase is ready
+  // Initialize room info after RxDB is ready
   async function initRoomInfo() {
     // Wait for store to be ready
     await isStoreReady;
@@ -3444,7 +3414,7 @@ async function startChat() {
         return false;
       }
 
-      // 1. 添加临时消息到 Reef.js signal（不进 TinyBase，不同步）
+      // 1. 添加临时消息到 Reef.js signal（不进 RxDB，不同步）
       tempMessageId = window.messageList.addTempMessage({
         name: userState.value.username,
         message: `FILE:${JSON.stringify({
@@ -3543,7 +3513,7 @@ function createPromiseResolvers() {
   return { promise, resolve, reject };
 }
 
-let isStoreReady = null; // Promise that resolves when TinyBase store is initialized
+let isStoreReady = null; // Promise that resolves when RxDB store is initialized
 
 function join() {
   let ws = new WebSocket(api.getWebSocketUrl(roomname));
@@ -3587,7 +3557,7 @@ function join() {
   ws.addEventListener('message', async (event) => {
     let data = JSON.parse(event.data);
 
-    // NOTE: Regular chat messages are now handled by TinyBase WsSynchronizer
+    // NOTE: Regular chat messages are now handled by RxDB WebSocket replication
     // This WebSocket only handles system events
 
     if (data.error) {
@@ -3618,7 +3588,7 @@ function join() {
         updateConnectionStatus('connected');
         isReconnecting = false;
 
-        console.log('🔄 Reconnected - TinyBase will auto-sync messages');
+        console.log('🔄 Reconnected - RxDB will auto-sync messages');
       }
 
       if (chatInputComponent) {
@@ -3652,7 +3622,7 @@ function join() {
     rejoin();
   });
 
-  // Initialize channel UI features (data already in TinyBase)
+  // Initialize channel UI features (data already in RxDB)
   if (window.channelList) {
     // Initialize channel add button
     initChannelAddButton();
@@ -3886,10 +3856,10 @@ function showEditDialog(messageData) {
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
 
-      // Edit message in TinyBase (will auto-sync to other clients)
+      // Edit message in RxDB (will auto-sync to other clients)
       if (window.messageList) {
         window.messageList.editMessage(messageData.messageId, newMessage);
-        console.log('✅ Message edited via TinyBase');
+        console.log('✅ Message edited via RxDB');
       } else {
         throw new Error('Message list not initialized');
       }
@@ -4208,8 +4178,8 @@ window.hideLeftSidebar = hideLeftSidebar;
 // ============================================
 
 /**
- * Get channels list from TinyBase store
- * @param {Object} store - TinyBase store instance
+ * Get channels list from RxDB store
+ * @param {Object} store - RxDB compat store instance
  * @returns {Array} Array of channel objects {channel, count, lastUsed}
  */
 function getChannelsFromStore(store) {
@@ -4241,9 +4211,9 @@ function getChannelsFromStore(store) {
 // Export for use in other modules
 window.getChannelsFromStore = getChannelsFromStore;
 
-// Cleanup TinyBase resources on page unload
+// Cleanup RxDB resources on page unload
 window.addEventListener('beforeunload', async () => {
-  if (window.tinybaseDestroy) {
-    await window.tinybaseDestroy();
+  if (window.rxdbDestroy) {
+    await window.rxdbDestroy();
   }
 });

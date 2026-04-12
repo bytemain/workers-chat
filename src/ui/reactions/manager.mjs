@@ -1,20 +1,18 @@
 /**
- * Reaction Manager - TinyBase Relationships
- * Manages message reactions with foreign key relationships
+ * Reaction Manager - RxDB-based
+ * Manages message reactions using the compat store layer
  */
 
-import { TableIds } from '../tinybase/index.mjs';
 import { REACTION_TYPES, REACTION_ORDER } from './config.mjs';
 
 /**
  * ReactionManager class
- * Handles all reaction operations using TinyBase store, relationships, and indexes
+ * Handles all reaction operations using the RxDB compat store
  */
 export class ReactionManager {
   constructor(store, relationships, indexes, getCurrentUsername) {
     this.store = store;
-    this.relationships = relationships;
-    this.indexes = indexes;
+    // relationships and indexes params kept for API compat but not used
     this.getCurrentUsername = getCurrentUsername;
   }
 
@@ -55,7 +53,7 @@ export class ReactionManager {
 
     const rowId = this.generateReactionId();
 
-    this.store.setRow(TableIds.Reactions, rowId, {
+    this.store.setRow('reactions', rowId, {
       messageId,
       reactionId,
       username: user,
@@ -79,7 +77,7 @@ export class ReactionManager {
     const reactionRowId = this.findUserReaction(messageId, reactionId, user);
 
     if (reactionRowId) {
-      this.store.delRow(TableIds.Reactions, reactionRowId);
+      this.store.delRow('reactions', reactionRowId);
       console.log(
         `🗑️ Removed reaction: ${reactionId} by ${user} on ${messageId}`,
       );
@@ -116,12 +114,18 @@ export class ReactionManager {
    * @returns {string|null} - Reaction instance ID or null
    */
   findUserReaction(messageId, reactionId, username) {
-    const key = `${messageId}:${reactionId}:${username}`;
-    const rowIds = this.indexes.getSliceRowIds(
-      'reactionsByMessageAndType',
-      key,
-    );
-    return rowIds[0] || null;
+    // Scan reactions table for matching row
+    const table = this.store.getTable('reactions');
+    for (const [rowId, data] of Object.entries(table)) {
+      if (
+        data.messageId === messageId &&
+        data.reactionId === reactionId &&
+        data.username === username
+      ) {
+        return rowId;
+      }
+    }
+    return null;
   }
 
   /**
@@ -144,11 +148,10 @@ export class ReactionManager {
   getReactions(messageId) {
     const currentUser = this.getCurrentUsername();
 
-    // Use index for O(log n) query
-    const rowIds = this.indexes.getSliceRowIds('reactionsByMessage', messageId);
-
-    const reactions = rowIds.map((id) =>
-      this.store.getRow(TableIds.Reactions, id),
+    // Get all reactions for this message from the reactions table
+    const table = this.store.getTable('reactions');
+    const reactions = Object.values(table).filter(
+      (r) => r.messageId === messageId,
     );
 
     // Group by reactionId
@@ -181,8 +184,8 @@ export class ReactionManager {
    * @returns {number}
    */
   getReactionCount(messageId) {
-    const rowIds = this.indexes.getSliceRowIds('reactionsByMessage', messageId);
-    return rowIds.length;
+    const table = this.store.getTable('reactions');
+    return Object.values(table).filter((r) => r.messageId === messageId).length;
   }
 
   /**
@@ -193,11 +196,9 @@ export class ReactionManager {
    */
   getUserReactionsOnMessage(messageId, username = null) {
     const user = username || this.getCurrentUsername();
-    const rowIds = this.indexes.getSliceRowIds('reactionsByMessage', messageId);
-
-    return rowIds
-      .map((id) => this.store.getRow(TableIds.Reactions, id))
-      .filter((r) => r.username === user)
+    const table = this.store.getTable('reactions');
+    return Object.values(table)
+      .filter((r) => r.messageId === messageId && r.username === user)
       .map((r) => r.reactionId);
   }
 
@@ -207,9 +208,13 @@ export class ReactionManager {
    * @param {string} messageId - Message ID
    */
   deleteMessageReactions(messageId) {
-    const rowIds = this.indexes.getSliceRowIds('reactionsByMessage', messageId);
+    const table = this.store.getTable('reactions');
+    const rowIds = Object.entries(table)
+      .filter(([, data]) => data.messageId === messageId)
+      .map(([id]) => id);
+
     rowIds.forEach((id) => {
-      this.store.delRow(TableIds.Reactions, id);
+      this.store.delRow('reactions', id);
     });
     console.log(
       `🗑️ Cascade deleted ${rowIds.length} reactions for message ${messageId}`,

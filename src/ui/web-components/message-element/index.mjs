@@ -1,5 +1,4 @@
 import { signal, component } from 'reefjs';
-import { getIndexes, IndexesIds, TableIds } from '../../tinybase/index.mjs';
 import { attr, clsx, html, raw } from '../../utils/html.mjs';
 import { REACTION_TYPES } from '../../reactions/config.mjs';
 import { renderReactions } from '../../reactions/ui.mjs';
@@ -129,17 +128,13 @@ class MessageElement extends HTMLElement {
    * Set up reaction listener for this specific message
    */
   connectedCallback() {
-    // Listen to reactions for this specific message
-    const indexes = getIndexes();
-    if (indexes && this.data.messageId) {
-      this.reactionListener = indexes.addSliceRowIdsListener(
-        IndexesIds.ReactionsByMessage, // indexId
-        this.data.messageId, // sliceId (the message ID)
-        (indexes, indexId, sliceId) => {
-          // Trigger re-render by incrementing version or updating a dummy field
-          this.data.version = (this.data.version || 0) + 1;
-        },
-      );
+    // Listen to reactions via compat store
+    const store = window.store;
+    if (store && this.data.messageId) {
+      this.reactionListener = store.addTableListener('reactions', () => {
+        // Trigger re-render by incrementing version
+        this.data.version = (this.data.version || 0) + 1;
+      });
     }
   }
 
@@ -148,10 +143,10 @@ class MessageElement extends HTMLElement {
    * Clean up reaction listener
    */
   disconnectedCallback() {
-    const indexes = getIndexes();
+    const store = window.store;
     // Clean up listener when component is removed
-    if (this.reactionListener && indexes) {
-      indexes.delListener(this.reactionListener);
+    if (this.reactionListener && store) {
+      store.delListener(this.reactionListener);
       this.reactionListener = null;
     }
   }

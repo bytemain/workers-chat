@@ -7,11 +7,11 @@ import {
 } from '../common/constants.mjs';
 import { getPath, splitPath } from 'hono/utils/url';
 import {
-  TinyBaseStorageDurableObject,
-  fetch as fetchTinyBase,
-} from './tinybase.mjs';
+  RxDBReplicationDurableObject,
+  getRxdbReplicationFetch,
+} from './rxdb-replication.mjs';
 
-export { TinyBaseStorageDurableObject };
+export { RxDBReplicationDurableObject };
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -55,7 +55,7 @@ function ignite(mount) {
 const app = ignite((app) => {
   function apiRoutes() {
     const api = new Hono();
-    api.route('/tinybase', tinybaseRoutes());
+    api.route('/rxdb', rxdbRoutes());
     api.post('/room', (c) => {
       // POST to /api/room creates a private room.
       //
@@ -129,29 +129,40 @@ const app = ignite((app) => {
     return api;
   }
 
-  function tinybaseRoutes() {
-    const tinybase = new Hono();
-    tinybase.all('/*', async (c, next) => {
+  function rxdbRoutes() {
+    const rxdb = new Hono();
+    rxdb.all('/*', async (c, next) => {
       const request = c.req.raw;
-      console.log('Forwarding to TinyBase with path:', c.req.url.toString());
+      console.log('Forwarding to RxDB DO with path:', c.req.url.toString());
 
-      // Check if tinybase binding exists
-      if (!c.env.tinybase) {
+      // Check if rxdb binding exists
+      if (!c.env.rxdb) {
         console.error(
-          'TinyBase Durable Object binding not found in env:',
+          'RxDB Durable Object binding not found in env:',
           Object.keys(c.env),
         );
-        return c.json({ error: 'TinyBase service not available' }, 503);
+        return c.json({ error: 'RxDB service not available' }, 503);
       }
 
-      // Create new request with normalized URL to ensure consistent database routing
-      // Use a fixed domain to prevent different domains from syncing to different databases
-      const normalizedUrl = new URL(c.req.url, 'http://tinybase-sync.local');
-      const newReq = new Request(normalizedUrl.toString(), request);
-      return fetchTinyBase(newReq, c.env);
+      // Extract room name from the path
+      const url = new URL(c.req.url);
+      const pathParts = url.pathname
+        .replace(/^\/api\/rxdb\/?/, '')
+        .split('/')
+        .filter(Boolean);
+      const roomName = pathParts[0] || 'default';
+
+      const id = c.env.rxdb.idFromName(roomName);
+      const stub = c.env.rxdb.get(id);
+
+      // Forward the request to the DO
+      const newUrl = new URL(request.url);
+      newUrl.pathname = '/' + pathParts.slice(1).join('/');
+
+      return stub.fetch(new Request(newUrl.toString(), request));
     });
 
-    return tinybase;
+    return rxdb;
   }
 
   app.route('/api', apiRoutes());

@@ -9,7 +9,7 @@ preview_urls = false
 bindings = [
   { name = "rooms", class_name = "ChatRoom" },
   { name = "limiters", class_name = "RateLimiter" },
-  { name = "tinybase", class_name = "TinyBaseStorageDurableObject" },
+  { name = "rxdb", class_name = "RxDBReplicationDurableObject" },
 ]
 
 [observability]
@@ -25,7 +25,11 @@ bucket_name = "edge-chat-files"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["ChatRoom", "RateLimiter", "TinyBaseStorageDurableObject"]
+new_sqlite_classes = ["ChatRoom", "RateLimiter"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RxDBReplicationDurableObject"]
 
 [assets]
 directory = "./dist/ui"
@@ -45,7 +49,7 @@ name = "edge-chat"
 bindings = [
   { name = "rooms", class_name = "ChatRoom" },
   { name = "limiters", class_name = "RateLimiter" },
-  { name = "tinybase", class_name = "TinyBaseStorageDurableObject" },
+  { name = "rxdb", class_name = "RxDBReplicationDurableObject" },
 ]
 
 [[env.prod.r2_buckets]]
