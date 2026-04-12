@@ -186,17 +186,9 @@ function setupWebSocketReplication(collection, wsUrl) {
     },
   });
 
-  // Re-sync on reconnect
+  // Re-sync on reconnect (stream subscription is already handled by the open handler above)
   ws.addEventListener('open', () => {
     replicationState.reSync();
-    // Re-subscribe to stream
-    const streamRequest = {
-      id: 'stream',
-      collection: collectionName,
-      method: 'masterChangeStream$',
-      params: [],
-    };
-    ws.send(JSON.stringify(streamRequest));
   });
 
   return { replicationState, ws };
@@ -290,13 +282,19 @@ export async function createRxDBStorage(roomName) {
 }
 
 /**
- * Create a TinyBase-compatible store adapter on top of RxDB.
- * This provides backward-compatible methods so existing code
- * (like pinned-messages, channel-list, etc.) can work without
- * major rewrites.
+ * Create a backward-compatible store adapter on top of RxDB.
  *
- * Uses an in-memory cache populated by RxDB reactive queries
- * for synchronous access (matching TinyBase's sync API).
+ * This uses an in-memory cache populated by RxDB's reactive queries
+ * for synchronous access (matching the previous TinyBase sync API).
+ *
+ * IMPORTANT: Eventual Consistency Model
+ * - Read operations (getTable, getRow, hasRow) read from an in-memory cache
+ *   that is updated asynchronously via RxDB subscriptions.
+ * - After a write (setRow, setCell, delRow), the cache may not immediately
+ *   reflect the change. The subscription will fire shortly after and update
+ *   the cache, triggering any table listeners.
+ * - For time-sensitive reads after writes, use the RxDB async APIs directly
+ *   via window.rxdb (e.g., await db.messages.findOne(id).exec()).
  *
  * @param {RxDatabase} database - The RxDB database instance
  * @returns {Object} A store-like object with compatible methods

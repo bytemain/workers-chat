@@ -272,34 +272,35 @@ export class RxDBReplicationDurableObject {
       if (existing.length > 0) {
         const currentDoc = JSON.parse(existing[0].data);
         const currentRev = existing[0]._rev;
+        const currentDeleted = !!existing[0]._deleted;
 
         // Check for conflict: if assumed master state doesn't match current
         if (assumedMaster) {
           const assumedRev = assumedMaster._rev;
           if (currentRev && assumedRev && currentRev !== assumedRev) {
             // Conflict! Return the current state
-            currentDoc._deleted = !!existing[0]._deleted;
+            currentDoc._deleted = currentDeleted;
             currentDoc._meta = { lwt: existing[0]._meta_lwt };
             currentDoc._rev = currentRev;
             conflicts.push(currentDoc);
             continue;
           }
-        } else {
-          // No assumed master state but document exists - conflict
-          // Unless it was deleted
-          if (!existing[0]._deleted) {
-            currentDoc._deleted = false;
-            currentDoc._meta = { lwt: existing[0]._meta_lwt };
-            currentDoc._rev = currentRev;
-            conflicts.push(currentDoc);
-            continue;
-          }
+        } else if (!currentDeleted) {
+          // No assumed master state and document exists and is NOT deleted
+          // This is a concurrent insert conflict
+          currentDoc._deleted = false;
+          currentDoc._meta = { lwt: existing[0]._meta_lwt };
+          currentDoc._rev = currentRev;
+          conflicts.push(currentDoc);
+          continue;
         }
+        // If document is deleted and no assumed master, allow re-creation
       }
 
       // No conflict - write the document
-      const lwt = newDoc._meta?.lwt || Date.now();
-      const rev = newDoc._rev || `${lwt}-${docId}`;
+      // Server always generates authoritative timestamp
+      const lwt = Date.now();
+      const rev = `${lwt}-${crypto.randomUUID()}`;
       const deleted = newDoc._deleted ? 1 : 0;
 
       // Clean document data (remove internal fields before storing)
@@ -328,16 +329,33 @@ export class RxDBReplicationDurableObject {
    * Broadcast changes to all subscribed WebSocket clients except the sender
    */
   broadcastChanges(senderWs, collectionName, rows) {
+    // Look up the actual LWT values from the written documents
+    const primaryKey = this.getPrimaryKey(collectionName);
+    const lastRow = rows[rows.length - 1];
+    const lastDocId = lastRow?.newDocumentState?.[primaryKey];
+
+    // Get the actual LWT from the database for accurate checkpoint
+    let actualLwt = Date.now();
+    if (lastDocId) {
+      const dbRow = this.sql
+        .exec(
+          `SELECT _meta_lwt FROM "${collectionName}" WHERE id = ?`,
+          lastDocId,
+        )
+        .toArray();
+      if (dbRow.length > 0) {
+        actualLwt = dbRow[0]._meta_lwt;
+      }
+    }
+
     const event = {
       documents: rows.map((row) => {
         const doc = row.newDocumentState;
         return doc;
       }),
       checkpoint: {
-        lwt: Date.now(),
-        id: rows[rows.length - 1]?.newDocumentState?.[
-          this.getPrimaryKey(collectionName)
-        ],
+        lwt: actualLwt,
+        id: lastDocId,
       },
     };
 

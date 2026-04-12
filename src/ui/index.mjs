@@ -2440,14 +2440,8 @@ function initChannelInfoBar() {
         // Use RxDB bulk operations for efficient deletion
         const db = window.rxdb;
         if (db) {
-          const messageDocs = await db.messages.find().exec();
-          if (messageDocs.length > 0) {
-            await db.messages.bulkRemove(messageDocs.map((d) => d.messageId));
-          }
-          const reactionDocs = await db.reactions.find().exec();
-          if (reactionDocs.length > 0) {
-            await db.reactions.bulkRemove(reactionDocs.map((d) => d.id));
-          }
+          await db.messages.find().remove();
+          await db.reactions.find().remove();
         }
       } catch (err) {
         console.error('Failed to clear messages:', err);
