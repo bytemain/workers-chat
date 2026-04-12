@@ -11,13 +11,6 @@ import {
   MAX_FILE_SIZE_BYTES,
   MAX_FILE_SIZE_MB,
 } from '../common/constants.mjs';
-import {
-  initPinnedMessages,
-  togglePinnedPanel,
-  pinMessage,
-  getPinnedCount,
-  initPinListener,
-} from './pinned-messages.mjs';
 import { chatState, initChatState } from './utils/chat-state.mjs';
 import { userState, initUserState } from './utils/user-state.mjs';
 import { createTinybaseStorage } from './tinybase/index.mjs';
@@ -1720,31 +1713,6 @@ function showMessageActionsMenu(
     },
   });
 
-  // Pin action (only in main chat)
-  if (!isInThread && !isThreadOriginal) {
-    actions.push({
-      icon: 'ri-pushpin-line',
-      label: 'Pin',
-      onClick: async () => {
-        await pinMessage(data.messageId);
-      },
-    });
-  }
-
-  // Edit action (only for own messages, non-file)
-  if (
-    data.name === userState.value.username &&
-    !data.message.startsWith('FILE:')
-  ) {
-    actions.push({
-      icon: 'ri-edit-line',
-      label: 'Edit',
-      onClick: () => {
-        showEditDialog(data);
-      },
-    });
-  }
-
   // Delete action (only for own messages)
   if (data.name === userState.value.username) {
     actions.push({
@@ -1872,7 +1840,7 @@ async function switchToChannel(channel) {
   const normalizedChannel = channel;
 
   currentChannel = normalizedChannel;
-  window.currentChannel = normalizedChannel; // Update global for pinned-messages
+  window.currentChannel = normalizedChannel;
 
   // Update channelList current channel (Reef.js will auto re-render)
   if (window.channelList) {
@@ -2078,14 +2046,6 @@ function initChannelInfoBar() {
     });
   }
 
-  // Show pinned messages
-  const btnShowPins = document.getElementById('btn-show-pins');
-  if (btnShowPins) {
-    btnShowPins.addEventListener('click', () => {
-      togglePinnedPanel(roomname, currentChannel);
-    });
-  }
-
   // Search messages
   const btnSearchMessages = document.getElementById('btn-search-messages');
   if (btnSearchMessages) {
@@ -2143,7 +2103,7 @@ function initChannelInfoBar() {
         <input
           type="text"
           id="search-input"
-          placeholder="Search... (Try: from:username, in:channel, has:link)"
+          placeholder="Search messages..."
           style="
             width: 100%;
             padding: 12px;
@@ -2154,22 +2114,6 @@ function initChannelInfoBar() {
             margin-bottom: 16px;
           "
         />
-
-        <div style="
-          background: #f5f5f5;
-          padding: 12px;
-          border-radius: 4px;
-          margin-bottom: 16px;
-          font-size: 12px;
-          color: #666;
-        ">
-          <strong>Search Filters:</strong><br>
-          <code>from:username</code> - Filter by user<br>
-          <code>in:channel</code> - Filter by channel<br>
-          <code>has:link</code> - Messages with links<br>
-          <code>has:file</code> - Messages with files<br>
-          <code>pinned:true</code> - Pinned messages only
-        </div>
 
         <div id="search-results" style="
           max-height: 400px;
@@ -2800,7 +2744,7 @@ async function startChat() {
     .replace(/_/g, '-')
     .toLowerCase();
 
-  window.currentRoomName = roomname; // Update global for pinned-messages
+  window.currentRoomName = roomname;
 
   // Initialize chat state with URL sync
   initChatState();
@@ -2830,9 +2774,6 @@ async function startChat() {
 
   // Initialize reaction events
   initReactionEvents('#chatlog', window.reactionManager);
-
-  // Initialize pin listener after TinyBase is ready
-  initPinListener();
 
   // Initialize read status store (local only)
   window.readStatusStore = await createReadStatusStore();
@@ -3512,9 +3453,6 @@ async function startChat() {
   // Initialize left sidebar with room list and user info
   initializeLeftSidebar();
 
-  // Initialize pinned messages panel (Reef.js component)
-  initPinnedMessages('body');
-
   // Clear unread count for current room
   clearUnreadCount(roomname);
 
@@ -3752,172 +3690,6 @@ function showReEditBanner(deletedMessage) {
 
   // Add to chatlog
   chatlog.appendChild(container);
-}
-
-// Show edit dialog for a message
-function showEditDialog(messageData) {
-  // Create overlay
-  const overlay = document.createElement('div');
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-  `;
-
-  // Create dialog
-  const dialog = document.createElement('div');
-  dialog.style.cssText = `
-    background: white;
-    border-radius: 8px;
-    padding: 20px;
-    width: 90%;
-    max-width: 600px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  `;
-
-  // Title
-  const title = document.createElement('h3');
-  title.textContent = 'Edit Message';
-  title.style.marginTop = '0';
-  dialog.appendChild(title);
-
-  // Textarea
-  const textarea = document.createElement('textarea');
-  textarea.value = messageData.message;
-  textarea.style.cssText = `
-    width: 100%;
-    min-height: 150px;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-family: inherit;
-    font-size: 14px;
-    resize: vertical;
-    box-sizing: border-box;
-  `;
-  dialog.appendChild(textarea);
-
-  // Character count
-  const charCount = document.createElement('div');
-  charCount.style.cssText = `
-    text-align: right;
-    color: #666;
-    font-size: 12px;
-    margin-top: 4px;
-  `;
-  charCount.textContent = `${textarea.value.length} / ${MAX_MESSAGE_LENGTH}`;
-  dialog.appendChild(charCount);
-
-  textarea.addEventListener('input', () => {
-    const len = textarea.value.length;
-    charCount.textContent = `${len} / ${MAX_MESSAGE_LENGTH}`;
-    charCount.style.color = len > MAX_MESSAGE_LENGTH ? '#dc3545' : '#666';
-  });
-
-  // Buttons container
-  const buttons = document.createElement('div');
-  buttons.style.cssText = `
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-    margin-top: 16px;
-  `;
-
-  // Cancel button
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = `
-    padding: 8px 16px;
-    border: 1px solid #ccc;
-    background: white;
-    border-radius: 4px;
-    cursor: pointer;
-  `;
-  cancelBtn.onclick = () => overlay.remove();
-  buttons.appendChild(cancelBtn);
-
-  // Save button
-  const saveBtn = document.createElement('button');
-  saveBtn.textContent = 'Save';
-  saveBtn.style.cssText = `
-    padding: 8px 16px;
-    border: none;
-    background: #007bff;
-    color: white;
-    border-radius: 4px;
-    cursor: pointer;
-  `;
-  saveBtn.onclick = async () => {
-    const newMessage = textarea.value.trim();
-
-    if (!newMessage) {
-      alert('Message cannot be empty');
-      return;
-    }
-
-    if (newMessage.length > MAX_MESSAGE_LENGTH) {
-      alert(`Message is too long (max ${MAX_MESSAGE_LENGTH} characters)`);
-      return;
-    }
-
-    if (newMessage === messageData.message) {
-      // No changes
-      overlay.remove();
-      return;
-    }
-
-    try {
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving...';
-
-      // Edit message in TinyBase (will auto-sync to other clients)
-      if (window.messageList) {
-        window.messageList.editMessage(messageData.messageId, newMessage);
-        console.log('✅ Message edited via TinyBase');
-      } else {
-        throw new Error('Message list not initialized');
-      }
-
-      overlay.remove();
-    } catch (err) {
-      console.error('Error editing message:', err);
-      alert(err.message || 'Failed to edit message');
-      saveBtn.disabled = false;
-      saveBtn.textContent = 'Save';
-    }
-  };
-  buttons.appendChild(saveBtn);
-
-  dialog.appendChild(buttons);
-  overlay.appendChild(dialog);
-  document.body.appendChild(overlay);
-
-  // Focus textarea and select all
-  textarea.focus();
-  textarea.select();
-
-  // Close on overlay click
-  overlay.onclick = (e) => {
-    if (e.target === overlay) {
-      overlay.remove();
-    }
-  };
-
-  // Close on Escape key
-  const escHandler = (e) => {
-    if (e.key === 'Escape') {
-      overlay.remove();
-      document.removeEventListener('keydown', escHandler);
-    }
-  };
-  document.addEventListener('keydown', escHandler);
 }
 
 // NOTE: Browser back/forward navigation is now handled by chat-state.mjs
