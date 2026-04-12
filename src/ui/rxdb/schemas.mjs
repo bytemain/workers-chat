@@ -62,7 +62,7 @@ export const channelsSchema = {
     },
     _deleted: { type: 'boolean' },
   },
-  required: ['channel'],
+  required: ['channel', 'lastUsed'],
   indexes: ['lastUsed'],
 };
 
