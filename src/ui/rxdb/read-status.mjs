@@ -36,7 +36,7 @@ export async function createReadStatusStore() {
     name: 'workers-chat-read-status',
     storage: getRxStorageDexie(),
     multiInstance: false,
-    ignoreDuplicate: true,
+    closeDuplicates: true,
   });
 
   await readStatusDb.addCollections({
