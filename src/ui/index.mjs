@@ -2073,12 +2073,13 @@ function initMobileSidebar() {
     if (channelPanel) channelPanel.classList.remove('mobile-open');
     if (overlay) {
       overlay.classList.remove('visible');
-      // Wait for fade transition then hide
+      // Wait for CSS transition to complete then reset display
+      const TRANSITION_MS = 300; // matches CSS transition: 0.3s
       setTimeout(() => {
         if (!overlay.classList.contains('visible')) {
           overlay.style.display = '';
         }
-      }, 300);
+      }, TRANSITION_MS);
     }
   }
 
@@ -2112,10 +2113,11 @@ function initMobileSidebar() {
 
   // Touch support: tap a message to show actions (instead of hover)
   const chatlogEl = document.getElementById('chatlog');
+  const isTouchDevice = matchMedia('(hover: none)');
   if (chatlogEl) {
     chatlogEl.addEventListener('click', (e) => {
       // Only on touch devices (no hover support)
-      if (!matchMedia('(hover: none)').matches) return;
+      if (!isTouchDevice.matches) return;
 
       const wrapper = e.target.closest('.message-wrapper');
       // If clicking an interactive element inside message, don't toggle
