@@ -88,78 +88,163 @@ export const CollectionNames = {
 };
 
 /**
+ * Create a single shared WebSocket connection that multiplexes all RxDB
+ * collection replications over one connection.
+ *
+ * The server already routes messages by the `collection` field, so this
+ * replaces the previous 5-connection-per-client approach with a single
+ * multiplexed connection.
+ *
+ * @param {string} wsUrl - WebSocket URL for the RxDB replication endpoint
+ * @returns {Object} Shared WebSocket manager
+ */
+function createSharedWebSocket(wsUrl) {
+  const ws = new ReconnectingWebSocket(wsUrl);
+  /** @type {Map<string, { pullStream$: Subject, pendingRequests: Map, onReconnect: Function|null }>} */
+  const collectionHandlers = new Map();
+
+  ws.addEventListener('open', () => {
+    console.log('🔗 WS connected (multiplexed)');
+    // Re-subscribe all registered collections to their change streams
+    for (const [collectionName, handler] of collectionHandlers) {
+      ws.send(
+        JSON.stringify({
+          id: 'stream',
+          collection: collectionName,
+          method: 'masterChangeStream$',
+          params: [],
+        }),
+      );
+      if (handler.onReconnect) {
+        handler.onReconnect();
+      }
+    }
+  });
+
+  ws.addEventListener('message', (event) => {
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch (e) {
+      console.error('Failed to parse WS message:', e);
+      return;
+    }
+    if (msg.id === 'stream') {
+      // Stream event from server - route to the correct collection
+      const handler = collectionHandlers.get(msg.collection);
+      if (handler) {
+        handler.pullStream$.next(msg.result);
+      }
+    } else {
+      // Response to a request - find by pending request ID
+      let matched = false;
+      for (const handler of collectionHandlers.values()) {
+        if (handler.pendingRequests.has(msg.id)) {
+          const resolve = handler.pendingRequests.get(msg.id);
+          handler.pendingRequests.delete(msg.id);
+          resolve(msg.result);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        console.warn('Unhandled WS response id:', msg.id);
+      }
+    }
+  });
+
+  ws.addEventListener('close', () => {
+    console.log('🔌 WS disconnected');
+  });
+
+  return {
+    /**
+     * Register a collection for replication over this shared connection.
+     * Returns a sendRequest function scoped to that collection.
+     *
+     * @param {string} collectionName
+     * @param {Subject} pullStream$
+     * @returns {{ sendRequest: Function, setOnReconnect: Function }}
+     */
+    registerCollection(collectionName, pullStream$) {
+      const pendingRequests = new Map();
+      let requestCounter = 0;
+
+      const handler = {
+        pullStream$,
+        pendingRequests,
+        onReconnect: null,
+      };
+      collectionHandlers.set(collectionName, handler);
+
+      // Subscribe to change stream if already connected
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            id: 'stream',
+            collection: collectionName,
+            method: 'masterChangeStream$',
+            params: [],
+          }),
+        );
+      }
+
+      return {
+        sendRequest(method, params) {
+          return new Promise((resolve) => {
+            const id = `${collectionName}-${requestCounter++}`;
+            pendingRequests.set(id, resolve);
+            const request = JSON.stringify({
+              id,
+              collection: collectionName,
+              method,
+              params,
+            });
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(request);
+            } else {
+              // Wait for connection
+              const onOpen = () => {
+                ws.removeEventListener('open', onOpen);
+                ws.send(request);
+              };
+              ws.addEventListener('open', onOpen);
+            }
+          });
+        },
+        setOnReconnect(fn) {
+          handler.onReconnect = fn;
+        },
+      };
+    },
+
+    close() {
+      ws.close();
+    },
+  };
+}
+
+/**
  * Set up WebSocket replication for a collection using RxDB's replication plugin
- * with a custom backend (Durable Object).
+ * with a shared WebSocket connection.
  *
  * The protocol matches what the RxDB websocket-server plugin expects:
  * - Client sends: { id, collection, method, params }
  * - Server responds: { id, collection, result }
  * - Server streams: { id: 'stream', collection, result }
+ *
+ * @param {RxCollection} collection - The RxDB collection to replicate
+ * @param {Object} sharedWs - Shared WebSocket manager from createSharedWebSocket
+ * @returns {Object} The RxDB replication state
  */
-function setupWebSocketReplication(collection, wsUrl) {
+function setupWebSocketReplication(collection, sharedWs) {
   const collectionName = collection.name;
   const pullStream$ = new Subject();
-  let ws = null;
-  let requestCounter = 0;
-  const pendingRequests = new Map();
 
-  function connect() {
-    ws = new ReconnectingWebSocket(wsUrl);
-
-    ws.addEventListener('open', () => {
-      console.log(`🔗 WS connected for ${collectionName}`);
-      // Subscribe to the change stream
-      const streamRequest = {
-        id: 'stream',
-        collection: collectionName,
-        method: 'masterChangeStream$',
-        params: [],
-      };
-      ws.send(JSON.stringify(streamRequest));
-    });
-
-    ws.addEventListener('message', (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.id === 'stream' && msg.collection === collectionName) {
-        // Stream event from server - push to pull stream
-        pullStream$.next(msg.result);
-      } else if (pendingRequests.has(msg.id)) {
-        // Response to a request
-        const resolve = pendingRequests.get(msg.id);
-        pendingRequests.delete(msg.id);
-        resolve(msg.result);
-      }
-    });
-
-    ws.addEventListener('close', () => {
-      console.log(`🔌 WS disconnected for ${collectionName}`);
-    });
-  }
-
-  function sendRequest(method, params) {
-    return new Promise((resolve) => {
-      const id = `${collectionName}-${requestCounter++}`;
-      pendingRequests.set(id, resolve);
-      const request = {
-        id,
-        collection: collectionName,
-        method,
-        params,
-      };
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(request));
-      } else {
-        // Wait for connection
-        const onOpen = () => {
-          ws.removeEventListener('open', onOpen);
-          ws.send(JSON.stringify(request));
-        };
-        ws.addEventListener('open', onOpen);
-      }
-    });
-  }
-
-  connect();
+  const { sendRequest, setOnReconnect } = sharedWs.registerCollection(
+    collectionName,
+    pullStream$,
+  );
 
   const replicationState = replicateRxCollection({
     collection,
@@ -186,12 +271,12 @@ function setupWebSocketReplication(collection, wsUrl) {
     },
   });
 
-  // Re-sync on reconnect (stream subscription is already handled by the open handler above)
-  ws.addEventListener('open', () => {
+  // Re-sync on reconnect
+  setOnReconnect(() => {
     replicationState.reSync();
   });
 
-  return { replicationState, ws };
+  return replicationState;
 }
 
 /**
@@ -227,17 +312,15 @@ export async function createRxDBStorage(roomName) {
     room_settings: { schema: roomSettingsSchema },
   });
 
-  // Set up WebSocket replication for each collection
+  // Set up a single shared WebSocket and replicate all collections over it
   const wsUrl = api.getRxdbSyncUrl(roomName);
+  const sharedWs = createSharedWebSocket(wsUrl);
   const replications = [];
 
   for (const collectionName of Object.values(CollectionNames)) {
     const collection = db[collectionName];
-    const { replicationState, ws } = setupWebSocketReplication(
-      collection,
-      wsUrl,
-    );
-    replications.push({ replicationState, ws });
+    const replicationState = setupWebSocketReplication(collection, sharedWs);
+    replications.push(replicationState);
   }
 
   // Store references globally for access from other modules
@@ -248,12 +331,10 @@ export async function createRxDBStorage(roomName) {
 
   const destroy = async () => {
     console.log('🧹 Cleaning up RxDB resources...');
-    for (const { replicationState, ws } of replications) {
+    for (const replicationState of replications) {
       await replicationState.cancel();
-      if (ws && ws.close) {
-        ws.close();
-      }
     }
+    sharedWs.close();
     if (db) {
       await db.close();
       db = null;
