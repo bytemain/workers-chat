@@ -122,7 +122,13 @@ function createSharedWebSocket(wsUrl) {
   });
 
   ws.addEventListener('message', (event) => {
-    const msg = JSON.parse(event.data);
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch (e) {
+      console.error('Failed to parse WS message:', e);
+      return;
+    }
     if (msg.id === 'stream') {
       // Stream event from server - route to the correct collection
       const handler = collectionHandlers.get(msg.collection);
@@ -131,13 +137,18 @@ function createSharedWebSocket(wsUrl) {
       }
     } else {
       // Response to a request - find by pending request ID
+      let matched = false;
       for (const handler of collectionHandlers.values()) {
         if (handler.pendingRequests.has(msg.id)) {
           const resolve = handler.pendingRequests.get(msg.id);
           handler.pendingRequests.delete(msg.id);
           resolve(msg.result);
+          matched = true;
           break;
         }
+      }
+      if (!matched) {
+        console.warn('Unhandled WS response id:', msg.id);
       }
     }
   });
