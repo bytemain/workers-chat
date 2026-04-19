@@ -82,6 +82,24 @@ class ChatInputComponent extends HTMLElement {
                 color: #666;
               "
             ></i>
+            <i
+              class="ri-send-plane-2-fill chat-input-send-btn"
+              title="Send"
+              style="
+                position: absolute;
+                right: 8px;
+                bottom: 6px;
+                width: 24px;
+                height: 24px;
+                cursor: pointer;
+                font-size: 22px;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                transition: color 0.2s;
+                color: #1976d2;
+              "
+            ></i>
             <div class="chat-input-menu" style="
               display: none;
               position: absolute;
@@ -135,6 +153,7 @@ class ChatInputComponent extends HTMLElement {
     this.fileInput = this.querySelector('.chat-input-file');
     this.mediaInput = this.querySelector('.chat-input-media');
     this.addBtn = this.querySelector('.chat-input-add-btn');
+    this.sendBtn = this.querySelector('.chat-input-send-btn');
     this.menu = this.querySelector('.chat-input-menu');
   }
 
@@ -173,6 +192,21 @@ class ChatInputComponent extends HTMLElement {
     this.textarea.addEventListener('input', () => {
       this.autoResize();
     });
+
+    // Send button click - submit message
+    if (this.sendBtn) {
+      this.sendBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.submit();
+      });
+      this.sendBtn.addEventListener('mouseenter', () => {
+        this.sendBtn.style.color = '#0d47a1';
+      });
+      this.sendBtn.addEventListener('mouseleave', () => {
+        this.sendBtn.style.color = '#1976d2';
+      });
+    }
 
     // Add button click - toggle menu
     if (this.addBtn && this.menu) {
