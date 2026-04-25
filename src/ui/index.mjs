@@ -513,7 +513,7 @@ customElements.define('file-message', FileMessage);
 // Define custom element for chat messages
 class ChatMessage extends HTMLElement {
   static get observedAttributes() {
-    return ['message', 'edited-at'];
+    return ['message', 'edited-at', 'show-username'];
   }
 
   connectedCallback() {
