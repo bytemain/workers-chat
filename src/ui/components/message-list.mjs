@@ -35,7 +35,7 @@ const tableId = 'messages';
 const VIRTUAL_SCROLL_THRESHOLD = 200;
 const VIRTUAL_OVERSCAN_ITEMS = 12;
 const DEFAULT_MESSAGE_HEIGHT = 72;
-const VIRTUAL_EDGE_ROOT_MARGIN =
+const VIRTUAL_EDGE_ROOT_MARGIN_PX =
   DEFAULT_MESSAGE_HEIGHT * VIRTUAL_OVERSCAN_ITEMS;
 // Smooth measured height changes so variable-size media messages don't cause scroll jumps.
 const MEASURED_HEIGHT_WEIGHT = 0.2;
@@ -88,6 +88,7 @@ export function initMessageList(
   let edgeObserver = null;
   let measureFrame = null;
   let pendingScrollToMessageId = null;
+  let scrollContainer = null;
   const virtualState = {
     range: { start: 0, end: 0, topHeight: 0, bottomHeight: 0 },
     heights: new Map(),
@@ -165,13 +166,12 @@ export function initMessageList(
   }
 
   const scheduleVirtualRender = throttle(() => {
-    const container = document.querySelector(containerSelector);
-    if (!container) return;
+    if (!scrollContainer) return;
 
     const items = virtualList.getItemsByChannel(getCurrentChannel());
     if (items.length <= VIRTUAL_SCROLL_THRESHOLD) return;
 
-    const nextRange = calculateVirtualRange(items, container);
+    const nextRange = calculateVirtualRange(items, scrollContainer);
     if (rangesDiffer(nextRange, virtualState.range)) {
       messagesSignal.version++;
     }
@@ -201,8 +201,8 @@ export function initMessageList(
         }
       },
       {
-        root: document.querySelector(containerSelector),
-        rootMargin: `${VIRTUAL_EDGE_ROOT_MARGIN}px 0px`,
+        root: scrollContainer,
+        rootMargin: `${VIRTUAL_EDGE_ROOT_MARGIN_PX}px 0px`,
         threshold: 0,
       },
     );
@@ -243,6 +243,8 @@ export function initMessageList(
 
       if (measuredCount > 0) {
         const measuredAverage = measuredTotal / measuredCount;
+        // Weighted average keeps 80% of the existing estimate and blends in
+        // 20% new measurements, reducing jumps when media changes row height.
         const nextAverage =
           virtualState.averageHeight * (1 - MEASURED_HEIGHT_WEIGHT) +
           measuredAverage * MEASURED_HEIGHT_WEIGHT;
@@ -698,6 +700,7 @@ export function initMessageList(
   if (!container) {
     throw new Error(`Container not found: ${containerSelector}`);
   }
+  scrollContainer = container;
 
   // Track scroll position to determine if user is at bottom
   container.addEventListener('scroll', () => {
@@ -750,6 +753,8 @@ export function initMessageList(
   }
 
   function getCenteredScrollTop(offset, messageHeight) {
+    // Center the message vertically by moving to its top offset, subtracting
+    // half the viewport height, then adding half the row height.
     return Math.max(0, offset - container.clientHeight / 2 + messageHeight / 2);
   }
 
