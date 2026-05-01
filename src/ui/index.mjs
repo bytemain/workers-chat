@@ -3070,6 +3070,13 @@ async function startChat() {
     store: window.store,
     roomName: roomname,
     getUsername: () => userState.value.username,
+    onNavigateToMessage: (messageId, channel) => {
+      if (window.jumpToMessage) {
+        window.jumpToMessage(messageId, channel);
+      }
+    },
+  }).catch((error) => {
+    console.warn('Notifications failed to initialize:', error);
   });
 
   // Resolve store ready promise

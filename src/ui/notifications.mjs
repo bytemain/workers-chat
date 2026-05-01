@@ -14,6 +14,8 @@ const notificationState = signal(
   {
     supported: false,
     permission: 'default',
+    permissionMessage: '',
+    requestingPermission: false,
     settings: { ...DEFAULT_SETTINGS },
   },
   SignalName,
@@ -25,11 +27,13 @@ let knownMessageIds = new Set();
 let startedAt = 0;
 let listenerId = null;
 let currentRoomName = '';
-let getCurrentUsername = () => window.currentUsername || '';
+let getCurrentUsername = null;
+let navigateToMessage = null;
 const mentionPatternCache = new Map();
 let lastCheckedTimestamp = 0;
 let pendingNotificationScan = null;
 let needsNotificationRescan = false;
+const MAX_TRACKED_MESSAGE_IDS = 1000;
 
 function loadSettings() {
   try {
@@ -134,8 +138,8 @@ async function showDesktopNotification(message, notificationType) {
     const notification = new Notification(title, options);
     notification.onclick = () => {
       window.focus();
-      if (window.jumpToMessage) {
-        window.jumpToMessage(message.messageId, channel);
+      if (navigateToMessage) {
+        navigateToMessage(message.messageId, channel);
       }
       notification.close();
     };
@@ -166,6 +170,7 @@ async function getNewMessages(store) {
         selector: {
           timestamp: {
             $gte: lastCheckedTimestamp || startedAt,
+            $lte: Date.now(),
           },
         },
         sort: [{ timestamp: 'asc' }],
@@ -180,9 +185,24 @@ async function getNewMessages(store) {
   }
 
   const table = store.getTable('messages') || {};
-  return Object.entries(table).map(([messageId, row]) =>
-    normalizeMessage(messageId, row),
-  );
+  const now = Date.now();
+  return Object.entries(table)
+    .map(([messageId, row]) => normalizeMessage(messageId, row))
+    .filter(
+      (message) =>
+        message.timestamp >= (lastCheckedTimestamp || startedAt) &&
+        message.timestamp <= now,
+    )
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .slice(0, 100);
+}
+
+function rememberMessageId(messageId) {
+  knownMessageIds.add(messageId);
+  if (knownMessageIds.size <= MAX_TRACKED_MESSAGE_IDS) return;
+
+  const oldestMessageId = knownMessageIds.values().next().value;
+  knownMessageIds.delete(oldestMessageId);
 }
 
 async function handleMessagesTableChange(store) {
@@ -191,7 +211,7 @@ async function handleMessagesTableChange(store) {
 
   for (const message of messages) {
     if (knownMessageIds.has(message.messageId)) continue;
-    knownMessageIds.add(message.messageId);
+    rememberMessageId(message.messageId);
 
     if (message.timestamp < startedAt) continue;
     lastCheckedTimestamp = Math.max(lastCheckedTimestamp, message.timestamp);
@@ -252,12 +272,20 @@ function notificationSettingsTemplate() {
         Permission: ${permissionLabel}
       </p>
       ${
+        state.permissionMessage
+          ? `<p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: var(--spacing-sm)">${state.permissionMessage}</p>`
+          : ''
+      }
+      ${
         state.permission === 'granted'
           ? ''
-          : `<button id="btn-enable-notifications" class="channel-action-btn" style="width: auto; padding: 6px 10px; margin-bottom: var(--spacing-sm)">
+          : `<button id="btn-enable-notifications" class="channel-action-btn" style="width: auto; padding: 6px 10px; margin-bottom: var(--spacing-sm)" ${state.requestingPermission ? 'disabled' : ''}>
               <i class="ri-notification-3-line"></i> Enable notifications
             </button>`
       }
+      <p style="font-size: 0.85em; color: var(--text-muted); margin-bottom: var(--spacing-sm)">
+        Mentions and DMs are high priority and can notify even while the chat tab is open.
+      </p>
       <label style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
         <input id="notify-mentions" type="checkbox" data-notification-setting="mentions" ${settings.mentions ? 'checked' : ''} />
         <span id="notify-mentions-label">@mention notifications (high priority)</span>
@@ -293,8 +321,20 @@ function initNotificationSettingsUI() {
     if (!button) return;
 
     event.preventDefault();
-    const permission = await Notification.requestPermission();
-    notificationState.permission = permission;
+    if (notificationState.requestingPermission) return;
+
+    notificationState.requestingPermission = true;
+    notificationState.permissionMessage = '';
+    try {
+      const permission = await Notification.requestPermission();
+      notificationState.permission = permission;
+      notificationState.permissionMessage =
+        permission === 'granted'
+          ? 'Notifications are enabled.'
+          : 'Notifications were not enabled. You can change this in your browser site settings.';
+    } finally {
+      notificationState.requestingPermission = false;
+    }
   });
 
   container.addEventListener('change', (event) => {
@@ -313,13 +353,16 @@ function initNotificationSettingsUI() {
 export async function initNotifications(options = {}) {
   if (initialized) return;
 
-  const { store, roomName, getUsername } = options;
+  const { store, roomName, getUsername, onNavigateToMessage } = options;
   if (!store) return;
+  if (typeof getUsername !== 'function') {
+    throw new Error('initNotifications requires getUsername');
+  }
 
   currentRoomName = roomName || '';
-  if (getUsername) {
-    getCurrentUsername = getUsername;
-  }
+  getCurrentUsername = getUsername;
+  navigateToMessage =
+    typeof onNavigateToMessage === 'function' ? onNavigateToMessage : null;
   startedAt = Date.now();
   lastCheckedTimestamp = startedAt;
   knownMessageIds = new Set();
@@ -344,6 +387,8 @@ export function cleanupNotifications(store) {
   startedAt = 0;
   lastCheckedTimestamp = 0;
   currentRoomName = '';
+  getCurrentUsername = null;
+  navigateToMessage = null;
   pendingNotificationScan = null;
   needsNotificationRescan = false;
   mentionPatternCache.clear();
