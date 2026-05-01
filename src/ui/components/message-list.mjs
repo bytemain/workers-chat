@@ -87,12 +87,13 @@ export function initMessageList(
   let isInitialLoad = true;
   let edgeObserver = null;
   let measureFrame = null;
+  let pendingScrollFrame = null;
   let pendingScrollToMessageId = null;
   let scrollContainer = null;
   const virtualState = {
     range: { start: 0, end: 0, topHeight: 0, bottomHeight: 0 },
     heights: new Map(),
-    heightTotal: 0,
+    measuredHeightSum: 0,
     averageHeight: DEFAULT_MESSAGE_HEIGHT,
   };
 
@@ -249,16 +250,18 @@ export function initMessageList(
           const previous = virtualState.heights.get(messageId);
           if (!previous || Math.abs(previous - height) > 1) {
             virtualState.heights.set(messageId, height);
-            virtualState.heightTotal += previous ? height - previous : height;
+            virtualState.measuredHeightSum += previous
+              ? height - previous
+              : height;
             changed = true;
           }
         });
 
       if (virtualState.heights.size > 0) {
-        // heightTotal tracks every row height stored in the Map so the average
-        // uses all measured ranges, not just the currently visible rows.
+        // measuredHeightSum tracks the currently stored height for each
+        // measured message ID, not just the currently visible rows.
         const measuredAverage =
-          virtualState.heightTotal / virtualState.heights.size;
+          virtualState.measuredHeightSum / virtualState.heights.size;
         // Weighted average favors the existing estimate and blends in a small
         // share of new measurements, reducing jumps when media changes row height.
         const nextAverage =
@@ -805,7 +808,12 @@ export function initMessageList(
       offset += getEstimatedHeight(allMessages[i]);
     }
 
-    requestAnimationFrame(() => {
+    if (pendingScrollFrame) {
+      cancelAnimationFrame(pendingScrollFrame);
+    }
+
+    pendingScrollFrame = requestAnimationFrame(() => {
+      pendingScrollFrame = null;
       // Keep scroll, pending highlight, and re-render in one frame so the next
       // measurement pass runs against the newly mounted virtual window.
       container.scrollTop = computeScrollTopForCenteredMessage(
