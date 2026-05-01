@@ -32,6 +32,9 @@ import { VirtualMessageList } from './virtual-message-list.mjs';
 
 const SignalName = 'messagesSignal';
 const tableId = 'messages';
+const VIRTUAL_SCROLL_THRESHOLD = 200;
+const VIRTUAL_OVERSCAN_ITEMS = 12;
+const DEFAULT_MESSAGE_HEIGHT = 72;
 
 /**
  * Initialize message list component
@@ -78,6 +81,202 @@ export function initMessageList(
   // Track if user is at bottom of scroll (for auto-scroll behavior)
   let isAtBottom = true;
   let isInitialLoad = true;
+  let edgeObserver = null;
+  let measureFrame = null;
+  let pendingScrollToMessageId = null;
+  const virtualState = {
+    range: { start: 0, end: 0, topHeight: 0, bottomHeight: 0 },
+    heights: new Map(),
+    averageHeight: DEFAULT_MESSAGE_HEIGHT,
+  };
+
+  function getVirtualKey(item) {
+    return item?.messageId || `${item?.timestamp || 0}-${item?.name || ''}`;
+  }
+
+  function escapeSelector(value) {
+    return typeof CSS !== 'undefined' && CSS.escape
+      ? CSS.escape(value)
+      : String(value).replace(/"/g, '\\"');
+  }
+
+  function getEstimatedHeight(item) {
+    return (
+      virtualState.heights.get(getVirtualKey(item)) ||
+      virtualState.averageHeight
+    );
+  }
+
+  function calculateVirtualRange(items, container) {
+    if (items.length <= VIRTUAL_SCROLL_THRESHOLD) {
+      return {
+        start: 0,
+        end: items.length,
+        topHeight: 0,
+        bottomHeight: 0,
+      };
+    }
+
+    const scrollTop = container.scrollTop;
+    const viewportHeight = container.clientHeight || window.innerHeight;
+    const overscanPx = virtualState.averageHeight * VIRTUAL_OVERSCAN_ITEMS;
+    const targetStart = Math.max(0, scrollTop - overscanPx);
+    const targetEnd = scrollTop + viewportHeight + overscanPx;
+
+    let offset = 0;
+    let start = 0;
+
+    while (
+      start < items.length &&
+      offset + getEstimatedHeight(items[start]) < targetStart
+    ) {
+      offset += getEstimatedHeight(items[start]);
+      start++;
+    }
+
+    const topHeight = offset;
+    let end = start;
+
+    while (end < items.length && offset < targetEnd) {
+      offset += getEstimatedHeight(items[end]);
+      end++;
+    }
+
+    end = Math.min(items.length, Math.max(end, start + 1));
+
+    let totalHeight = offset;
+    for (let i = end; i < items.length; i++) {
+      totalHeight += getEstimatedHeight(items[i]);
+    }
+
+    return {
+      start,
+      end,
+      topHeight,
+      bottomHeight: Math.max(0, totalHeight - offset),
+    };
+  }
+
+  function rangesDiffer(a, b) {
+    return (
+      a.start !== b.start ||
+      a.end !== b.end ||
+      Math.abs(a.topHeight - b.topHeight) > 1 ||
+      Math.abs(a.bottomHeight - b.bottomHeight) > 1
+    );
+  }
+
+  const scheduleVirtualRender = throttle(() => {
+    const container = document.querySelector(containerSelector);
+    if (!container) return;
+
+    const items = virtualList.getItemsByChannel(getCurrentChannel());
+    if (items.length <= VIRTUAL_SCROLL_THRESHOLD) return;
+
+    const nextRange = calculateVirtualRange(items, container);
+    if (rangesDiffer(nextRange, virtualState.range)) {
+      messagesSignal.version++;
+    }
+  }, 16);
+
+  function setupEdgeObservers(messagesContainer) {
+    if (edgeObserver) {
+      edgeObserver.disconnect();
+      edgeObserver = null;
+    }
+
+    if (!messagesContainer) return;
+    if (!('IntersectionObserver' in window)) return;
+
+    const topSentinel = messagesContainer.querySelector(
+      '[data-virtual-edge="top"]',
+    );
+    const bottomSentinel = messagesContainer.querySelector(
+      '[data-virtual-edge="bottom"]',
+    );
+    if (!topSentinel && !bottomSentinel) return;
+
+    edgeObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          scheduleVirtualRender();
+        }
+      },
+      {
+        root: document.querySelector(containerSelector),
+        rootMargin: `${virtualState.averageHeight * VIRTUAL_OVERSCAN_ITEMS}px 0px`,
+        threshold: 0,
+      },
+    );
+
+    if (topSentinel) edgeObserver.observe(topSentinel);
+    if (bottomSentinel) edgeObserver.observe(bottomSentinel);
+  }
+
+  function measureRenderedItems(messagesContainer) {
+    if (measureFrame) {
+      cancelAnimationFrame(measureFrame);
+    }
+
+    measureFrame = requestAnimationFrame(() => {
+      measureFrame = null;
+      let changed = false;
+      let measuredTotal = 0;
+      let measuredCount = 0;
+
+      Array.from(messagesContainer.children)
+        .filter((element) => element.hasAttribute('data-message-id'))
+        .forEach((element) => {
+          const messageId = element.getAttribute('data-message-id');
+          if (!messageId) return;
+
+          const height = element.getBoundingClientRect().height;
+          if (!height) return;
+
+          measuredTotal += height;
+          measuredCount++;
+
+          const previous = virtualState.heights.get(messageId);
+          if (!previous || Math.abs(previous - height) > 1) {
+            virtualState.heights.set(messageId, height);
+            changed = true;
+          }
+        });
+
+      if (measuredCount > 0) {
+        const measuredAverage = measuredTotal / measuredCount;
+        const nextAverage =
+          virtualState.averageHeight * 0.8 + measuredAverage * 0.2;
+        if (Math.abs(nextAverage - virtualState.averageHeight) > 1) {
+          virtualState.averageHeight = nextAverage;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        scheduleVirtualRender();
+      }
+
+      if (pendingScrollToMessageId) {
+        const messageId = pendingScrollToMessageId;
+        pendingScrollToMessageId = null;
+        const messageElement = messagesContainer.querySelector(
+          `[data-message-id="${escapeSelector(messageId)}"]`,
+        );
+        if (messageElement) {
+          messageElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          });
+          messageElement.style.background = '#fff3cd';
+          messageElement.style.transition = 'background 0.3s ease';
+          setTimeout(() => {
+            messageElement.style.background = '';
+          }, 2000);
+        }
+      }
+    });
+  }
 
   /**
    * Sync RxDB → Signal
@@ -215,10 +414,7 @@ export function initMessageList(
 
       messagesSignal.version++; // 增加版本号，强制重新渲染
 
-      logger.log(
-        '📊 Messages synced to Signal:',
-        messagesList.length,
-      );
+      logger.log('📊 Messages synced to Signal:', messagesList.length);
     } catch (error) {
       logger.error('Failed to sync RxDB to Signal:', error);
       messagesSignal.error = error.message;
@@ -315,7 +511,9 @@ export function initMessageList(
     if (allMessages.length === 0 && !messagesSignal.loading) {
       let welcomeHtml = '';
       if (welcomeConfig) {
-        const username = welcomeConfig.getCurrentUsername ? welcomeConfig.getCurrentUsername() : '';
+        const username = welcomeConfig.getCurrentUsername
+          ? welcomeConfig.getCurrentUsername()
+          : '';
         const lines = [];
         if (username) {
           lines.push(`Hello ${username}!`);
@@ -329,14 +527,23 @@ export function initMessageList(
             'Names are not authenticated; anyone can pretend to be anyone. Chat history is saved.',
         );
         if (welcomeConfig.isPrivateRoom) {
-          lines.push('This is a private room. You can invite someone to the room by sending them the URL.');
+          lines.push(
+            'This is a private room. You can invite someone to the room by sending them the URL.',
+          );
         } else {
-          const roomDisplayName = welcomeConfig.getRoomDisplayName ? welcomeConfig.getRoomDisplayName() : '';
+          const roomDisplayName = welcomeConfig.getRoomDisplayName
+            ? welcomeConfig.getRoomDisplayName()
+            : '';
           if (roomDisplayName) {
             lines.push(`Welcome to ${roomDisplayName}. Say hi!`);
           }
         }
-        welcomeHtml = lines.map((line) => `<p class="system-message" style="color: #888; font-style: italic;">* ${line}</p>`).join('');
+        welcomeHtml = lines
+          .map(
+            (line) =>
+              `<p class="system-message" style="color: #888; font-style: italic;">* ${line}</p>`,
+          )
+          .join('');
       }
       container.innerHTML = `
         <div class="message-empty">
@@ -370,59 +577,90 @@ export function initMessageList(
     // 创建新的 DocumentFragment（提高性能）
     const fragment = document.createDocumentFragment();
 
+    const useVirtualScroll = allMessages.length > VIRTUAL_SCROLL_THRESHOLD;
+    const virtualRange = useVirtualScroll
+      ? calculateVirtualRange(allMessages, container)
+      : {
+          start: 0,
+          end: allMessages.length,
+          topHeight: 0,
+          bottomHeight: 0,
+        };
+    virtualState.range = virtualRange;
+
+    if (useVirtualScroll) {
+      const topSpacer = document.createElement('div');
+      topSpacer.className = 'virtual-scroll-spacer virtual-scroll-spacer-top';
+      topSpacer.setAttribute('data-virtual-edge', 'top');
+      topSpacer.style.height = `${virtualRange.topHeight}px`;
+      fragment.appendChild(topSpacer);
+    }
+
     // 遍历消息，创建或复用 message-element
-    allMessages.forEach((item, index) => {
-      // Render system messages as <system-message> elements
-      if (item._isSystem) {
-        const p = document.createElement('p');
-        p.className = 'system-message';
-        p.setAttribute('data-message-id', item.messageId);
-        const sysMsg = document.createElement('system-message');
-        sysMsg.setAttribute('message', item.message);
-        p.appendChild(sysMsg);
-        fragment.appendChild(p);
-        return;
-      }
+    allMessages
+      .slice(virtualRange.start, virtualRange.end)
+      .forEach((item, relativeIndex) => {
+        const index = virtualRange.start + relativeIndex;
+        // Render system messages as <system-message> elements
+        if (item._isSystem) {
+          const p = document.createElement('p');
+          p.className = 'system-message';
+          p.setAttribute('data-message-id', item.messageId);
+          const sysMsg = document.createElement('system-message');
+          sysMsg.setAttribute('message', item.message);
+          p.appendChild(sysMsg);
+          fragment.appendChild(p);
+          return;
+        }
 
-      let msgEl = existingElements.get(item.messageId);
+        let msgEl = existingElements.get(item.messageId);
 
-      // 检查是否是同一用户组的第一条消息（用于头像显示）
-      let isFirstInGroup = true;
-      if (index > 0) {
-        const prevItem = allMessages[index - 1];
-        // 如果同一用户且时间间隔小于 5 分钟，则不是第一条
-        if (prevItem.name === item.name && !prevItem._isSystem) {
-          const timeDiff = item.timestamp - prevItem.timestamp;
-          if (timeDiff < 5 * 60 * 1000) {
-            // 5 minutes
-            isFirstInGroup = false;
+        // 检查是否是同一用户组的第一条消息（用于头像显示）
+        let isFirstInGroup = true;
+        if (index > 0) {
+          const prevItem = allMessages[index - 1];
+          // 如果同一用户且时间间隔小于 5 分钟，则不是第一条
+          if (prevItem.name === item.name && !prevItem._isSystem) {
+            const timeDiff = item.timestamp - prevItem.timestamp;
+            if (timeDiff < 5 * 60 * 1000) {
+              // 5 minutes
+              isFirstInGroup = false;
+            }
           }
         }
-      }
 
-      if (msgEl) {
-        // 复用现有元素，更新数据
-        msgEl.setData({
-          ...item,
-          isInThread: false,
-          isThreadOriginal: false,
-          isFirstInGroup, // 传递分组信息
-        });
-        existingElements.delete(item.messageId); // 标记为已使用
-      } else {
-        // 创建新元素
-        msgEl = document.createElement('message-element');
-        msgEl.setAttribute('data-message-id', item.messageId); // 设置 key
-        msgEl.setData({
-          ...item,
-          isInThread: false,
-          isThreadOriginal: false,
-          isFirstInGroup, // 传递分组信息
-        });
-      }
+        if (msgEl) {
+          // 复用现有元素，更新数据
+          msgEl.setData({
+            ...item,
+            isInThread: false,
+            isThreadOriginal: false,
+            isFirstInGroup, // 传递分组信息
+          });
+          existingElements.delete(item.messageId); // 标记为已使用
+        } else {
+          // 创建新元素
+          msgEl = document.createElement('message-element');
+          msgEl.setAttribute('data-message-id', item.messageId); // 设置 key
+          msgEl.setData({
+            ...item,
+            isInThread: false,
+            isThreadOriginal: false,
+            isFirstInGroup, // 传递分组信息
+          });
+        }
 
-      fragment.appendChild(msgEl);
-    });
+        fragment.appendChild(msgEl);
+      });
+
+    if (useVirtualScroll) {
+      const bottomSpacer = document.createElement('div');
+      bottomSpacer.className =
+        'virtual-scroll-spacer virtual-scroll-spacer-bottom';
+      bottomSpacer.setAttribute('data-virtual-edge', 'bottom');
+      bottomSpacer.style.height = `${virtualRange.bottomHeight}px`;
+      fragment.appendChild(bottomSpacer);
+    }
 
     // 删除不再需要的元素
     existingElements.forEach((el) => {
@@ -432,9 +670,11 @@ export function initMessageList(
     // 替换容器内容
     messagesContainer.innerHTML = '';
     messagesContainer.appendChild(fragment);
+    measureRenderedItems(messagesContainer);
+    setupEdgeObservers(useVirtualScroll ? messagesContainer : null);
 
     logger.log(
-      `✅ Rendered ${allMessages.length} messages in #${currentChannel}`,
+      `✅ Rendered ${useVirtualScroll ? `${virtualRange.end - virtualRange.start}/${allMessages.length}` : allMessages.length} messages in #${currentChannel}`,
     );
 
     // Scroll to bottom if this is initial load or user was at bottom
@@ -466,6 +706,7 @@ export function initMessageList(
     isAtBottom =
       container.scrollTop + container.clientHeight >=
       container.scrollHeight - 1;
+    scheduleVirtualRender();
   });
 
   renderMessages();
@@ -507,6 +748,31 @@ export function initMessageList(
       container.scrollTop = container.scrollHeight;
       logger.debug('📜 Force scrolled to bottom');
     });
+  }
+
+  function scrollToMessage(messageId) {
+    const currentChannel = getCurrentChannel();
+    const allMessages = virtualList.getItemsByChannel(currentChannel);
+    const index = allMessages.findIndex((item) => item.messageId === messageId);
+
+    if (index === -1) {
+      return false;
+    }
+
+    let offset = 0;
+    for (let i = 0; i < index; i++) {
+      offset += getEstimatedHeight(allMessages[i]);
+    }
+
+    pendingScrollToMessageId = messageId;
+    container.scrollTop = Math.max(
+      0,
+      offset -
+        container.clientHeight / 2 +
+        getEstimatedHeight(allMessages[index]) / 2,
+    );
+    messagesSignal.version++;
+    return true;
   }
 
   /**
@@ -616,5 +882,6 @@ export function initMessageList(
     scrollToBottom, // 强制滚动到底部
     setAtBottom, // 设置 isAtBottom 状态
     getAtBottom, // 获取 isAtBottom 状态
+    scrollToMessage, // 滚动到虚拟列表中的指定消息
   };
 }

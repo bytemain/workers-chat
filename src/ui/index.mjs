@@ -1997,6 +1997,9 @@ function locateMessageInMainChat(messageId) {
     setTimeout(() => {
       mainChatMsg.style.background = '';
     }, 2000);
+  } else if (window.messageList?.scrollToMessage?.(messageId)) {
+    // Virtualized messages may not be mounted until the list scrolls to them.
+    return;
   } else {
     // Message not found in current view (might be filtered or not loaded)
     addSystemMessage('* Message not found in current chat view');
