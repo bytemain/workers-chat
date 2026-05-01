@@ -35,6 +35,10 @@ const tableId = 'messages';
 const VIRTUAL_SCROLL_THRESHOLD = 200;
 const VIRTUAL_OVERSCAN_ITEMS = 12;
 const DEFAULT_MESSAGE_HEIGHT = 72;
+const VIRTUAL_EDGE_ROOT_MARGIN =
+  DEFAULT_MESSAGE_HEIGHT * VIRTUAL_OVERSCAN_ITEMS;
+// Smooth measured height changes so variable-size media messages don't cause scroll jumps.
+const MEASURED_HEIGHT_WEIGHT = 0.2;
 
 /**
  * Initialize message list component
@@ -92,12 +96,6 @@ export function initMessageList(
 
   function getVirtualKey(item) {
     return item?.messageId || `${item?.timestamp || 0}-${item?.name || ''}`;
-  }
-
-  function escapeSelector(value) {
-    return typeof CSS !== 'undefined' && CSS.escape
-      ? CSS.escape(value)
-      : String(value).replace(/"/g, '\\"');
   }
 
   function getEstimatedHeight(item) {
@@ -204,7 +202,7 @@ export function initMessageList(
       },
       {
         root: document.querySelector(containerSelector),
-        rootMargin: `${virtualState.averageHeight * VIRTUAL_OVERSCAN_ITEMS}px 0px`,
+        rootMargin: `${VIRTUAL_EDGE_ROOT_MARGIN}px 0px`,
         threshold: 0,
       },
     );
@@ -246,7 +244,8 @@ export function initMessageList(
       if (measuredCount > 0) {
         const measuredAverage = measuredTotal / measuredCount;
         const nextAverage =
-          virtualState.averageHeight * 0.8 + measuredAverage * 0.2;
+          virtualState.averageHeight * (1 - MEASURED_HEIGHT_WEIGHT) +
+          measuredAverage * MEASURED_HEIGHT_WEIGHT;
         if (Math.abs(nextAverage - virtualState.averageHeight) > 1) {
           virtualState.averageHeight = nextAverage;
           changed = true;
@@ -260,8 +259,8 @@ export function initMessageList(
       if (pendingScrollToMessageId) {
         const messageId = pendingScrollToMessageId;
         pendingScrollToMessageId = null;
-        const messageElement = messagesContainer.querySelector(
-          `[data-message-id="${escapeSelector(messageId)}"]`,
+        const messageElement = Array.from(messagesContainer.children).find(
+          (element) => element.getAttribute('data-message-id') === messageId,
         );
         if (messageElement) {
           messageElement.scrollIntoView({
@@ -750,8 +749,20 @@ export function initMessageList(
     });
   }
 
+  function getCenteredScrollTop(offset, messageHeight) {
+    return Math.max(0, offset - container.clientHeight / 2 + messageHeight / 2);
+  }
+
   function scrollToMessage(messageId) {
+    if (!messageId || !container) {
+      return false;
+    }
+
     const currentChannel = getCurrentChannel();
+    if (!currentChannel) {
+      return false;
+    }
+
     const allMessages = virtualList.getItemsByChannel(currentChannel);
     const index = allMessages.findIndex((item) => item.messageId === messageId);
 
@@ -765,11 +776,9 @@ export function initMessageList(
     }
 
     pendingScrollToMessageId = messageId;
-    container.scrollTop = Math.max(
-      0,
-      offset -
-        container.clientHeight / 2 +
-        getEstimatedHeight(allMessages[index]) / 2,
+    container.scrollTop = getCenteredScrollTop(
+      offset,
+      getEstimatedHeight(allMessages[index]),
     );
     messagesSignal.version++;
     return true;
