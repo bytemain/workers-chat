@@ -27,6 +27,7 @@ let listenerId = null;
 let currentRoomName = '';
 let getCurrentUsername = () => window.currentUsername || '';
 const mentionPatternCache = new Map();
+let lastCheckedTimestamp = 0;
 
 function loadSettings() {
   try {
@@ -151,16 +152,42 @@ function normalizeMessage(messageId, data) {
   };
 }
 
-function handleMessagesTableChange(store) {
+async function getNewMessages(store) {
+  const db = window.rxdb;
+  if (db?.messages) {
+    const docs = await db.messages
+      .find({
+        selector: {
+          timestamp: {
+            $gte: lastCheckedTimestamp || startedAt,
+          },
+        },
+        sort: [{ timestamp: 'asc' }],
+      })
+      .exec();
+
+    return docs.map((doc) => {
+      const data = doc.toJSON();
+      return normalizeMessage(data.messageId, data);
+    });
+  }
+
   const table = store.getTable('messages') || {};
+  return Object.entries(table).map(([messageId, row]) =>
+    normalizeMessage(messageId, row),
+  );
+}
+
+async function handleMessagesTableChange(store) {
+  const messages = await getNewMessages(store);
   const username = getCurrentUsername();
 
-  for (const [messageId, row] of Object.entries(table)) {
-    if (knownMessageIds.has(messageId)) continue;
-    knownMessageIds.add(messageId);
+  for (const message of messages) {
+    if (knownMessageIds.has(message.messageId)) continue;
+    knownMessageIds.add(message.messageId);
 
-    const message = normalizeMessage(messageId, row);
     if (message.timestamp < startedAt) continue;
+    lastCheckedTimestamp = Math.max(lastCheckedTimestamp, message.timestamp);
 
     const notificationType = shouldNotify(message, username);
     if (notificationType) {
@@ -205,15 +232,15 @@ function notificationSettingsTemplate() {
             </button>`
       }
       <label style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-        <input id="notify-mentions" type="checkbox" data-notification-setting="mentions" aria-labelledby="notify-mentions-label" ${settings.mentions ? 'checked' : ''} />
+        <input id="notify-mentions" type="checkbox" data-notification-setting="mentions" ${settings.mentions ? 'checked' : ''} />
         <span id="notify-mentions-label">@mention notifications (high priority)</span>
       </label>
       <label style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-        <input id="notify-direct-messages" type="checkbox" data-notification-setting="directMessages" aria-labelledby="notify-direct-messages-label" ${settings.directMessages ? 'checked' : ''} />
+        <input id="notify-direct-messages" type="checkbox" data-notification-setting="directMessages" ${settings.directMessages ? 'checked' : ''} />
         <span id="notify-direct-messages-label">Direct message notifications</span>
       </label>
       <label style="display: flex; gap: 8px; align-items: center;">
-        <input id="notify-new-messages" type="checkbox" data-notification-setting="newMessages" aria-labelledby="notify-new-messages-label" ${settings.newMessages ? 'checked' : ''} />
+        <input id="notify-new-messages" type="checkbox" data-notification-setting="newMessages" ${settings.newMessages ? 'checked' : ''} />
         <span id="notify-new-messages-label">All new message notifications</span>
       </label>
     </div>
@@ -258,7 +285,6 @@ function initNotificationSettingsUI() {
 
 export async function initNotifications(options = {}) {
   if (initialized) return;
-  initialized = true;
 
   const { store, roomName, getUsername } = options;
   if (!store) return;
@@ -266,6 +292,7 @@ export async function initNotifications(options = {}) {
   currentRoomName = roomName || '';
   getCurrentUsername = getUsername || getCurrentUsername;
   startedAt = Date.now();
+  lastCheckedTimestamp = startedAt;
   knownMessageIds = new Set(Object.keys(store.getTable('messages') || {}));
 
   notificationState.settings = loadSettings();
@@ -275,6 +302,7 @@ export async function initNotifications(options = {}) {
   listenerId = store.addTableListener('messages', () => {
     handleMessagesTableChange(store);
   });
+  initialized = true;
 }
 
 export function cleanupNotifications(store) {
@@ -283,4 +311,9 @@ export function cleanupNotifications(store) {
   }
   listenerId = null;
   initialized = false;
+  knownMessageIds = new Set();
+  startedAt = 0;
+  lastCheckedTimestamp = 0;
+  currentRoomName = '';
+  mentionPatternCache.clear();
 }
