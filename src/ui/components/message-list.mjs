@@ -92,6 +92,7 @@ export function initMessageList(
   const virtualState = {
     range: { start: 0, end: 0, topHeight: 0, bottomHeight: 0 },
     heights: new Map(),
+    heightTotal: 0,
     averageHeight: DEFAULT_MESSAGE_HEIGHT,
   };
 
@@ -104,6 +105,22 @@ export function initMessageList(
       virtualState.heights.get(getVirtualKey(item)) ||
       virtualState.averageHeight
     );
+  }
+
+  function findRenderedElementByMessageId(messagesContainer, messageId) {
+    if (typeof CSS !== 'undefined' && CSS.escape) {
+      return messagesContainer.querySelector(
+        `[data-message-id="${CSS.escape(messageId)}"]`,
+      );
+    }
+
+    for (const element of messagesContainer.children) {
+      if (element.getAttribute('data-message-id') === messageId) {
+        return element;
+      }
+    }
+
+    return null;
   }
 
   function calculateVirtualRange(items, container) {
@@ -232,6 +249,7 @@ export function initMessageList(
           const previous = virtualState.heights.get(messageId);
           if (!previous || Math.abs(previous - height) > 1) {
             virtualState.heights.set(messageId, height);
+            virtualState.heightTotal += previous ? height - previous : height;
             changed = true;
           }
         });
@@ -240,10 +258,7 @@ export function initMessageList(
         // Use every row measured so far, not only the visible range, to avoid
         // bias when older and newer history have different content density.
         const measuredAverage =
-          Array.from(virtualState.heights.values()).reduce(
-            (sum, height) => sum + height,
-            0,
-          ) / virtualState.heights.size;
+          virtualState.heightTotal / virtualState.heights.size;
         // Weighted average favors the existing estimate and blends in a small
         // share of new measurements, reducing jumps when media changes row height.
         const nextAverage =
@@ -262,8 +277,9 @@ export function initMessageList(
       if (pendingScrollToMessageId) {
         const messageId = pendingScrollToMessageId;
         pendingScrollToMessageId = null;
-        const messageElement = Array.from(messagesContainer.children).find(
-          (element) => element.getAttribute('data-message-id') === messageId,
+        const messageElement = findRenderedElementByMessageId(
+          messagesContainer,
+          messageId,
         );
         if (messageElement) {
           messageElement.scrollIntoView({
@@ -758,10 +774,9 @@ export function initMessageList(
 
     // Center the message vertically by moving to its top offset, subtracting
     // half the viewport height, then adding half the row height.
-    return Math.max(
-      0,
-      offset - scrollElement.clientHeight / 2 + messageHeight / 2,
-    );
+    const viewportMidpoint = scrollElement.clientHeight / 2;
+    const messageMidpoint = messageHeight / 2;
+    return Math.max(0, offset - viewportMidpoint + messageMidpoint);
   }
 
   function scrollToMessage(messageId) {
