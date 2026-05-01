@@ -255,8 +255,8 @@ export function initMessageList(
         });
 
       if (virtualState.heights.size > 0) {
-        // Use every row measured so far, not only the visible range, to avoid
-        // bias when older and newer history have different content density.
+        // heightTotal tracks every row height stored in the Map so the average
+        // uses all measured ranges, not just the currently visible rows.
         const measuredAverage =
           virtualState.heightTotal / virtualState.heights.size;
         // Weighted average favors the existing estimate and blends in a small
@@ -769,7 +769,11 @@ export function initMessageList(
     });
   }
 
-  function getCenteredScrollTop(scrollElement, offset, messageHeight) {
+  function computeScrollTopForCenteredMessage(
+    scrollElement,
+    offset,
+    messageHeight,
+  ) {
     if (!scrollElement) return 0;
 
     // Center the message vertically by moving to its top offset, subtracting
@@ -802,7 +806,9 @@ export function initMessageList(
     }
 
     requestAnimationFrame(() => {
-      container.scrollTop = getCenteredScrollTop(
+      // Keep scroll, pending highlight, and re-render in one frame so the next
+      // measurement pass runs against the newly mounted virtual window.
+      container.scrollTop = computeScrollTopForCenteredMessage(
         container,
         offset,
         getEstimatedHeight(allMessages[index]),
