@@ -28,6 +28,8 @@ let currentRoomName = '';
 let getCurrentUsername = () => window.currentUsername || '';
 const mentionPatternCache = new Map();
 let lastCheckedTimestamp = 0;
+let pendingNotificationScan = null;
+let needsNotificationRescan = false;
 
 function loadSettings() {
   try {
@@ -138,7 +140,11 @@ async function showDesktopNotification(message, notificationType) {
       notification.close();
     };
   } catch (error) {
-    console.warn('Unable to show notification:', error);
+    console.warn('Unable to show notification:', {
+      permission: notificationState.permission,
+      title,
+      error,
+    });
   }
 }
 
@@ -163,6 +169,7 @@ async function getNewMessages(store) {
           },
         },
         sort: [{ timestamp: 'asc' }],
+        limit: 100,
       })
       .exec();
 
@@ -194,6 +201,26 @@ async function handleMessagesTableChange(store) {
       showDesktopNotification(message, notificationType);
     }
   }
+}
+
+function scheduleMessagesTableChange(store) {
+  if (pendingNotificationScan) {
+    needsNotificationRescan = true;
+    return;
+  }
+
+  pendingNotificationScan = Promise.resolve()
+    .then(() => handleMessagesTableChange(store))
+    .catch((error) => {
+      console.warn('Unable to process notification changes:', error);
+    })
+    .finally(() => {
+      pendingNotificationScan = null;
+      if (needsNotificationRescan) {
+        needsNotificationRescan = false;
+        scheduleMessagesTableChange(store);
+      }
+    });
 }
 
 function notificationSettingsTemplate() {
@@ -290,17 +317,19 @@ export async function initNotifications(options = {}) {
   if (!store) return;
 
   currentRoomName = roomName || '';
-  getCurrentUsername = getUsername || getCurrentUsername;
+  if (getUsername) {
+    getCurrentUsername = getUsername;
+  }
   startedAt = Date.now();
   lastCheckedTimestamp = startedAt;
-  knownMessageIds = new Set(Object.keys(store.getTable('messages') || {}));
+  knownMessageIds = new Set();
 
   notificationState.settings = loadSettings();
   updatePermissionState();
   initNotificationSettingsUI();
 
   listenerId = store.addTableListener('messages', () => {
-    handleMessagesTableChange(store);
+    scheduleMessagesTableChange(store);
   });
   initialized = true;
 }
@@ -315,5 +344,7 @@ export function cleanupNotifications(store) {
   startedAt = 0;
   lastCheckedTimestamp = 0;
   currentRoomName = '';
+  pendingNotificationScan = null;
+  needsNotificationRescan = false;
   mentionPatternCache.clear();
 }
