@@ -39,6 +39,7 @@ import {
   showReactionPicker,
 } from './reactions/ui.mjs';
 import { REACTION_TYPES } from './reactions/config.mjs';
+import { initNotifications } from './notifications.mjs';
 
 // Configure marked.js for Markdown rendering (one-time setup)
 if (typeof marked !== 'undefined') {
@@ -3064,6 +3065,12 @@ async function startChat() {
 
   // Initialize read status store (local only)
   window.readStatusStore = await createReadStatusStore();
+
+  initNotifications({
+    store: window.store,
+    roomName: roomname,
+    getUsername: () => userState.value.username,
+  });
 
   // Resolve store ready promise
   if (isStoreReady) {
