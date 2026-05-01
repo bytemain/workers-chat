@@ -175,7 +175,7 @@ export function initMessageList(
     if (rangesDiffer(nextRange, virtualState.range)) {
       messagesSignal.version++;
     }
-  }, 16);
+  }, 32);
 
   function setupEdgeObservers(messagesContainer) {
     if (edgeObserver) {
@@ -219,8 +219,6 @@ export function initMessageList(
     measureFrame = requestAnimationFrame(() => {
       measureFrame = null;
       let changed = false;
-      let measuredTotal = 0;
-      let measuredCount = 0;
 
       Array.from(messagesContainer.children)
         .filter((element) => element.hasAttribute('data-message-id'))
@@ -231,9 +229,6 @@ export function initMessageList(
           const height = element.getBoundingClientRect().height;
           if (!height) return;
 
-          measuredTotal += height;
-          measuredCount++;
-
           const previous = virtualState.heights.get(messageId);
           if (!previous || Math.abs(previous - height) > 1) {
             virtualState.heights.set(messageId, height);
@@ -241,8 +236,14 @@ export function initMessageList(
           }
         });
 
-      if (measuredCount > 0) {
-        const measuredAverage = measuredTotal / measuredCount;
+      if (virtualState.heights.size > 0) {
+        // Use every row measured so far, not only the visible range, to avoid
+        // bias when older and newer history have different content density.
+        const measuredAverage =
+          Array.from(virtualState.heights.values()).reduce(
+            (sum, height) => sum + height,
+            0,
+          ) / virtualState.heights.size;
         // Weighted average favors the existing estimate and blends in a small
         // share of new measurements, reducing jumps when media changes row height.
         const nextAverage =
@@ -785,13 +786,13 @@ export function initMessageList(
       offset += getEstimatedHeight(allMessages[i]);
     }
 
-    pendingScrollToMessageId = messageId;
     requestAnimationFrame(() => {
       container.scrollTop = getCenteredScrollTop(
         container,
         offset,
         getEstimatedHeight(allMessages[index]),
       );
+      pendingScrollToMessageId = messageId;
       messagesSignal.version++;
     });
     return true;
