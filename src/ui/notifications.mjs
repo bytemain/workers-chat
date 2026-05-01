@@ -15,7 +15,6 @@ const notificationState = signal(
     supported: false,
     permission: 'default',
     settings: { ...DEFAULT_SETTINGS },
-    serviceWorkerReady: false,
   },
   SignalName,
 );
@@ -27,6 +26,7 @@ let startedAt = 0;
 let listenerId = null;
 let currentRoomName = '';
 let getCurrentUsername = () => window.currentUsername || '';
+const mentionPatternCache = new Map();
 
 function loadSettings() {
   try {
@@ -63,7 +63,11 @@ function escapeRegex(value) {
 
 function isMention(message, username) {
   if (!message || !username) return false;
-  const mentionPattern = new RegExp(`(^|\\s)@${escapeRegex(username)}\\b`, 'i');
+  let mentionPattern = mentionPatternCache.get(username);
+  if (!mentionPattern) {
+    mentionPattern = new RegExp(`(^|\\s)@${escapeRegex(username)}\\b`, 'i');
+    mentionPatternCache.set(username, mentionPattern);
+  }
   return mentionPattern.test(message);
 }
 
@@ -87,7 +91,8 @@ function shouldNotify(message, username) {
 
   if (notificationState.settings.newMessages) {
     const channel = message.channel || 'general';
-    if (document.hidden || channel !== getCurrentChannel()) {
+    const currentChannel = getCurrentChannel();
+    if (document.hidden || !currentChannel || channel !== currentChannel) {
       return { type: 'message', priority: 'normal' };
     }
   }
@@ -200,16 +205,16 @@ function notificationSettingsTemplate() {
             </button>`
       }
       <label style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-        <input type="checkbox" data-notification-setting="mentions" ${settings.mentions ? 'checked' : ''} />
-        <span>@mention notifications (high priority)</span>
+        <input id="notify-mentions" type="checkbox" data-notification-setting="mentions" aria-labelledby="notify-mentions-label" ${settings.mentions ? 'checked' : ''} />
+        <span id="notify-mentions-label">@mention notifications (high priority)</span>
       </label>
       <label style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-        <input type="checkbox" data-notification-setting="directMessages" ${settings.directMessages ? 'checked' : ''} />
-        <span>Direct message notifications</span>
+        <input id="notify-direct-messages" type="checkbox" data-notification-setting="directMessages" aria-labelledby="notify-direct-messages-label" ${settings.directMessages ? 'checked' : ''} />
+        <span id="notify-direct-messages-label">Direct message notifications</span>
       </label>
       <label style="display: flex; gap: 8px; align-items: center;">
-        <input type="checkbox" data-notification-setting="newMessages" ${settings.newMessages ? 'checked' : ''} />
-        <span>All new message notifications</span>
+        <input id="notify-new-messages" type="checkbox" data-notification-setting="newMessages" aria-labelledby="notify-new-messages-label" ${settings.newMessages ? 'checked' : ''} />
+        <span id="notify-new-messages-label">All new message notifications</span>
       </label>
     </div>
   `;
@@ -266,16 +271,6 @@ export async function initNotifications(options = {}) {
   notificationState.settings = loadSettings();
   updatePermissionState();
   initNotificationSettingsUI();
-
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.ready
-      .then(() => {
-        notificationState.serviceWorkerReady = true;
-      })
-      .catch(() => {
-        notificationState.serviceWorkerReady = false;
-      });
-  }
 
   listenerId = store.addTableListener('messages', () => {
     handleMessagesTableChange(store);
