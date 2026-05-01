@@ -38,7 +38,7 @@ const DEFAULT_MESSAGE_HEIGHT = 72;
 const VIRTUAL_EDGE_ROOT_MARGIN_PX =
   DEFAULT_MESSAGE_HEIGHT * VIRTUAL_OVERSCAN_ITEMS;
 // Smooth measured height changes so variable-size media messages don't cause scroll jumps.
-const MEASURED_HEIGHT_WEIGHT = 0.2;
+const NEW_MEASUREMENT_WEIGHT = 0.2;
 
 /**
  * Initialize message list component
@@ -243,11 +243,11 @@ export function initMessageList(
 
       if (measuredCount > 0) {
         const measuredAverage = measuredTotal / measuredCount;
-        // Weighted average keeps 80% of the existing estimate and blends in
-        // 20% new measurements, reducing jumps when media changes row height.
+        // Weighted average favors the existing estimate and blends in a small
+        // share of new measurements, reducing jumps when media changes row height.
         const nextAverage =
-          virtualState.averageHeight * (1 - MEASURED_HEIGHT_WEIGHT) +
-          measuredAverage * MEASURED_HEIGHT_WEIGHT;
+          virtualState.averageHeight * (1 - NEW_MEASUREMENT_WEIGHT) +
+          measuredAverage * NEW_MEASUREMENT_WEIGHT;
         if (Math.abs(nextAverage - virtualState.averageHeight) > 1) {
           virtualState.averageHeight = nextAverage;
           changed = true;
@@ -752,10 +752,15 @@ export function initMessageList(
     });
   }
 
-  function getCenteredScrollTop(offset, messageHeight) {
+  function getCenteredScrollTop(scrollElement, offset, messageHeight) {
+    if (!scrollElement) return 0;
+
     // Center the message vertically by moving to its top offset, subtracting
     // half the viewport height, then adding half the row height.
-    return Math.max(0, offset - container.clientHeight / 2 + messageHeight / 2);
+    return Math.max(
+      0,
+      offset - scrollElement.clientHeight / 2 + messageHeight / 2,
+    );
   }
 
   function scrollToMessage(messageId) {
@@ -781,11 +786,14 @@ export function initMessageList(
     }
 
     pendingScrollToMessageId = messageId;
-    container.scrollTop = getCenteredScrollTop(
-      offset,
-      getEstimatedHeight(allMessages[index]),
-    );
-    messagesSignal.version++;
+    requestAnimationFrame(() => {
+      container.scrollTop = getCenteredScrollTop(
+        container,
+        offset,
+        getEstimatedHeight(allMessages[index]),
+      );
+      messagesSignal.version++;
+    });
     return true;
   }
 
