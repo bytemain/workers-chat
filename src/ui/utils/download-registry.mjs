@@ -94,8 +94,8 @@ function shouldUseServerDownloadUrl() {
   const isIOS =
     /iP(ad|hone|od)/.test(ua) ||
     ((platform === 'macOS' || platform === 'MacIntel') &&
-      navigator.maxTouchPoints > 1);
-  return isIOS || /Android.+Mobile/i.test(ua);
+      navigator.maxTouchPoints > 2);
+  return isIOS || /Android/i.test(ua);
 }
 
 function triggerSave(downloadUrl, fileName) {
@@ -226,10 +226,8 @@ export function startOrResaveDownload(url, fileName) {
 
 async function performServerDownload(entry) {
   try {
-    // Verify accessibility without fetching the whole file before handing the
-    // URL to the browser's native downloader for filename-preserving save.
     const response = await fetch(entry.url, {
-      headers: { Range: 'bytes=0-0' },
+      method: 'HEAD',
       signal: entry.abortController.signal,
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

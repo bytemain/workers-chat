@@ -56,15 +56,16 @@ function getSafeDownloadName(name) {
   const fallback = 'download';
   return (
     (name || fallback)
-      .replace(/[\x00-\x1F\x7F"%;\\]/g, '')
-      .replace(/\//g, '_')
+      .replace(/[\x00-\x1F\x7F]/g, '')
+      .replace(/[\\/]/g, '_')
       .trim() || fallback
   );
 }
 
 function getContentDisposition(name) {
   const safeName = getSafeDownloadName(name);
-  return `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`;
+  const asciiName = safeName.replace(/[^A-Za-z0-9._ -]/g, '_') || 'download';
+  return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`;
 }
 
 const app = ignite((app) => {
@@ -221,7 +222,7 @@ const app = ignite((app) => {
     return response;
   }
 
-  app.get('/files/*', async (c) => {
+  async function handleFileRequest(c, { includeBody }) {
     const { env, req } = c;
     const url = new URL(req.url);
     const path = url.pathname.slice(7); // Remove '/files/'
@@ -232,11 +233,13 @@ const app = ignite((app) => {
 
     const fileKey = path;
 
-    // Support conditional requests (If-None-Match, Range)
-    const object = await env.CHAT_FILES.get(fileKey, {
-      onlyIf: req.raw.headers,
-      range: req.raw.headers,
-    });
+    const object = includeBody
+      ? // Support conditional requests (If-None-Match, Range)
+        await env.CHAT_FILES.get(fileKey, {
+          onlyIf: req.raw.headers,
+          range: req.raw.headers,
+        })
+      : await env.CHAT_FILES.head(fileKey);
 
     if (object === null) {
       return new Response('File not found', { status: 404 });
@@ -261,10 +264,21 @@ const app = ignite((app) => {
     headers.set('Accept-Ranges', 'bytes');
 
     // When no body is present, preconditions have failed
-    return new Response('body' in object ? object.body : undefined, {
-      status: 'body' in object ? 200 : 412,
-      headers,
-    });
+    return new Response(
+      includeBody && 'body' in object ? object.body : undefined,
+      {
+        status: !includeBody || 'body' in object ? 200 : 412,
+        headers,
+      },
+    );
+  }
+
+  app.get('/files/*', async (c) => {
+    return handleFileRequest(c, { includeBody: true });
+  });
+
+  app.head('/files/*', async (c) => {
+    return handleFileRequest(c, { includeBody: false });
   });
 
   app.notFound(async (c) => {
