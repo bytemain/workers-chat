@@ -86,7 +86,7 @@ function deleteEntry(url, { revoke = true } = {}) {
   entry.subscribers.clear();
 }
 
-function shouldBypassBlobDownload() {
+function shouldUseMobileDownload() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
   const platform =
@@ -180,7 +180,7 @@ export function startOrResaveDownload(url, fileName) {
     }
   }
 
-  if (shouldBypassBlobDownload()) {
+  if (shouldUseMobileDownload()) {
     const abortController = new AbortController();
     entry = {
       url,
@@ -230,7 +230,11 @@ async function performServerDownload(entry) {
       method: 'HEAD',
       signal: entry.abortController.signal,
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      throw new Error(
+        `File download verification failed: HTTP ${response.status} for ${entry.fileName}`,
+      );
+    }
 
     triggerSave(entry.url, entry.fileName);
     entry.status = 'done';
