@@ -54,10 +54,12 @@ function ignite(mount) {
 
 function getSafeDownloadName(name) {
   const fallback = 'download';
-  return (name || fallback)
-    .replace(/[\r\n"]/g, '')
-    .replace(/[\\/]/g, '_')
-    .trim() || fallback;
+  return (
+    (name || fallback)
+      .replace(/[\r\n"]/g, '')
+      .replace(/[\\/]/g, '_')
+      .trim() || fallback
+  );
 }
 
 function getContentDisposition(name) {
