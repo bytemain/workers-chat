@@ -89,9 +89,12 @@ function deleteEntry(url, { revoke = true } = {}) {
 function shouldUseServerDownloadUrl() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
+  const platform =
+    navigator.userAgentData?.platform || navigator.platform || '';
   const isIOS =
     /iP(ad|hone|od)/.test(ua) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    ((platform === 'macOS' || platform === 'MacIntel') &&
+      navigator.maxTouchPoints > 1);
   return isIOS || /Android.+Mobile/i.test(ua);
 }
 
@@ -223,6 +226,8 @@ export function startOrResaveDownload(url, fileName) {
 
 async function performServerDownload(entry) {
   try {
+    // Verify accessibility without fetching the whole file before handing the
+    // URL to the browser's native downloader for filename-preserving save.
     const response = await fetch(entry.url, {
       headers: { Range: 'bytes=0-0' },
       signal: entry.abortController.signal,

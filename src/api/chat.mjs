@@ -56,8 +56,8 @@ function getSafeDownloadName(name) {
   const fallback = 'download';
   return (
     (name || fallback)
-      .replace(/[\x00-\x1F\x7F";]/g, '')
-      .replace(/[\\/]/g, '_')
+      .replace(/[\x00-\x1F\x7F"%;\\]/g, '')
+      .replace(/\//g, '_')
       .trim() || fallback
   );
 }
