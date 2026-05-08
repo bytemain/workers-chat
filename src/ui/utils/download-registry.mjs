@@ -89,13 +89,20 @@ function deleteEntry(url, { revoke = true } = {}) {
 function shouldUseMobileDownload() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
-  const platform =
-    navigator.userAgentData?.platform || navigator.platform || '';
+  const platform = getNavigatorPlatform();
   const isIOS =
     /iP(ad|hone|od)/.test(ua) ||
     ((platform === 'macOS' || platform === 'MacIntel') &&
       navigator.maxTouchPoints > 2);
   return isIOS || /Android/i.test(ua);
+}
+
+function getNavigatorPlatform() {
+  try {
+    return navigator.userAgentData?.platform || navigator.platform || '';
+  } catch {
+    return navigator.platform || '';
+  }
 }
 
 function triggerSave(downloadUrl, fileName) {
@@ -107,6 +114,23 @@ function triggerSave(downloadUrl, fileName) {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+function createDownloadEntry(url, fileName, abortController) {
+  return {
+    url,
+    fileName,
+    status: 'downloading',
+    progress: { loaded: 0, total: 0, indeterminate: true },
+    abortController,
+    subscribers: new Set(),
+    blob: null,
+    blobUrl: null,
+    error: null,
+    doneTimer: null,
+    cacheExpiryTimer: null,
+    errorTimer: null,
+  };
 }
 
 export function getDownload(url) {
@@ -182,40 +206,14 @@ export function startOrResaveDownload(url, fileName) {
 
   if (shouldUseMobileDownload()) {
     const abortController = new AbortController();
-    entry = {
-      url,
-      fileName,
-      status: 'downloading',
-      progress: { loaded: 0, total: 0, indeterminate: true },
-      abortController,
-      subscribers: new Set(),
-      blob: null,
-      blobUrl: null,
-      error: null,
-      doneTimer: null,
-      cacheExpiryTimer: null,
-      errorTimer: null,
-    };
+    entry = createDownloadEntry(url, fileName, abortController);
     registry.set(url, entry);
     performServerDownload(entry);
     return entry;
   }
 
   const abortController = new AbortController();
-  entry = {
-    url,
-    fileName,
-    status: 'downloading',
-    progress: { loaded: 0, total: 0, indeterminate: true },
-    abortController,
-    subscribers: new Set(),
-    blob: null,
-    blobUrl: null,
-    error: null,
-    doneTimer: null,
-    cacheExpiryTimer: null,
-    errorTimer: null,
-  };
+  entry = createDownloadEntry(url, fileName, abortController);
   registry.set(url, entry);
 
   // Fire-and-forget; performFetch handles all error states internally.

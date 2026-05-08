@@ -59,6 +59,7 @@ function getSafeDownloadName(name) {
     .replace(/[\\/]/g, '_')
     .replace(/\.+/g, '.')
     .replace(/^\./, '')
+    // Preserve only the final extension separator to avoid confusing double extensions.
     .replace(/\.(?=.*\.)/g, '_')
     .trim();
   return safeName || fallback;
@@ -236,14 +237,14 @@ const app = ignite((app) => {
 
     const fileKey = path;
 
+    // GET supports conditional/range requests; HEAD is a lightweight existence check.
     const object = includeBody
       ? // Support conditional requests (If-None-Match, Range)
         await env.CHAT_FILES.get(fileKey, {
           onlyIf: req.raw.headers,
           range: req.raw.headers,
         })
-      : // HEAD is only used as a lightweight existence check before native downloads.
-        await env.CHAT_FILES.head(fileKey);
+      : await env.CHAT_FILES.head(fileKey);
 
     if (object === null) {
       return new Response('File not found', { status: 404 });
