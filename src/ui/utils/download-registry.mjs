@@ -86,9 +86,15 @@ function deleteEntry(url, { revoke = true } = {}) {
   entry.subscribers.clear();
 }
 
-function triggerSave(blobUrl, fileName) {
+function shouldUseServerDownloadUrl() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /iP(ad|hone|od)/.test(ua) || /Android.+Mobile/i.test(ua);
+}
+
+function triggerSave(downloadUrl, fileName) {
   const a = document.createElement('a');
-  a.href = blobUrl;
+  a.href = downloadUrl;
   a.download = fileName;
   a.rel = 'noopener';
   a.style.display = 'none';
@@ -166,6 +172,31 @@ export function startOrResaveDownload(url, fileName) {
       deleteEntry(url);
       entry = null;
     }
+  }
+
+  if (shouldUseServerDownloadUrl()) {
+    entry = {
+      url,
+      fileName,
+      status: 'done',
+      progress: { loaded: 0, total: 0, indeterminate: true },
+      abortController: null,
+      subscribers: new Set(),
+      blob: null,
+      blobUrl: null,
+      error: null,
+      doneTimer: null,
+      cacheExpiryTimer: null,
+      errorTimer: null,
+    };
+    registry.set(url, entry);
+    triggerSave(url, fileName);
+    entry.doneTimer = setTimeout(() => {
+      if (registry.get(url) === entry) {
+        deleteEntry(url);
+      }
+    }, DONE_DISPLAY_MS);
+    return entry;
   }
 
   const abortController = new AbortController();

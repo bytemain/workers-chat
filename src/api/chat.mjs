@@ -52,6 +52,19 @@ function ignite(mount) {
   return app;
 }
 
+function getSafeDownloadName(name) {
+  const fallback = 'download';
+  return (name || fallback)
+    .replace(/[\r\n"]/g, '')
+    .replace(/[\\/]/g, '_')
+    .trim() || fallback;
+}
+
+function getContentDisposition(name) {
+  const safeName = getSafeDownloadName(name);
+  return `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`;
+}
+
 const app = ignite((app) => {
   function apiRoutes() {
     const api = new Hono();
@@ -231,11 +244,15 @@ const app = ignite((app) => {
     object.writeHttpMetadata(headers);
     headers.set('etag', object.httpEtag);
     headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    headers.set(
+      'Content-Disposition',
+      getContentDisposition(object.customMetadata?.originalName || fileKey),
+    );
 
     // CRITICAL: Expose headers for CORS and download progress tracking
     headers.set(
       'Access-Control-Expose-Headers',
-      'Content-Length, Content-Type, Content-Range, ETag, Accept-Ranges',
+      'Content-Length, Content-Type, Content-Range, ETag, Accept-Ranges, Content-Disposition',
     );
 
     // Enable range requests for resumable downloads
