@@ -86,7 +86,7 @@ function deleteEntry(url, { revoke = true } = {}) {
   entry.subscribers.clear();
 }
 
-function shouldUseServerDownloadUrl() {
+function shouldBypassBlobDownload() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
   const platform =
@@ -180,7 +180,7 @@ export function startOrResaveDownload(url, fileName) {
     }
   }
 
-  if (shouldUseServerDownloadUrl()) {
+  if (shouldBypassBlobDownload()) {
     const abortController = new AbortController();
     entry = {
       url,

@@ -65,7 +65,8 @@ function getSafeDownloadName(name) {
 function getContentDisposition(name) {
   const safeName = getSafeDownloadName(name);
   const asciiName = safeName.replace(/[^A-Za-z0-9._ -]/g, '_') || 'download';
-  return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`;
+  const quotedAsciiName = asciiName.replace(/"/g, '\\"');
+  return `attachment; filename="${quotedAsciiName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`;
 }
 
 const app = ignite((app) => {
@@ -239,7 +240,8 @@ const app = ignite((app) => {
           onlyIf: req.raw.headers,
           range: req.raw.headers,
         })
-      : await env.CHAT_FILES.head(fileKey);
+      : // HEAD is only used as a lightweight existence check before native downloads.
+        await env.CHAT_FILES.head(fileKey);
 
     if (object === null) {
       return new Response('File not found', { status: 404 });
