@@ -86,15 +86,51 @@ function deleteEntry(url, { revoke = true } = {}) {
   entry.subscribers.clear();
 }
 
-function triggerSave(blobUrl, fileName) {
+function shouldUseMobileDownload() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const platform = getNavigatorPlatform();
+  const isIOS =
+    /iP(ad|hone|od)/.test(ua) ||
+    ((platform === 'macOS' || platform === 'MacIntel') &&
+      navigator.maxTouchPoints > 2);
+  return isIOS || /Android/i.test(ua);
+}
+
+function getNavigatorPlatform() {
+  try {
+    return navigator.userAgentData?.platform || navigator.platform || '';
+  } catch {
+    return navigator.platform || '';
+  }
+}
+
+function triggerSave(downloadUrl, fileName) {
   const a = document.createElement('a');
-  a.href = blobUrl;
+  a.href = downloadUrl;
   a.download = fileName;
   a.rel = 'noopener';
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+function createDownloadEntry(url, fileName, abortController) {
+  return {
+    url,
+    fileName,
+    status: 'downloading',
+    progress: { loaded: 0, total: 0, indeterminate: true },
+    abortController,
+    subscribers: new Set(),
+    blob: null,
+    blobUrl: null,
+    error: null,
+    doneTimer: null,
+    cacheExpiryTimer: null,
+    errorTimer: null,
+  };
 }
 
 export function getDownload(url) {
@@ -168,27 +204,63 @@ export function startOrResaveDownload(url, fileName) {
     }
   }
 
+  if (shouldUseMobileDownload()) {
+    const abortController = new AbortController();
+    entry = createDownloadEntry(url, fileName, abortController);
+    registry.set(url, entry);
+    performServerDownload(entry);
+    return entry;
+  }
+
   const abortController = new AbortController();
-  entry = {
-    url,
-    fileName,
-    status: 'downloading',
-    progress: { loaded: 0, total: 0, indeterminate: true },
-    abortController,
-    subscribers: new Set(),
-    blob: null,
-    blobUrl: null,
-    error: null,
-    doneTimer: null,
-    cacheExpiryTimer: null,
-    errorTimer: null,
-  };
+  entry = createDownloadEntry(url, fileName, abortController);
   registry.set(url, entry);
 
   // Fire-and-forget; performFetch handles all error states internally.
   performFetch(entry);
 
   return entry;
+}
+
+async function performServerDownload(entry) {
+  try {
+    const response = await fetch(entry.url, {
+      method: 'HEAD',
+      signal: entry.abortController.signal,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `File download verification failed: HTTP ${response.status} for ${entry.fileName}`,
+      );
+    }
+
+    triggerSave(entry.url, entry.fileName);
+    entry.status = 'done';
+    entry.abortController = null;
+    notify(entry);
+
+    entry.doneTimer = setTimeout(() => {
+      if (registry.get(entry.url) === entry) {
+        deleteEntry(entry.url);
+      }
+    }, DONE_DISPLAY_MS);
+  } catch (error) {
+    if (error && error.name === 'AbortError') {
+      deleteEntry(entry.url);
+      return;
+    }
+    console.error('❌ Download failed:', error);
+    entry.status = 'error';
+    entry.error = error;
+    entry.abortController = null;
+    notify(entry);
+
+    entry.errorTimer = setTimeout(() => {
+      if (registry.get(entry.url) === entry && entry.status === 'error') {
+        deleteEntry(entry.url);
+      }
+    }, ERROR_DISPLAY_MS);
+  }
 }
 
 async function performFetch(entry) {
