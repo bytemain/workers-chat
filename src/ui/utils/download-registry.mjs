@@ -89,7 +89,10 @@ function deleteEntry(url, { revoke = true } = {}) {
 function shouldUseServerDownloadUrl() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
-  return /iP(ad|hone|od)/.test(ua) || /Android.+Mobile/i.test(ua);
+  const isIOS =
+    /iP(ad|hone|od)/.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return isIOS || /Android.+Mobile/i.test(ua);
 }
 
 function triggerSave(downloadUrl, fileName) {
@@ -175,12 +178,13 @@ export function startOrResaveDownload(url, fileName) {
   }
 
   if (shouldUseServerDownloadUrl()) {
+    const abortController = new AbortController();
     entry = {
       url,
       fileName,
-      status: 'done',
+      status: 'downloading',
       progress: { loaded: 0, total: 0, indeterminate: true },
-      abortController: null,
+      abortController,
       subscribers: new Set(),
       blob: null,
       blobUrl: null,
@@ -190,12 +194,7 @@ export function startOrResaveDownload(url, fileName) {
       errorTimer: null,
     };
     registry.set(url, entry);
-    triggerSave(url, fileName);
-    entry.doneTimer = setTimeout(() => {
-      if (registry.get(url) === entry) {
-        deleteEntry(url);
-      }
-    }, DONE_DISPLAY_MS);
+    performServerDownload(entry);
     return entry;
   }
 
@@ -220,6 +219,43 @@ export function startOrResaveDownload(url, fileName) {
   performFetch(entry);
 
   return entry;
+}
+
+async function performServerDownload(entry) {
+  try {
+    const response = await fetch(entry.url, {
+      headers: { Range: 'bytes=0-0' },
+      signal: entry.abortController.signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    triggerSave(entry.url, entry.fileName);
+    entry.status = 'done';
+    entry.abortController = null;
+    notify(entry);
+
+    entry.doneTimer = setTimeout(() => {
+      if (registry.get(entry.url) === entry) {
+        deleteEntry(entry.url);
+      }
+    }, DONE_DISPLAY_MS);
+  } catch (error) {
+    if (error && error.name === 'AbortError') {
+      deleteEntry(entry.url);
+      return;
+    }
+    console.error('❌ Download failed:', error);
+    entry.status = 'error';
+    entry.error = error;
+    entry.abortController = null;
+    notify(entry);
+
+    entry.errorTimer = setTimeout(() => {
+      if (registry.get(entry.url) === entry && entry.status === 'error') {
+        deleteEntry(entry.url);
+      }
+    }, ERROR_DISPLAY_MS);
+  }
 }
 
 async function performFetch(entry) {
