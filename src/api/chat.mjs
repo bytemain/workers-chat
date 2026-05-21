@@ -282,7 +282,7 @@ const app = ignite((app) => {
     return handleFileRequest(c, { includeBody: true });
   });
 
-  app.head('/files/*', async (c) => {
+  app.on('HEAD', '/files/*', async (c) => {
     return handleFileRequest(c, { includeBody: false });
   });
 
