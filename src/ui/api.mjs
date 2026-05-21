@@ -17,16 +17,57 @@ class ChatAPI {
   }
 
   // Upload file (legacy - single request, kept for backward compatibility)
-  async uploadFile(roomName, formData) {
-    const response = await fetch(`${this.baseUrl}/room/${roomName}/upload`, {
-      method: 'POST',
-      body: formData,
+  async uploadFile(roomName, formData, options = {}) {
+    return await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      xhr.open('POST', `${this.baseUrl}/room/${roomName}/upload`);
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (!event.lengthComputable || !options.onProgress) return;
+
+        options.onProgress({
+          uploadedBytes: event.loaded,
+          totalBytes: event.total,
+          percentage: Math.round((event.loaded / event.total) * 100),
+        });
+      });
+
+      xhr.addEventListener('load', () => {
+        let data = null;
+        try {
+          data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+        } catch (error) {
+          reject(new Error('Upload failed: invalid server response'));
+          return;
+        }
+
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new Error(data?.error || 'Upload failed'));
+          return;
+        }
+
+        if (options.onProgress) {
+          options.onProgress({
+            uploadedBytes: 1,
+            totalBytes: 1,
+            percentage: 100,
+          });
+        }
+
+        resolve(data);
+      });
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Upload failed'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload aborted'));
+      });
+
+      xhr.send(formData);
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Upload failed');
-    }
-    return await response.json();
   }
 
   /**
@@ -68,7 +109,7 @@ class ChatAPI {
       // Use legacy single upload for small files
       const formData = new FormData();
       formData.append('file', file);
-      return await this.uploadFile(roomName, formData);
+      return await this.uploadFile(roomName, formData, options);
     }
   }
 
