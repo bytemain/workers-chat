@@ -2,12 +2,6 @@ import './web-components/index.mjs';
 
 import { marked } from 'marked';
 import { formatFileSize } from '../common/format-utils.js';
-import {
-  getDownload,
-  subscribeDownload,
-  startOrResaveDownload,
-  cancelDownload,
-} from './utils/download-registry.mjs';
 import { createReactiveState } from './react/state.mjs';
 import { api } from './api.mjs';
 import { generateRandomUsername } from './utils/random.mjs';
@@ -237,44 +231,8 @@ customElements.define('lazy-img', LazyImg);
 
 // File message custom element (for non-image files)
 class FileMessage extends HTMLElement {
-  constructor() {
-    super();
-    /** @type {(() => void) | null} */
-    this._unsubscribe = null;
-    /** Idle status text (e.g. formatted file size) shown when not downloading. */
-    this._idleStatusText = '';
-  }
-
   connectedCallback() {
-    // render() handles subscription at its end.
     this.render();
-  }
-
-  disconnectedCallback() {
-    // Unsubscribe but DO NOT abort: the download should keep running so a
-    // re-render mid-download doesn't kill it.
-    if (this._unsubscribe) {
-      this._unsubscribe();
-      this._unsubscribe = null;
-    }
-  }
-
-  _subscribeToRegistry() {
-    if (this._unsubscribe) {
-      this._unsubscribe();
-      this._unsubscribe = null;
-    }
-    const fileUrl = this.getAttribute('file-url');
-    if (!fileUrl) return;
-    const entry = getDownload(fileUrl);
-    if (!entry) {
-      // Make sure the button is in idle state.
-      this._applyDownloadState(null);
-      return;
-    }
-    this._unsubscribe = subscribeDownload(fileUrl, (e) =>
-      this._applyDownloadState(e),
-    );
   }
 
   render() {
@@ -364,18 +322,14 @@ class FileMessage extends HTMLElement {
 
     if (isUploading) {
       statusElement.textContent = `Uploading... ${uploadProgress || 0}%`;
-      this._idleStatusText = '';
     } else if (isUploadError) {
       statusElement.textContent = 'Upload failed';
       statusElement.style.color = '#dc3545';
-      this._idleStatusText = '';
     } else if (fileSize !== null && fileSize !== undefined && fileSize !== '') {
       // Show file size for normal files (uploaded successfully or existing files)
-      this._idleStatusText = formatFileSize(parseInt(fileSize));
-      statusElement.textContent = this._idleStatusText;
+      statusElement.textContent = formatFileSize(parseInt(fileSize));
     } else {
       // Fallback if no size info available
-      this._idleStatusText = '';
       statusElement.textContent = '';
     }
 
@@ -404,27 +358,6 @@ class FileMessage extends HTMLElement {
       infoSection.appendChild(progressBar);
     }
 
-    // Download progress bar (hidden until a download starts)
-    const progressBarContainer = document.createElement('div');
-    progressBarContainer.style.cssText = `
-      width: 100%;
-      height: 4px;
-      background: #e9ecef;
-      border-radius: 2px;
-      overflow: hidden;
-      display: none;
-      margin-top: 4px;
-    `;
-    const progressBarFill = document.createElement('div');
-    progressBarFill.style.cssText = `
-      height: 100%;
-      background: #198754;
-      width: 0%;
-      transition: width 0.15s linear;
-    `;
-    progressBarContainer.appendChild(progressBarFill);
-    infoSection.appendChild(progressBarContainer);
-
     // Action buttons
     const actionsContainer = document.createElement('div');
     actionsContainer.style.cssText = `
@@ -433,7 +366,6 @@ class FileMessage extends HTMLElement {
       flex-shrink: 0;
     `;
 
-    let actionButton = null;
     if (isUploadError) {
       // Retry button
       const retryBtn = document.createElement('button');
@@ -449,167 +381,46 @@ class FileMessage extends HTMLElement {
       };
       actionsContainer.appendChild(retryBtn);
     } else if (isNormalFile) {
-      // Download button — full state machine handled by _applyDownloadState
-      const downloadBtn = document.createElement('button');
-      downloadBtn.type = 'button';
-      downloadBtn.className = 'file-message-action-btn';
-      downloadBtn.style.cssText =
+      const downloadUrl = getNativeDownloadUrl(fileUrl);
+      const downloadLink = document.createElement('a');
+      downloadLink.className = 'file-message-action-btn';
+      downloadLink.style.cssText =
         FILE_MESSAGE_BUTTON_BASE_STYLE + 'background: #198754;';
-      downloadBtn.onclick = (event) => {
-        event.preventDefault();
-        this._handleActionClick();
-      };
-      actionsContainer.appendChild(downloadBtn);
-      actionButton = downloadBtn;
+      downloadLink.innerHTML = '<i class="ri-download-2-line"></i>';
+      downloadLink.title = 'Download file';
+      downloadLink.setAttribute('aria-label', `Download ${fileName}`);
+      downloadLink.download = fileName;
+      downloadLink.rel = 'noopener';
+
+      if (downloadUrl) {
+        downloadLink.href = downloadUrl;
+      } else {
+        downloadLink.href = '#';
+        downloadLink.setAttribute('aria-disabled', 'true');
+        downloadLink.style.opacity = '0.6';
+        downloadLink.style.cursor = 'not-allowed';
+        downloadLink.onclick = (event) => event.preventDefault();
+      }
+
+      actionsContainer.appendChild(downloadLink);
     }
 
     container.appendChild(icon);
     container.appendChild(infoSection);
     container.appendChild(actionsContainer);
     this.appendChild(container);
-
-    // Cache references used by _applyDownloadState
-    this._statusElement = statusElement;
-    this._progressBarContainer = progressBarContainer;
-    this._progressBarFill = progressBarFill;
-    this._actionButton = actionButton;
-
-    // Re-attach to the registry now that DOM is fresh.
-    if (this.isConnected) {
-      this._subscribeToRegistry();
-    }
   }
+}
 
-  _handleActionClick() {
-    const fileUrl = this.getAttribute('file-url');
-    const fileName = this.getAttribute('file-name') || 'file';
-    if (!fileUrl) return;
-
-    const entry = getDownload(fileUrl);
-    if (entry && entry.status === 'downloading') {
-      // Click while downloading = cancel.
-      cancelDownload(fileUrl);
-      return;
-    }
-
-    // Either start a fresh download or re-trigger the save dialog from cache.
-    startOrResaveDownload(fileUrl, fileName);
-    // Make sure we receive subsequent updates for this entry.
-    this._subscribeToRegistry();
-  }
-
-  /**
-   * Reflect the download registry entry (or absence thereof) in the UI.
-   * Called on connect, on every render, and via the registry subscription.
-   */
-  _applyDownloadState(entry) {
-    const btn = this._actionButton;
-    const statusEl = this._statusElement;
-    const barContainer = this._progressBarContainer;
-    const barFill = this._progressBarFill;
-    const fileName = this.getAttribute('file-name') || 'file';
-
-    // If we're not in a "normal file with download button" mode, nothing to do.
-    if (!btn || !statusEl || !barContainer || !barFill) return;
-
-    // Reset shared visual state up front; specific branches below override.
-    btn.disabled = false;
-    btn.style.opacity = '1';
-    btn.style.cursor = 'pointer';
-    btn.removeAttribute('aria-busy');
-
-    if (!entry) {
-      // Idle, no cached entry.
-      btn.innerHTML = '<i class="ri-download-2-line"></i>';
-      btn.title = 'Download file';
-      btn.setAttribute('aria-label', `Download ${fileName}`);
-      btn.style.background = '#198754';
-      barContainer.style.display = 'none';
-      barFill.style.width = '0%';
-      barFill.classList.remove('file-message-progress-indeterminate');
-      statusEl.style.color = '#6c757d';
-      statusEl.textContent = this._idleStatusText;
-      return;
-    }
-
-    if (entry.status === 'downloading') {
-      const { loaded, total, indeterminate } = entry.progress;
-      btn.innerHTML = '<i class="ri-close-line"></i>';
-      btn.title = 'Cancel download';
-      btn.style.background = '#6c757d';
-      btn.setAttribute('aria-busy', 'true');
-
-      if (indeterminate) {
-        // Animate an indeterminate bar via repeating gradient.
-        barContainer.style.display = 'block';
-        barFill.style.width = '100%';
-        barFill.style.background =
-          'linear-gradient(90deg, #198754 0%, #20c997 50%, #198754 100%)';
-        barFill.style.backgroundSize = '200% 100%';
-        barFill.classList.add('file-message-progress-indeterminate');
-        statusEl.style.color = '#6c757d';
-        statusEl.textContent = `Downloading… ${formatFileSize(loaded)}`;
-        btn.setAttribute(
-          'aria-label',
-          `Cancel download of ${fileName}, ${formatFileSize(loaded)} so far`,
-        );
-      } else {
-        const pct = total > 0 ? Math.min((loaded / total) * 100, 100) : 0;
-        const pctRounded = Math.round(pct);
-        barContainer.style.display = 'block';
-        barFill.style.background = '#198754';
-        barFill.style.backgroundSize = '';
-        barFill.classList.remove('file-message-progress-indeterminate');
-        barFill.style.width = `${pct}%`;
-        statusEl.style.color = '#6c757d';
-        statusEl.textContent = `Downloading ${pctRounded}% · ${formatFileSize(loaded)} / ${formatFileSize(total)}`;
-        btn.setAttribute(
-          'aria-label',
-          `Cancel download of ${fileName}, ${pctRounded}%`,
-        );
-      }
-      return;
-    }
-
-    if (entry.status === 'done') {
-      btn.innerHTML = '<i class="ri-check-line"></i>';
-      btn.title = 'Downloaded';
-      btn.style.background = '#198754';
-      btn.setAttribute('aria-label', `Downloaded ${fileName}`);
-      barContainer.style.display = 'none';
-      barFill.style.width = '0%';
-      barFill.classList.remove('file-message-progress-indeterminate');
-      statusEl.style.color = '#198754';
-      statusEl.textContent = 'Downloaded';
-      return;
-    }
-
-    if (entry.status === 'idle-cached') {
-      // Normal-looking idle button, but a click will re-save from cache.
-      btn.innerHTML = '<i class="ri-download-2-line"></i>';
-      btn.title = 'Download file (cached)';
-      btn.setAttribute('aria-label', `Download ${fileName} (cached)`);
-      btn.style.background = '#198754';
-      barContainer.style.display = 'none';
-      barFill.style.width = '0%';
-      barFill.classList.remove('file-message-progress-indeterminate');
-      statusEl.style.color = '#6c757d';
-      statusEl.textContent = this._idleStatusText;
-      return;
-    }
-
-    if (entry.status === 'error') {
-      btn.innerHTML = '<i class="ri-refresh-line"></i>';
-      btn.title = 'Retry download';
-      btn.setAttribute('aria-label', `Retry download of ${fileName}`);
-      btn.style.background = '#dc3545';
-      barContainer.style.display = 'none';
-      barFill.style.width = '0%';
-      barFill.classList.remove('file-message-progress-indeterminate');
-      statusEl.style.color = '#dc3545';
-      statusEl.textContent = 'Download failed — click to retry';
-      return;
-    }
+function getNativeDownloadUrl(fileUrl) {
+  if (!fileUrl) return '';
+  try {
+    const url = new URL(fileUrl, window.location.href);
+    return url.protocol === 'http:' || url.protocol === 'https:'
+      ? url.href
+      : '';
+  } catch {
+    return '';
   }
 }
 
@@ -627,35 +438,23 @@ const FILE_MESSAGE_BUTTON_BASE_STYLE = `
   align-items: center;
   justify-content: center;
   user-select: none;
+  text-decoration: none;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.15s ease, opacity 0.15s ease;
 `;
 
-// Inject one-time stylesheet for the indeterminate progress animation,
-// the prefers-reduced-motion override, and mobile-friendly tap targets.
+// Inject one-time stylesheet for mobile-friendly tap targets.
 (function injectFileMessageStyles() {
   if (typeof document === 'undefined') return;
   if (document.getElementById('file-message-styles')) return;
   const style = document.createElement('style');
   style.id = 'file-message-styles';
   style.textContent = `
-    @keyframes file-message-indeterminate {
-      0% { background-position: 100% 0; }
-      100% { background-position: -100% 0; }
-    }
-    .file-message-progress-indeterminate {
-      animation: file-message-indeterminate 1.2s linear infinite;
-    }
     @media (max-width: 768px) {
       .file-message-action-btn {
         min-width: 44px !important;
         min-height: 40px !important;
         font-size: 18px !important;
-      }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .file-message-progress-indeterminate {
-        animation: none !important;
       }
     }
   `;
