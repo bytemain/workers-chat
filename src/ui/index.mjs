@@ -896,8 +896,11 @@ class ChatMessage extends HTMLElement {
     // Determine upload status from fileData
     const uploadStatus = uploading ? 'uploading' : error ? 'error' : null;
 
-    // If it's an image, use lazy-img component
-    if (fileType.startsWith('image/')) {
+    const isUploadState = uploading || error;
+
+    // If it's a completed image, use lazy-img component. While uploading or
+    // failed, render the file-message UI so progress/error state is visible.
+    if (fileType.startsWith('image/') && !isUploadState) {
       const lazyImg = document.createElement('lazy-img');
       lazyImg.setAttribute('data-src', fileUrl);
       lazyImg.setAttribute('alt', fileName);
@@ -3399,7 +3402,7 @@ async function startChat() {
     dropOverlay.innerHTML = `
       <div class="drop-overlay-content">
         <i class="ri-upload-cloud-2-line" style="font-size: 64px; margin-bottom: 16px;"></i>
-        <div style="font-size: 24px; font-weight: 500; margin-bottom: 8px;">Drop file to upload</div>
+        <div style="font-size: 24px; font-weight: 500; margin-bottom: 8px;">Drop files to upload</div>
         <div style="font-size: 14px; opacity: 0.8;">Max ${MAX_FILE_SIZE_MB}MB</div>
       </div>
     `;
@@ -3456,9 +3459,6 @@ async function startChat() {
 
       const files = e.dataTransfer.files;
       if (files.length > 0) {
-        // Only handle the first file
-        const file = files[0];
-
         // Prepare replyTo info if replying to a message
         let replyToInfo = null;
         if (currentReplyTo) {
@@ -3469,16 +3469,13 @@ async function startChat() {
           };
         }
 
-        const success = await uploadFile(file, null, replyToInfo);
-        if (success && currentReplyTo) {
+        const results = await Promise.all(
+          Array.from(files).map((file) => uploadFile(file, null, replyToInfo)),
+        );
+
+        if (results.some(Boolean) && currentReplyTo) {
           // Clear reply state after successful upload
           clearReplyTo();
-        }
-
-        if (files.length > 1) {
-          addSystemMessage(
-            `* Note: Only the first file was uploaded (${files.length} files dropped)`,
-          );
         }
       }
     });
