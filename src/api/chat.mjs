@@ -72,6 +72,70 @@ function getContentDisposition(name) {
   return `attachment; filename="${quotedAsciiName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`;
 }
 
+const RANDOM_USERNAME_ADJECTIVES = [
+  'Happy',
+  'Clever',
+  'Swift',
+  'Brave',
+  'Calm',
+  'Eager',
+  'Gentle',
+  'Jolly',
+  'Kind',
+  'Lively',
+  'Noble',
+  'Proud',
+  'Quick',
+  'Wise',
+  'Bold',
+  'Bright',
+  'Cool',
+  'Daring',
+  'Epic',
+  'Fancy',
+];
+
+const RANDOM_USERNAME_NOUNS = [
+  'Panda',
+  'Tiger',
+  'Eagle',
+  'Dolphin',
+  'Fox',
+  'Wolf',
+  'Bear',
+  'Hawk',
+  'Lion',
+  'Owl',
+  'Deer',
+  'Falcon',
+  'Raven',
+  'Swan',
+  'Phoenix',
+  'Dragon',
+  'Leopard',
+  'Panther',
+  'Cobra',
+  'Shark',
+];
+
+function generateRandomUsername() {
+  const adjective =
+    RANDOM_USERNAME_ADJECTIVES[
+      Math.floor(Math.random() * RANDOM_USERNAME_ADJECTIVES.length)
+    ];
+  const noun =
+    RANDOM_USERNAME_NOUNS[
+      Math.floor(Math.random() * RANDOM_USERNAME_NOUNS.length)
+    ];
+  const number = Math.floor(Math.random() * 100);
+  return `${adjective}${noun}${number}`;
+}
+
+function normalizeUsername(username) {
+  const name = typeof username === 'string' ? username.trim() : '';
+  return (name || generateRandomUsername()).substring(0, 32);
+}
+
 const app = ignite((app) => {
   function apiRoutes() {
     const api = new Hono();
@@ -143,7 +207,9 @@ const app = ignite((app) => {
       // Send the request to the object. The `fetch()` method of a Durable Object stub has the
       // same signature as the global `fetch()` function, but the request is always sent to the
       // object, regardless of the request's URL.
-      return roomObject.fetch(newUrl, request);
+      const forwardedRequest = new Request(newUrl.toString(), request);
+      forwardedRequest.headers.set('X-Workers-Chat-Room-Name', name);
+      return roomObject.fetch(forwardedRequest);
     });
 
     return api;
@@ -488,6 +554,88 @@ export class ChatRoom {
           fileSize: file.size,
           fileId: fileId,
         });
+      });
+
+      app.post('/message', async (c) => {
+        const { req } = c;
+        const request = req.raw;
+        const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+
+        const limiterId = this.env.limiters.idFromName(ip);
+        const limiter = this.env.limiters.get(limiterId);
+        const response = await limiter.fetch('https://dummy-url', {
+          method: 'POST',
+        });
+        const cooldown = +(await response.text());
+
+        if (cooldown > 0) {
+          return c.json(
+            { error: 'Rate limit exceeded. Please wait before sending.' },
+            { status: 429 },
+          );
+        }
+
+        let payload;
+        try {
+          payload = await request.json();
+        } catch (error) {
+          return c.json({ error: 'Invalid JSON request body' }, 400);
+        }
+
+        const textSource =
+          typeof payload.text === 'string' ? payload.text : payload.message;
+        const text = typeof textSource === 'string' ? textSource : '';
+
+        if (!text) {
+          return c.json({ error: 'Missing message text' }, 400);
+        }
+
+        if (text.length > MAX_MESSAGE_LENGTH) {
+          return c.json({ error: 'Message too long' }, 413);
+        }
+
+        const channel =
+          typeof payload.channel === 'string' && payload.channel.trim()
+            ? payload.channel.trim()
+            : 'general';
+
+        if (channel.length > 100) {
+          return c.json({ error: 'Channel name too long' }, 400);
+        }
+
+        const roomName = request.headers.get('X-Workers-Chat-Room-Name');
+        if (!roomName) {
+          return c.json({ error: 'Missing room name' }, 500);
+        }
+
+        const message = {
+          messageId: payload.messageId || crypto.randomUUID(),
+          text,
+          username: normalizeUsername(payload.username || payload.name),
+          channel,
+          timestamp: Math.max(Date.now(), this.lastTimestamp + 1),
+        };
+
+        if (payload.replyToId || payload.replyTo?.messageId) {
+          message.replyToId = payload.replyToId || payload.replyTo.messageId;
+        }
+
+        this.lastTimestamp = message.timestamp;
+
+        const rxdbId = this.env.rxdb.idFromName(roomName);
+        const rxdb = this.env.rxdb.get(rxdbId);
+        const rxdbResponse = await rxdb.fetch('https://dummy-url/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(message),
+        });
+
+        const result = await rxdbResponse.json();
+        if (!rxdbResponse.ok) {
+          return c.json(result, { status: rxdbResponse.status });
+        }
+
+        return c.json(result);
       });
 
       // Multipart upload: Create multipart upload

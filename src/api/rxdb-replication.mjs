@@ -83,7 +83,33 @@ export class RxDBReplicationDurableObject {
       return new Response(null, { status: 101, webSocket: pair[0] });
     }
 
+    if (
+      request.method === 'POST' &&
+      (url.pathname === '/message' || url.pathname === '/messages')
+    ) {
+      return this.handleHttpMessageCreate(request);
+    }
+
     return new Response('Expected WebSocket', { status: 400 });
+  }
+
+  async handleHttpMessageCreate(request) {
+    const message = await request.json();
+    const row = {
+      newDocumentState: message,
+      assumedMasterState: null,
+    };
+    const conflicts = this.handleMasterWrite('messages', [row]);
+
+    if (conflicts.length > 0) {
+      return Response.json(
+        { error: 'Message already exists', conflicts },
+        { status: 409 },
+      );
+    }
+
+    this.broadcastChanges(null, 'messages', [row]);
+    return Response.json({ success: true, message });
   }
 
   async handleSession(webSocket) {
