@@ -94,6 +94,247 @@ const app = ignite((app) => {
       return new Response(id.toString());
     });
 
+    async function checkUploadRateLimit(env, ip) {
+      const limiterId = env.limiters.idFromName(ip || 'unknown');
+      const limiter = env.limiters.get(limiterId);
+      const response = await limiter.fetch('https://dummy-url', {
+        method: 'POST',
+      });
+      return +(await response.text());
+    }
+
+    async function validateUploadRoom(c, next) {
+      const name = c.req.param('name');
+      if (!name) {
+        return new Response('You must specify a room name', { status: 401 });
+      }
+      if (!name.match(/^[0-9a-f]{64}$/) && name.length > 32) {
+        return new Response('Name too long', { status: 404 });
+      }
+      await next();
+    }
+
+    api.all('/room/:name/upload', validateUploadRoom);
+    api.all('/room/:name/upload/*', validateUploadRoom);
+
+    api.post('/room/:name/upload', async (c) => {
+      const { req, env } = c;
+      const request = req.raw;
+      const ip = request.headers.get('CF-Connecting-IP');
+
+      const cooldown = await checkUploadRateLimit(env, ip);
+
+      if (cooldown > 0) {
+        return c.json(
+          { error: 'Rate limit exceeded. Please wait before uploading.' },
+          { status: 429 },
+        );
+      }
+
+      const formData = await request.formData();
+      const file = formData.get('file');
+
+      if (!file || !(file instanceof File)) {
+        return c.json({ error: 'No file provided' }, { status: 400 });
+      }
+
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        return c.json(
+          {
+            error: `File too large (max ${MAX_FILE_SIZE_BYTES / 1024 / 1024}MB)`,
+          },
+          { status: 413 },
+        );
+      }
+
+      const fileId = crypto.randomUUID();
+      const fileExtension = file.name.split('.').pop() || 'bin';
+      const fileKey = `${fileId}.${fileExtension}`;
+
+      await env.CHAT_FILES.put(fileKey, file.stream(), {
+        httpMetadata: request.headers,
+        onlyIf: request.headers,
+        customMetadata: {
+          originalName: file.name,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: ip || 'unknown',
+        },
+      });
+
+      const fileUrl = `/files/${fileKey}`;
+      return c.json({
+        success: true,
+        fileUrl: fileUrl,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        fileId: fileId,
+      });
+    });
+
+    api.post('/room/:name/upload/mpu-create', async (c) => {
+      const { req, env } = c;
+      const request = req.raw;
+      const ip = request.headers.get('CF-Connecting-IP');
+
+      const cooldown = await checkUploadRateLimit(env, ip);
+
+      if (cooldown > 0) {
+        return c.json(
+          { error: 'Rate limit exceeded. Please wait before uploading.' },
+          { status: 429 },
+        );
+      }
+
+      const { fileName, fileType, fileSize } = await request.json();
+
+      if (!fileName) {
+        return c.json({ error: 'Missing fileName' }, { status: 400 });
+      }
+
+      const fileId = crypto.randomUUID();
+      const fileExtension = fileName.split('.').pop() || 'bin';
+      const fileKey = `${fileId}.${fileExtension}`;
+
+      try {
+        const multipartUpload = await env.CHAT_FILES.createMultipartUpload(
+          fileKey,
+          {
+            customMetadata: {
+              originalName: fileName,
+              uploadedAt: new Date().toISOString(),
+              uploadedBy: ip || 'unknown',
+              fileSize: fileSize?.toString() || '',
+            },
+            httpMetadata: fileType ? { contentType: fileType } : undefined,
+          },
+        );
+
+        return c.json({
+          success: true,
+          key: multipartUpload.key,
+          uploadId: multipartUpload.uploadId,
+          fileId: fileId,
+          fileKey: fileKey,
+        });
+      } catch (error) {
+        console.error('Failed to create multipart upload:', error);
+        return c.json(
+          { error: 'Failed to create multipart upload' },
+          { status: 500 },
+        );
+      }
+    });
+
+    api.put('/room/:name/upload/mpu-uploadpart', async (c) => {
+      const { req, env } = c;
+      const request = req.raw;
+      const url = new URL(request.url);
+      const uploadId = url.searchParams.get('uploadId');
+      const partNumber = url.searchParams.get('partNumber');
+      const fileKey = url.searchParams.get('key');
+
+      if (!uploadId || !partNumber || !fileKey) {
+        return c.json(
+          { error: 'Missing uploadId, partNumber, or key' },
+          { status: 400 },
+        );
+      }
+
+      if (!request.body) {
+        return c.json({ error: 'Missing request body' }, { status: 400 });
+      }
+
+      try {
+        const multipartUpload = env.CHAT_FILES.resumeMultipartUpload(
+          fileKey,
+          uploadId,
+        );
+
+        const uploadedPart = await multipartUpload.uploadPart(
+          parseInt(partNumber),
+          request.body,
+        );
+
+        return c.json({
+          success: true,
+          partNumber: uploadedPart.partNumber,
+          etag: uploadedPart.etag,
+        });
+      } catch (error) {
+        console.error('Failed to upload part:', error);
+        return c.json(
+          { error: `Failed to upload part: ${error.message}` },
+          { status: 500 },
+        );
+      }
+    });
+
+    api.post('/room/:name/upload/mpu-complete', async (c) => {
+      const { req, env } = c;
+      const request = req.raw;
+      const { uploadId, key, parts, fileName, fileType, fileSize } =
+        await request.json();
+
+      if (!uploadId || !key || !parts || !Array.isArray(parts)) {
+        return c.json(
+          { error: 'Missing or invalid uploadId, key, or parts' },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const multipartUpload = env.CHAT_FILES.resumeMultipartUpload(
+          key,
+          uploadId,
+        );
+
+        const object = await multipartUpload.complete(parts);
+
+        const fileUrl = `/files/${key}`;
+        return c.json({
+          success: true,
+          fileUrl: fileUrl,
+          fileName: fileName || key,
+          fileType: fileType || 'application/octet-stream',
+          fileSize: fileSize || 0,
+          etag: object.httpEtag,
+        });
+      } catch (error) {
+        console.error('Failed to complete multipart upload:', error);
+        return c.json(
+          { error: `Failed to complete upload: ${error.message}` },
+          { status: 500 },
+        );
+      }
+    });
+
+    api.post('/room/:name/upload/mpu-abort', async (c) => {
+      const { req, env } = c;
+      const request = req.raw;
+      const { uploadId, key } = await request.json();
+
+      if (!uploadId || !key) {
+        return c.json({ error: 'Missing uploadId or key' }, { status: 400 });
+      }
+
+      try {
+        const multipartUpload = env.CHAT_FILES.resumeMultipartUpload(
+          key,
+          uploadId,
+        );
+        await multipartUpload.abort();
+
+        return c.json({ success: true });
+      } catch (error) {
+        console.error('Failed to abort multipart upload:', error);
+        return c.json(
+          { error: `Failed to abort upload: ${error.message}` },
+          { status: 500 },
+        );
+      }
+    });
+
     api.all('/room/*', async (c, next) => {
       const path = getPath(c.req);
       const segments = splitPath(path);
@@ -426,239 +667,6 @@ export class ChatRoom {
 
         // Now we return the other end of the pair to the client.
         return new Response(null, { status: 101, webSocket: pair[0] });
-      });
-
-      app.post('/upload', async (c) => {
-        const { req } = c;
-        const request = req.raw;
-        const ip = request.headers.get('CF-Connecting-IP');
-
-        // Rate limit check
-        const limiterId = this.env.limiters.idFromName(ip);
-        const limiter = this.env.limiters.get(limiterId);
-        const response = await limiter.fetch('https://dummy-url', {
-          method: 'POST',
-        });
-        const cooldown = +(await response.text());
-
-        if (cooldown > 0) {
-          return c.json(
-            { error: 'Rate limit exceeded. Please wait before uploading.' },
-            { status: 429 },
-          );
-        }
-
-        const formData = await request.formData();
-        const file = formData.get('file');
-
-        if (!file || !(file instanceof File)) {
-          return c.json({ error: 'No file provided' }, { status: 400 });
-        }
-
-        if (file.size > MAX_FILE_SIZE_BYTES) {
-          return c.json(
-            {
-              error: `File too large (max ${MAX_FILE_SIZE_BYTES / 1024 / 1024}MB)`,
-            },
-            { status: 413 },
-          );
-        }
-
-        const fileId = crypto.randomUUID();
-        const fileExtension = file.name.split('.').pop() || 'bin';
-        const fileKey = `${fileId}.${fileExtension}`;
-
-        // Use R2's conditional put to prevent overwrites
-        await this.env.CHAT_FILES.put(fileKey, file.stream(), {
-          httpMetadata: request.headers,
-          onlyIf: request.headers,
-          customMetadata: {
-            originalName: file.name,
-            uploadedAt: new Date().toISOString(),
-            uploadedBy: ip || 'unknown',
-          },
-        });
-
-        const fileUrl = `/files/${fileKey}`;
-        return c.json({
-          success: true,
-          fileUrl: fileUrl,
-          fileName: file.name,
-          fileType: file.type,
-          fileSize: file.size,
-          fileId: fileId,
-        });
-      });
-
-      // Multipart upload: Create multipart upload
-      app.post('/upload/mpu-create', async (c) => {
-        const { req } = c;
-        const request = req.raw;
-        const ip = request.headers.get('CF-Connecting-IP');
-
-        // Rate limit check
-        const limiterId = this.env.limiters.idFromName(ip);
-        const limiter = this.env.limiters.get(limiterId);
-        const response = await limiter.fetch('https://dummy-url', {
-          method: 'POST',
-        });
-        const cooldown = +(await response.text());
-
-        if (cooldown > 0) {
-          return c.json(
-            { error: 'Rate limit exceeded. Please wait before uploading.' },
-            { status: 429 },
-          );
-        }
-
-        const { fileName, fileType, fileSize } = await request.json();
-
-        if (!fileName) {
-          return c.json({ error: 'Missing fileName' }, { status: 400 });
-        }
-
-        const fileId = crypto.randomUUID();
-        const fileExtension = fileName.split('.').pop() || 'bin';
-        const fileKey = `${fileId}.${fileExtension}`;
-
-        try {
-          const multipartUpload =
-            await this.env.CHAT_FILES.createMultipartUpload(fileKey, {
-              customMetadata: {
-                originalName: fileName,
-                uploadedAt: new Date().toISOString(),
-                uploadedBy: ip || 'unknown',
-                fileSize: fileSize?.toString() || '',
-              },
-              httpMetadata: fileType ? { contentType: fileType } : undefined,
-            });
-
-          return c.json({
-            success: true,
-            key: multipartUpload.key,
-            uploadId: multipartUpload.uploadId,
-            fileId: fileId,
-            fileKey: fileKey,
-          });
-        } catch (error) {
-          console.error('Failed to create multipart upload:', error);
-          return c.json(
-            { error: 'Failed to create multipart upload' },
-            { status: 500 },
-          );
-        }
-      });
-
-      // Multipart upload: Upload a part
-      app.put('/upload/mpu-uploadpart', async (c) => {
-        const { req } = c;
-        const request = req.raw;
-        const url = new URL(request.url);
-        const uploadId = url.searchParams.get('uploadId');
-        const partNumber = url.searchParams.get('partNumber');
-        const fileKey = url.searchParams.get('key');
-
-        if (!uploadId || !partNumber || !fileKey) {
-          return c.json(
-            { error: 'Missing uploadId, partNumber, or key' },
-            { status: 400 },
-          );
-        }
-
-        if (!request.body) {
-          return c.json({ error: 'Missing request body' }, { status: 400 });
-        }
-
-        try {
-          const multipartUpload = this.env.CHAT_FILES.resumeMultipartUpload(
-            fileKey,
-            uploadId,
-          );
-
-          const uploadedPart = await multipartUpload.uploadPart(
-            parseInt(partNumber),
-            request.body,
-          );
-
-          return c.json({
-            success: true,
-            partNumber: uploadedPart.partNumber,
-            etag: uploadedPart.etag,
-          });
-        } catch (error) {
-          console.error('Failed to upload part:', error);
-          return c.json(
-            { error: `Failed to upload part: ${error.message}` },
-            { status: 500 },
-          );
-        }
-      });
-
-      // Multipart upload: Complete multipart upload
-      app.post('/upload/mpu-complete', async (c) => {
-        const { req } = c;
-        const request = req.raw;
-        const { uploadId, key, parts, fileName, fileType, fileSize } =
-          await request.json();
-
-        if (!uploadId || !key || !parts || !Array.isArray(parts)) {
-          return c.json(
-            { error: 'Missing or invalid uploadId, key, or parts' },
-            { status: 400 },
-          );
-        }
-
-        try {
-          const multipartUpload = this.env.CHAT_FILES.resumeMultipartUpload(
-            key,
-            uploadId,
-          );
-
-          const object = await multipartUpload.complete(parts);
-
-          const fileUrl = `/files/${key}`;
-          return c.json({
-            success: true,
-            fileUrl: fileUrl,
-            fileName: fileName || key,
-            fileType: fileType || 'application/octet-stream',
-            fileSize: fileSize || 0,
-            etag: object.httpEtag,
-          });
-        } catch (error) {
-          console.error('Failed to complete multipart upload:', error);
-          return c.json(
-            { error: `Failed to complete upload: ${error.message}` },
-            { status: 500 },
-          );
-        }
-      });
-
-      // Multipart upload: Abort multipart upload
-      app.post('/upload/mpu-abort', async (c) => {
-        const { req } = c;
-        const request = req.raw;
-        const { uploadId, key } = await request.json();
-
-        if (!uploadId || !key) {
-          return c.json({ error: 'Missing uploadId or key' }, { status: 400 });
-        }
-
-        try {
-          const multipartUpload = this.env.CHAT_FILES.resumeMultipartUpload(
-            key,
-            uploadId,
-          );
-          await multipartUpload.abort();
-
-          return c.json({ success: true });
-        } catch (error) {
-          console.error('Failed to abort multipart upload:', error);
-          return c.json(
-            { error: `Failed to abort upload: ${error.message}` },
-            { status: 500 },
-          );
-        }
       });
 
       // Room info (name, note) is now stored in RxDB Values for automatic sync
