@@ -575,9 +575,14 @@ export class ChatRoom {
             uploadId,
           );
 
+          // Buffer the body into memory first to avoid a stream backpressure
+          // deadlock: passing request.body (ReadableStream) directly to
+          // uploadPart causes the DO runtime to hang because R2's subrequest
+          // and the incoming request stream wait on each other.
+          const bodyBuffer = await request.arrayBuffer();
           const uploadedPart = await multipartUpload.uploadPart(
             parseInt(partNumber),
-            request.body,
+            bodyBuffer,
           );
 
           return c.json({
